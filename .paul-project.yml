@@ -1,0 +1,20 @@
+policy_profile: flat
+policy_version: 1.0.12
+tier: shareable
+code_paths:
+  - ".paul-project.yml"
+  - "VERSION"
+  - "pyproject.toml"
+  - "patchmud/**"
+  - "tests/**"
+  - "decks/**"
+  - "pricing/**"
+  - "analysis/**"
+  - "**/*.md"
+  - "**/*.yml"
+  - "**/*.yaml"
+  - ".github/**"
+agent_files:
+  mode: symlink
+conventions_engine:
+  repo: hamanpaul/paulsha-conventions
