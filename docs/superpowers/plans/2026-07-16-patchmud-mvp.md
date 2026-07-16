@@ -9,11 +9,11 @@
 
 **Tech Stack:** Python 3.11+、stdlib（`subprocess/json/pathlib/hashlib/dataclasses`）、PyYAML、pytest、git CLI、bubblewrap（`bwrap`）、ruff（pinned）。
 
-**Source spec:** `paulsha-cortex` 的 `docs/superpowers/specs/2026-07-16-patchmud-mvp-design.md`（以下引用 §N 均指該 spec）。
+**Source spec:** 本 repo `docs/superpowers/specs/2026-07-16-patchmud-mvp-design.md`（以下引用 §N 均指該 spec）。
 
 ## Global Constraints
 
-- 落地 repo：`~/prj_pri/paulsha-patchmud`（★ spec §0 待使用者確認）；對 `paulsha-cortex` / `paulsha-hippo` 零 runtime 依賴。
+- 落地 repo：本 repo `paulsha-patchmud`（已於 2026-07-16 確認並 scaffold）；對 `paulsha-cortex` / `paulsha-hippo` 零 runtime 依賴。
 - 排名資料流零 LLM 裁判；reviewer finding 不進 queue / Control（§6.2）。
 - 所有會執行 candidate code 的動作必須經 mount+net+pid namespace 隔離；namespace 不可用時 ranked/pilot run 拒絕啟動（§7）。
 - hidden 資產永不進 sandbox worktree、永不進 bind allowlist（§2、§7）。
@@ -52,10 +52,12 @@
 **Interfaces:**
 - Produces: 可安裝套件 `patchmud`（`pip install -e .`）、`patchmud` console entry（暫回 exit 0）。
 
-- [ ] **Step 1:** 依 `paulsha-conventions` 模板建立上述檔案；`pyproject.toml` 宣告 `requires-python = ">=3.11"`、deps `pyyaml`、dev deps `pytest ruff`。
-- [ ] **Step 2:** Run: `python3 -m pip install -e . && python3 -c "import patchmud"`；Expected: 成功。
-- [ ] **Step 3:** Run: `python3 -m policy_check --repo .`；Expected: 零 fail。
-- [ ] **Step 4:** Commit: `chore: scaffold paulsha-patchmud package skeleton`（首個 commit 在 `main`，其後全部工作在 `feature/mvp-<task>` 分支）。
+> **狀態：已完成（2026-07-16，隨文件遷移一併 scaffold）。**
+
+- [x] **Step 1:** 依 `paulsha-conventions` 模板建立上述檔案；`pyproject.toml` 宣告 `requires-python = ">=3.11"`、deps `pyyaml`、dev deps `pytest ruff`。
+- [x] **Step 2:** Run: `python3 -m pip install -e . && python3 -c "import patchmud"`；Expected: 成功。
+- [x] **Step 3:** Run: `python3 -m policy_check --repo .`；Expected: 零 fail。
+- [x] **Step 4:** Commit: `chore: scaffold paulsha-patchmud package skeleton`（首個 commit 在 `main`，其後全部工作在 `feature/mvp-<task>` 分支）。
 
 ---
 

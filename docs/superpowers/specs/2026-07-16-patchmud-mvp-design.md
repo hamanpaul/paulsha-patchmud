@@ -9,7 +9,7 @@
 
 | 決策 | 選擇 | 理由 |
 | --- | --- | --- |
-| ★ 落地位置 | 新獨立 repo `paulsha-patchmud`，Python package `patchmud`，對 `paulsha-cortex` / `paulsha-hippo` 零 runtime 依賴 | 符合生態系拆包哲學；cortex 定位是治理平面，不該吞下 benchmark 引擎。spec / plan 文件留在 cortex `docs/superpowers/`（研究報告所在地），實作計劃 Task 0 負責 scaffold 新 repo |
+| 落地位置（已確認 2026-07-16） | 新獨立 repo `paulsha-patchmud`，Python package `patchmud`，對 `paulsha-cortex` / `paulsha-hippo` 零 runtime 依賴 | 符合生態系拆包哲學；cortex 定位是治理平面，不該吞下 benchmark 引擎。spec / plan / 研究報告已隨 repo 遷入本 repo `docs/`；scaffold（plan Task 0）已完成 |
 | MVP 範圍 | 報告 Phase 1–4 | Phase 5/6 依賴 Phase 1–4 的校準產物，先做會空轉 |
 | 技術選型 | Python 3.11+、pytest、YAML deck、JSONL event log、git worktree sandbox | 與生態系一致；deck fixture 全為 Python 專案 |
 | 裁判原則 | 排名資料流零 LLM 裁判；reviewer finding 不進 ranked Control（附錄 D F10），只留 post-hoc 分析 | 報告 §3「所有關鍵結果均由 artifact、測試、版本差異與可稽核事件日誌決定」 |
@@ -468,7 +468,7 @@ MVP 不宣稱地端模型的單一 CostPerClear：
 
 ## 16. 合規
 
-- 本 spec 與後續 plan 文件落在 `paulsha-cortex` docs（研究資產）；實作程式碼落在新 repo `paulsha-patchmud`（★ 待確認），該 repo 以 `paulsha-conventions` 最新 policy scaffold。
+- 本 spec、plan 與研究報告落在本 repo（`paulsha-patchmud`）`docs/`；repo 已以 `paulsha-conventions` policy 1.0.12 scaffold（2026-07-16 自 `paulsha-cortex` feature/patchmud-spec 遷入）。
 - 兩 repo 均為 `tier: shareable`：fixture、路徑、報告不得含個人絕對路徑或機敏標記。
 - deck fixture 的 reference patch 與 hidden 資產不隨 ranked 結果公開；公開發布走 archive-public（§12.1）。
 - 分支 `feature/<slug>`；code PR 同步 CHANGELOG；`python3 -m policy_check --repo .` 零 fail。

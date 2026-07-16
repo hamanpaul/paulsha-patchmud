@@ -36,6 +36,10 @@ patchmud replay <run_dir> [--l2]               # 兩級重播驗證
 patchmud report --runs "runs/*"                # 多榜研究報告
 ```
 
+## Version
+
+版本記錄於 `VERSION`，變更紀錄見 [CHANGELOG.md](CHANGELOG.md)；版號規則遵循 hamanpaul project policy v1.0.12（`<MAJOR>.<MINOR>.<PATCH>[-fix.N]`，flat profile）。
+
 ## 開發
 
 - 分支：`feature/<slug>` 或 `wt/<feature>/<subtask>`；禁止直接 commit `main`。
