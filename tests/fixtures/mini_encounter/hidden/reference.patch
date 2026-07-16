@@ -1,0 +1,18 @@
+diff --git a/src/inventory.py b/src/inventory.py
+index 656f76b..20a9f5a 100644
+--- a/src/inventory.py
++++ b/src/inventory.py
+@@ -13,8 +13,11 @@ class Inventory:
+         self._items[name] = self._items.get(name, 0) + qty
+ 
+     def remove(self, name, qty):
+-        current = self._items.get(name, 0)
+-        self._items[name] = current - qty
++        if name not in self._items:
++            raise KeyError(name)
++        if qty > self._items[name]:
++            raise ValueError("qty exceeds stock")
++        self._items[name] = self._items[name] - qty
+ 
+     def total(self):
+         return sum(self._items.values())

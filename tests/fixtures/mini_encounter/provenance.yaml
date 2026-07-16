@@ -1,0 +1,6 @@
+schema_version: 1
+issue_id: mini-inventory-v1
+archetype_source: "原創最小 fixture（Task 1 契約測試用，非公開題庫改編）"
+published_at: null
+variant_notes: "mini encounter：單一 hidden probe、單一 MAIN requirement；不屬於 pilot deck"
+frozen_at: "2026-07-17"

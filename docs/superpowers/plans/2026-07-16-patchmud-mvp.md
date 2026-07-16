@@ -73,11 +73,11 @@
 **Interfaces:**
 - Produces: `IssueCard`（frozen dataclass，§4.2 全欄位）、`load_card(path: Path) -> IssueCard`（schema 錯誤 raise `DeckError`）、`materialize_repo(encounter_dir: Path, dest: Path) -> FrozenRepo`，`FrozenRepo.sha: str`。
 
-- [ ] **Step 1: RED** — 測試鎖定：缺必填欄位 / `expected_paths ⊄ allowed_paths` / public、hidden 路徑重疊 → `DeckError`；合法 card 全欄位 round-trip；`materialize_repo` 兩次呼叫產生**相同** commit SHA（固定 author、epoch 0），且 dest 內不存在 `hidden/` 任何檔案。
+- [x] **Step 1: RED** — 測試鎖定：缺必填欄位 / `expected_paths ⊄ allowed_paths` / public、hidden 路徑重疊 → `DeckError`；合法 card 全欄位 round-trip；`materialize_repo` 兩次呼叫產生**相同** commit SHA（固定 author、epoch 0），且 dest 內不存在 `hidden/` 任何檔案。
   Run: `python3 -m pytest -q tests/deck/`；Expected: FAIL（模組不存在）。
-- [ ] **Step 2:** 實作 `model/loader/materialize` 最小版本。
-- [ ] **Step 3:** Run 同上；Expected: PASS。
-- [ ] **Step 4:** Commit: `feat(deck): issue card contract and deterministic fixture materialization`。
+- [x] **Step 2:** 實作 `model/loader/materialize` 最小版本。
+- [x] **Step 3:** Run 同上；Expected: PASS。
+- [x] **Step 4:** Commit: `feat(deck): issue card contract and deterministic fixture materialization`。
 
 ---
 
