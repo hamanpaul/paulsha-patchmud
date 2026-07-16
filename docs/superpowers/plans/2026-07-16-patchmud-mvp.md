@@ -162,11 +162,11 @@
 **Interfaces:**
 - Produces: `RunStore.create(run_config) -> RunStore`（建 `runs/<run_id>/`、寫 `run.yaml` 含 frozen SHA、pricing hash、harness_prompt_version、schedule ref）、`.append_event(event: dict)`（自動 `seq`、schema 驗證）、`.write_result(result: dict)`、`.archive_private(dest.tar)`、`.archive_public(dest.tar)`（hidden bytes → content hash 佔位，§12.1）、`.load_events() -> list[dict]`（schema 不符 raise `StoreError`）。
 
-- [ ] **Step 1: RED** — 鎖定：event append-only（重開 store 續寫 seq）；unknown `schema_version` 讀取 fail-closed；`archive_public` 內 grep 不到任何 hidden probe bytes、但含其 sha256；`archive_private` 含 evaluator bundle（hidden bytes、reference timings、lockfile 描述）。
+- [x] **Step 1: RED** — 鎖定：event append-only（重開 store 續寫 seq）；unknown `schema_version` 讀取 fail-closed；`archive_public` 內 grep 不到任何 hidden probe bytes、但含其 sha256；`archive_private` 含 evaluator bundle（hidden bytes、reference timings、lockfile 描述）。
   Run: `python3 -m pytest -q tests/store/`；Expected: FAIL。
-- [ ] **Step 2:** 實作。
-- [ ] **Step 3:** Run 同上；Expected: PASS。
-- [ ] **Step 4:** Commit: `feat(store): append-only event log and two-tier archives`。
+- [x] **Step 2:** 實作。
+- [x] **Step 3:** Run 同上；Expected: PASS。
+- [x] **Step 4:** Commit: `feat(store): append-only event log and two-tier archives`。
 
 ---
 
