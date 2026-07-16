@@ -198,11 +198,11 @@
 - Consumes: Task 1–7 全部。
 - Produces: 給定 encounter + 手工 diff → `result.yaml`（PowerReport、gates、probe outcomes、封存）；這是 spec Phase 1「離線評分核心」的驗收入口。
 
-- [ ] **Step 1: RED** — e2e：對 `mini_encounter` 跑 reference patch → `Clear` 前置條件（critical 綠）成立、result.yaml 落盤、`archive_private` 可產出；跑空 diff → critical 紅、Economy 欄位 `NA`（無 reference_cost）。
+- [x] **Step 1: RED** — e2e：對 `mini_encounter` 跑 reference patch → `Clear` 前置條件（critical 綠）成立、result.yaml 落盤、`archive_private` 可產出；跑空 diff → critical 紅、Economy 欄位 `NA`（無 reference_cost）。
   Run: `python3 -m pytest -q tests/test_score_diff_e2e.py`；Expected: FAIL。
-- [ ] **Step 2:** 串線實作。
-- [ ] **Step 3:** Run: `python3 -m pytest -q && python3 -m policy_check --repo .`；Expected: 全綠。
-- [ ] **Step 4:** Commit: `feat(cli): offline scoring entrypoint (milestone A)`。
+- [x] **Step 2:** 串線實作。
+- [x] **Step 3:** Run: `python3 -m pytest -q && python3 -m policy_check --repo .`；Expected: 全綠。
+- [x] **Step 4:** Commit: `feat(cli): offline scoring entrypoint (milestone A)`。
 
 ---
 
