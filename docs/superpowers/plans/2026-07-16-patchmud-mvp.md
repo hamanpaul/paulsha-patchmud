@@ -108,11 +108,11 @@
 - Consumes: `FrozenRepo`（Task 1）。
 - Produces: `Workspace.apply_patch(diff: str, kind: Literal["production","test"]) -> ApplyResult`、`.rollback() -> bool`、`.checkpoint() -> str`（shadow bare repo commit SHA）、`.cumulative_diff() -> str`、`.diff_stats() -> DiffStats(added, deleted, files, reverted_loc)`、`.restore_protected()`。
 
-- [ ] **Step 1: RED** — 鎖定：`git apply` 嚴格模式（fuzz patch 被拒、worktree 不變）；`kind="test"` 只允許 `tests/agent/**`，`kind="production"` 觸及 `tests/public|starter/**`、`benchmark/**`、`.git` → `ApplyResult.rejected`；`restore_protected()` 以 deck 原始 bytes 還原保護區（先手動污染再驗還原）；`rollback` 恢復上一 patch 前狀態；`checkpoint` 對相同內容回穩定 SHA；`reverted_loc` 正確計算「revert 自己先前新增行」案例。
+- [x] **Step 1: RED** — 鎖定：`git apply` 嚴格模式（fuzz patch 被拒、worktree 不變）；`kind="test"` 只允許 `tests/agent/**`，`kind="production"` 觸及 `tests/public|starter/**`、`benchmark/**`、`.git` → `ApplyResult.rejected`；`restore_protected()` 以 deck 原始 bytes 還原保護區（先手動污染再驗還原）；`rollback` 恢復上一 patch 前狀態；`checkpoint` 對相同內容回穩定 SHA；`reverted_loc` 正確計算「revert 自己先前新增行」案例。
   Run: `python3 -m pytest -q tests/sandbox/test_workspace.py`；Expected: FAIL。
-- [ ] **Step 2:** 實作（patch stack 為 list[applied diff]，rollback = 重放到 n-1）。
-- [ ] **Step 3:** Run 同上；Expected: PASS。
-- [ ] **Step 4:** Commit: `feat(sandbox): workspace patch stack, protected paths, shadow checkpoints`。
+- [x] **Step 2:** 實作（patch stack 為 list[applied diff]，rollback = 重放到 n-1）。
+- [x] **Step 3:** Run 同上；Expected: PASS。
+- [x] **Step 4:** Commit: `feat(sandbox): workspace patch stack, protected paths, shadow checkpoints`。
 
 ---
 
