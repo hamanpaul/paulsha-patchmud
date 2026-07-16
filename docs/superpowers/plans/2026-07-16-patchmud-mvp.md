@@ -248,7 +248,7 @@
 - Consumes: `ProbeResults.transitions`、`DiffStats`、`IssueCard`。
 - Produces: `IssueQueue.from_card(card, baseline: ProbeResults)`、`.update(probe_results, diff_geometry, action) -> QueueDelta(resolved, spawned, closed)`、`.open_items() -> list[IssueItem]`、`.counters -> QueueCounters(reopen, regression, duplicate, churn_events, failed_claims, scope_hard_open, s_scope_loc)`、`.snapshot() -> dict`（B_t、M_t）。
 
-- [ ] **Step 1: RED（§8.1 逐條）** —
+- [x] **Step 1: RED（§8.1 逐條）** —
   ```python
   def test_reopen_after_resolved():
       q = queue_with_main_red()
@@ -263,8 +263,8 @@
   ```
   另鎖定：turn-0 baseline 紅的 compat probe 第一次「更紅」不 spawn（無綠→紅轉換）而首綠後再紅 spawn REGRESSION（F11）；SCOPE(hard) 聚合單 item、撤回 resolve；`expected_paths` 外 LOC 進 `s_scope_loc` 不生 item；CHURN 事件性關閉；DUPLICATE 引用已 resolved item。
   Run: `python3 -m pytest -q tests/engine/test_queue.py`；Expected: FAIL。
-- [ ] **Step 2–3:** 實作 → PASS。
-- [ ] **Step 4:** Commit: `feat(engine): deterministic issue queue with reopen/regression/scope/churn rules`。
+- [x] **Step 2–3:** 實作 → PASS。
+- [x] **Step 4:** Commit: `feat(engine): deterministic issue queue with reopen/regression/scope/churn rules`。
 
 ---
 
