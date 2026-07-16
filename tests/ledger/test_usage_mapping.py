@@ -162,8 +162,48 @@ class TestOpenAIMapping:
             )
 
 
+class TestToolCallsSeam:
+    """F16：per_tool_call 計價依賴 mapping 路徑帶入 tool_calls。
+
+    map_usage 若無 tool_calls seam，真實 run 的每筆 entry 永遠
+    tool_calls=0 → per_tool_call 成本靜默計 0（無聲少收）。
+    """
+
+    def test_tool_calls_flow_through_mapping(self):
+        entry = map_usage(
+            "openai",
+            {"prompt_tokens": 100, "completion_tokens": 50},
+            tool_calls=3,
+        )
+        assert entry.tool_calls == 3
+
+    def test_tool_calls_default_zero(self):
+        entry = map_usage(
+            "anthropic", {"input_tokens": 1, "output_tokens": 1}
+        )
+        assert entry.tool_calls == 0
+
+    def test_negative_tool_calls_rejected(self):
+        with pytest.raises(LedgerError):
+            map_usage(
+                "anthropic",
+                {"input_tokens": 1, "output_tokens": 1},
+                tool_calls=-1,
+            )
+
+
 class TestMapUsageFailClosed:
     def test_unknown_provider_rejected(self):
+        """未知 provider 必須 fail-closed，且非因欄位缺漏連帶擋下。
+
+        判別性：fixture 採可被任一已知 mapper 成功映射的形狀——若 dispatch
+        改成 fail-open（fallback 到任一預設 mapper），mapping 會靜默成功，
+        本測試必炸。
+        """
+        # openai 形：fallback 到 _map_openai 會成功 → 抓 fail-open。
+        with pytest.raises(LedgerError):
+            map_usage("mystery", {"prompt_tokens": 1, "completion_tokens": 1})
+        # anthropic 形：fallback 到 _map_anthropic 會成功 → 抓 fail-open。
         with pytest.raises(LedgerError):
             map_usage("mystery", {"input_tokens": 1, "output_tokens": 1})
 

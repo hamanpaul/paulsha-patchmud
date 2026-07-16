@@ -127,6 +127,34 @@ class TestComputeRunCost:
         assert cost.c_model == expected
         assert cost.c_reviewer == Decimal("0")
 
+    def test_reasoning_split_output_charges_billed_total_not_visible(self, tmp_path):
+        """F17：reasoning 併入 output（visible=500 / billed=800）也不少收。
+
+        判別性：若計費改以 output_visible 而非 billed_output_total，
+        差額 300 × output 價會少收，本測試的精確等式必炸。
+        """
+        snapshot = _load(tmp_path, _snapshot_yaml())
+        mtok = Decimal(10**6)
+        expected = (
+            Decimal(300) * Decimal("0.30") / mtok  # cached input
+            + Decimal(1000) * Decimal("3.00") / mtok  # 其餘 billed input
+            + Decimal(800) * Decimal("15.00") / mtok  # billed output（含 reasoning 300）
+            + Decimal("0.01")  # per_request × 1
+        )
+        # 揭露版：reasoning=300 拆出、visible=500、billed 照抄 800。
+        disclosed = _entry(
+            output_visible=500, reasoning=300, billed_output_total=800
+        )
+        # 未揭露版：provider 把 reasoning 併入 billed total、不拆（NA）。
+        undisclosed = _entry(
+            output_visible=500,
+            reasoning=None,
+            billed_output_total=800,
+            unallocated=300,
+        )
+        assert compute_run_cost([disclosed], snapshot).c_model == expected
+        assert compute_run_cost([undisclosed], snapshot).c_model == expected
+
     def test_na_cached_bills_all_input_at_uncached_rate(self, tmp_path):
         snapshot = _load(tmp_path, _snapshot_yaml())
         entries = [_entry(input_cached=None, unallocated=300)]
@@ -138,6 +166,22 @@ class TestComputeRunCost:
             + Decimal("0.01")
         )
         assert cost.c_model == expected
+
+    def test_per_tool_call_charges_exact_decimal_difference(self, tmp_path):
+        """F16：3 次 tool call、per_tool_call=0.02 → 總價差恰 Decimal("0.06")。
+
+        判別性：刪除 per_tool_call × tool_calls 項，本測試必炸。
+        """
+        with_fee = _load(
+            tmp_path, _snapshot_yaml(per_tool_call="0.02"), "a.yaml"
+        )
+        no_fee = _load(
+            tmp_path, _snapshot_yaml(per_tool_call="0.00"), "b.yaml"
+        )
+        entries = [_entry(tool_calls=3)]
+        cost_with = compute_run_cost(entries, with_fee)
+        cost_without = compute_run_cost(entries, no_fee)
+        assert cost_with.total - cost_without.total == Decimal("0.06")
 
     def test_role_split_author_vs_reviewer(self, tmp_path):
         snapshot = _load(tmp_path, _snapshot_yaml())

@@ -154,6 +154,7 @@ def map_usage(
     *,
     turn: int = 0,
     role: str = "author",
+    tool_calls: int = 0,
     wall_clock_ms: int = 0,
     prompt_bytes: int = 0,
     generated_bytes: int = 0,
@@ -169,6 +170,7 @@ def map_usage(
     return LedgerEntry(
         turn=turn,
         role=role,
+        tool_calls=tool_calls,
         wall_clock_ms=wall_clock_ms,
         prompt_bytes=prompt_bytes,
         generated_bytes=generated_bytes,
