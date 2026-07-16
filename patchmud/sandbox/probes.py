@@ -64,10 +64,10 @@ class _Workspace(Protocol):
 
 @dataclass(frozen=True)
 class Probe:
-    """一個可執行的公開診斷（spec §3）。"""
+    """一個可執行的診斷（spec §3）；`hidden` kind 僅供 evaluator 獨立 checkout 使用。"""
 
     probe_id: str
-    kind: Literal["requirement", "regression", "compat", "smoke"]
+    kind: Literal["requirement", "regression", "compat", "smoke", "hidden"]
     target: str | None = None
     smoke: tuple[str, ...] | None = None
 

@@ -144,12 +144,12 @@
 - Consumes: `ProbeSuite`/`ProbeOutcome`、`IssueCard`、`DiffStats`。
 - Produces: `evaluate_final(card, frozen, final_diff, runner) -> FinalEvaluation(probe_outcomes, power: PowerReport, gates: GateResult)`；`PowerReport(functional, robustness, compatibility, maintainability, runtime_efficiency, total)`；`GateResult(critical_pass: bool, power_cap: int|None, run_invalid: bool)`。evaluator 使用**獨立 checkout**（frozen + final diff），非 agent worktree。
 
-- [ ] **Step 1: RED（rubric 公式逐條）** — 以合成 `ProbeOutcome` 鎖定 §9.3 每一分：functional group all-or-nothing；robustness case 級 `15 × passed/total`；compat 全綠 10 / 任一紅 0；maintainability 三小項（`L=100, hi=80 → diff 分 = 4×(1−20/80)=3.0`、SCOPE(hard) 殘留扣 2、`S_scope>0` 扣 1、lint 新增 diagnostics 扣 3）；perf `runtime ≤ 3.0 × reference` 判定；hard gates 三個 cap（§9.2）與 `Clear=0` 連動；runtime_efficiency 分數以**量測當下 outcome 封存值**輸出（供 L1 重算引用，§12.2）。
+- [x] **Step 1: RED（rubric 公式逐條）** — 以合成 `ProbeOutcome` 鎖定 §9.3 每一分：functional group all-or-nothing；robustness case 級 `15 × passed/total`；compat 全綠 10 / 任一紅 0；maintainability 三小項（`L=100, hi=80 → diff 分 = 4×(1−20/80)=3.0`、SCOPE(hard) 殘留扣 2、`S_scope>0` 扣 1、lint 新增 diagnostics 扣 3）；perf `runtime ≤ 3.0 × reference` 判定；hard gates 三個 cap（§9.2）與 `Clear=0` 連動；runtime_efficiency 分數以**量測當下 outcome 封存值**輸出（供 L1 重算引用，§12.2）。
   Run: `python3 -m pytest -q tests/evaluator/`；Expected: FAIL。
-- [ ] **Step 2:** 實作 `power.py`（純函數，輸入 outcomes/stats/card）與 `gates.py`。
-- [ ] **Step 3:** Run 同上；Expected: PASS。
-- [ ] **Step 4:** `mini_encounter` 整合：手工正確 diff → critical 綠、Power ≥ 60；手工破壞 API diff → Power ≤ 50。Run: `python3 -m pytest -q tests/evaluator/ tests/deck/`；Expected: PASS。
-- [ ] **Step 5:** Commit: `feat(evaluator): hidden evaluation, hard gates, fully pinned power rubric`。
+- [x] **Step 2:** 實作 `power.py`（純函數，輸入 outcomes/stats/card）與 `gates.py`。
+- [x] **Step 3:** Run 同上；Expected: PASS。
+- [x] **Step 4:** `mini_encounter` 整合：手工正確 diff → critical 綠、Power ≥ 60；手工破壞 API diff → Power ≤ 50。Run: `python3 -m pytest -q tests/evaluator/ tests/deck/`；Expected: PASS。
+- [x] **Step 5:** Commit: `feat(evaluator): hidden evaluation, hard gates, fully pinned power rubric`。
 
 ---
 
