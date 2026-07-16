@@ -126,11 +126,11 @@
 - Consumes: `IsolationRunner`（注入）、`Workspace`、`IssueCard`。
 - Produces: `ProbeSuite.from_card(card) -> ProbeSuite`、`ProbeSuite.run(workspace, subset=None) -> ProbeResults`；`ProbeResults[probe_id] -> ProbeOutcome(status: passed|failed|error, cases_total, cases_passed, failure_fingerprints: list[str], wall_ms, cpu_ms)`；`ProbeResults.transitions(prev) -> list[Transition(probe_id, green_to_red | red_to_green)]`。
 
-- [ ] **Step 1: RED** — 以 fake runner 餵 pytest 輸出 fixture 鎖定：assertion fail → `failed`＋fingerprint（異常類型＋斷言訊息首行）；collection/import error → `error`；case 計數正確；`transitions` 相對前次結果產生正確 green_to_red；執行前必呼叫 `restore_protected()`（以 spy 驗證，§7）。
+- [x] **Step 1: RED** — 以 fake runner 餵 pytest 輸出 fixture 鎖定：assertion fail → `failed`＋fingerprint（異常類型＋斷言訊息首行）；collection/import error → `error`；case 計數正確；`transitions` 相對前次結果產生正確 green_to_red；執行前必呼叫 `restore_protected()`（以 spy 驗證，§7）。
   Run: `python3 -m pytest -q tests/sandbox/test_probes.py`；Expected: FAIL。
-- [ ] **Step 2:** 實作：pytest 以 `--json-report`（或 `junitxml`）在隔離內執行、解析三態與 case 級結果。
-- [ ] **Step 3:** Run 同上＋`mini_encounter` 整合（turn-0 baseline：materialize 後 run 全套，MAIN probe 紅、starter 綠）；Expected: PASS。
-- [ ] **Step 4:** Commit: `feat(sandbox): three-state probe runner with baseline and transitions`。
+- [x] **Step 2:** 實作：pytest 以 `--json-report`（或 `junitxml`）在隔離內執行、解析三態與 case 級結果。
+- [x] **Step 3:** Run 同上＋`mini_encounter` 整合（turn-0 baseline：materialize 後 run 全套，MAIN probe 紅、starter 綠）；Expected: PASS。
+- [x] **Step 4:** Commit: `feat(sandbox): three-state probe runner with baseline and transitions`。
 
 ---
 

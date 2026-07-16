@@ -20,7 +20,7 @@ critical_requirements:
     hidden_probe: hidden/test_cr1_no_negative_stock.py
 regression_probes:
   - tests/starter/
-  - smoke: ["python", "-c", "import inventory"]
+  - smoke: ["python3", "-B", "-c", "import sys; sys.path.insert(0, 'src'); import inventory"]
 compat_probes:
   - probe: tests/starter/test_inventory_basics.py
 power_rubric:

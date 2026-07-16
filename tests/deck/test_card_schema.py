@@ -112,7 +112,12 @@ def test_valid_card_full_roundtrip():
     assert card.regression_probes[0].path == "tests/starter/"
     assert card.regression_probes[0].smoke is None
     assert card.regression_probes[1].path is None
-    assert list(card.regression_probes[1].smoke) == ["python", "-c", "import inventory"]
+    assert list(card.regression_probes[1].smoke) == [
+        "python3",
+        "-B",
+        "-c",
+        "import sys; sys.path.insert(0, 'src'); import inventory",
+    ]
 
     assert [c.probe for c in card.compat_probes] == [
         c["probe"] for c in data["compat_probes"]
