@@ -231,10 +231,10 @@
 **Interfaces:**
 - Produces: `parse_reply(text) -> Action`（dataclass 家族：`Look/Inspect/PlayPlan/WriteTest/Patch/RunTest/SummonReviewer/Triage/Rollback/Commit`，帶 `target_issues/files/claim/payload`）或 `ParseFailure(hint)`；`render_state(run_state) -> str`（§5.3、§5.4；敘事 zh-TW、命令關鍵字英文；含 queue、資源、flood 文案門檻——文案不進分數）。
 
-- [ ] **Step 1: RED** — 鎖定：報告 §9.3 格式的合法回覆逐命令解析；缺 `ACTION:` / 未知動作 / PATCH 無 diff 區塊 → `ParseFailure`（錯誤提示為 zh-TW）；render 對固定 run_state fixture 輸出穩定 zh-TW golden 字串（版本化，含「回合」「戰場」「洪水壓力」等敘事詞）；文案全部經 `render_zh_tw.py` 查表，`render.py` 內不得出現硬編中文字串。
+- [x] **Step 1: RED** — 鎖定：報告 §9.3 格式的合法回覆逐命令解析；缺 `ACTION:` / 未知動作 / PATCH 無 diff 區塊 → `ParseFailure`（錯誤提示為 zh-TW）；render 對固定 run_state fixture 輸出穩定 zh-TW golden 字串（版本化，含「回合」「戰場」「洪水壓力」等敘事詞）；文案全部經 `render_zh_tw.py` 查表，`render.py` 內不得出現硬編中文字串。
   Run: `python3 -m pytest -q tests/engine/test_protocol.py tests/engine/test_render.py`；Expected: FAIL。
-- [ ] **Step 2–3:** 實作 → PASS。
-- [ ] **Step 4:** Commit: `feat(engine): reply parser and versioned state renderer`。
+- [x] **Step 2–3:** 實作 → PASS。
+- [x] **Step 4:** Commit: `feat(engine): reply parser and versioned state renderer`。
 
 ---
 
