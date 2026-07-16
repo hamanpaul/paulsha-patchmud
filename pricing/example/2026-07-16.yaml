@@ -1,0 +1,13 @@
+# 示例 pricing snapshot（spec §10.2、F16）。
+# 價格欄位一律字串字面值 → decimal.Decimal 精確解析；YAML float 會被拒收。
+# run.yaml 以本檔 sha256 content hash pin 定；價格改動不影響已封存 run。
+schema_version: 1
+snapshot_date: "2026-07-16"
+currency: "USD"
+prices:
+  input_uncached_per_mtok: "3.00"     # 每百萬 uncached input tokens
+  input_cached_per_mtok: "0.30"       # 每百萬 cached input tokens
+  output_per_mtok: "15.00"            # 每百萬 output tokens（含不可拆 reasoning）
+  per_request: "0.01"                 # 每次 API 呼叫固定費（F16）
+  per_tool_call: "0.00"               # 每次 tool call 固定費（MVP 計價 0）
+  minimum_charge_per_call: "0.00"     # 每次呼叫最低消費

@@ -180,11 +180,11 @@
 **Interfaces:**
 - Produces: `LedgerEntry`（§10.1 全欄位，`NA` 以 `None` 表示）、`map_usage(provider: str, usage: dict) -> LedgerEntry`、`PricingSnapshot.load(path) -> PricingSnapshot`（含 `content_hash`）、`compute_run_cost(entries, snapshot) -> RunCost(c_model: Decimal, c_reviewer: Decimal)`、`aggregate_work_tokens(entries) -> int | None`（NA 傳染）。
 
-- [ ] **Step 1: RED（per-provider fixture）** — anthropic 式（`input_tokens/output_tokens/cache_read_input_tokens`）與 openai 式（`prompt_tokens/completion_tokens/completion_tokens_details.reasoning_tokens`、cached 子集）usage fixture → 期望互斥欄位＋billed totals＋`unallocated`；reasoning 缺席 → `None` 非 0；`aggregate_work_tokens` 任一 entry 含 `None` → 整體 `None`；成本測試：9 次呼叫、`per_request=0.01` → 總價差恰 `Decimal("0.09")`（F16）；同 entries 換 snapshot 日期 → 價格不同但 entries 不變。
+- [x] **Step 1: RED（per-provider fixture）** — anthropic 式（`input_tokens/output_tokens/cache_read_input_tokens`）與 openai 式（`prompt_tokens/completion_tokens/completion_tokens_details.reasoning_tokens`、cached 子集）usage fixture → 期望互斥欄位＋billed totals＋`unallocated`；reasoning 缺席 → `None` 非 0；`aggregate_work_tokens` 任一 entry 含 `None` → 整體 `None`；成本測試：9 次呼叫、`per_request=0.01` → 總價差恰 `Decimal("0.09")`（F16）；同 entries 換 snapshot 日期 → 價格不同但 entries 不變。
   Run: `python3 -m pytest -q tests/ledger/`；Expected: FAIL。
-- [ ] **Step 2:** 實作；金額全 `Decimal`。
-- [ ] **Step 3:** Run 同上；Expected: PASS。
-- [ ] **Step 4:** Commit: `feat(ledger): exclusive token ledger, billed totals, versioned pricing`。
+- [x] **Step 2:** 實作；金額全 `Decimal`。
+- [x] **Step 3:** Run 同上；Expected: PASS。
+- [x] **Step 4:** Commit: `feat(ledger): exclusive token ledger, billed totals, versioned pricing`。
 
 ---
 
