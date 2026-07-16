@@ -90,11 +90,11 @@
 **Interfaces:**
 - Produces: `IsolationRunner.run(argv: list[str], cwd: Path, timeout_s: float) -> Execution`（`Execution`: `exit_code/stdout/stderr/wall_ms/cpu_ms/timed_out`）、`IsolationRunner.capabilities() -> Capabilities(mount_ns, net_ns, pid_ns: bool)`、`build_bwrap_argv(worktree, toolchain_ro, argv) -> list[str]`。
 
-- [ ] **Step 1: RED** — 測試鎖定：`build_bwrap_argv` 產出的 bind 參數**只含** worktree（rw）、toolchain（ro）、tmpfs `/tmp`，且 `--unshare-net --unshare-pid --die-with-parent` 存在；env 只剩白名單四鍵（§7）；timeout 觸發 `timed_out=True` 且 child 被終止；capabilities 探測失敗回全 False。
+- [x] **Step 1: RED** — 測試鎖定：`build_bwrap_argv` 產出的 bind 參數**只含** worktree（rw）、toolchain（ro）、tmpfs `/tmp`，且 `--unshare-net --unshare-pid --die-with-parent` 存在；env 只剩白名單四鍵（§7）；timeout 觸發 `timed_out=True` 且 child 被終止；capabilities 探測失敗回全 False。
   Run: `python3 -m pytest -q tests/sandbox/test_isolate.py`；Expected: FAIL。
-- [ ] **Step 2:** 實作；capabilities 以一次性 `bwrap --unshare-all -- true` 探測並快取。
-- [ ] **Step 3: 整合 RED→PASS** — integration 測試在真 bwrap 內執行探測程式：讀取 allowlist 外路徑（模擬 deck `hidden/`、`$HOME`）必須失敗、無網路（connect 立即失敗）。Run: `python3 -m pytest -q tests/sandbox/`；Expected: PASS（或環境無 bwrap 時 unit PASS + integration skip）。
-- [ ] **Step 4:** Commit: `feat(sandbox): bubblewrap isolation runner with bind allowlist`（acceptance「隔離」第 1 條的基礎，§13）。
+- [x] **Step 2:** 實作；capabilities 以一次性 `bwrap --unshare-all -- true` 探測並快取。
+- [x] **Step 3: 整合 RED→PASS** — integration 測試在真 bwrap 內執行探測程式：讀取 allowlist 外路徑（模擬 deck `hidden/`、`$HOME`）必須失敗、無網路（connect 立即失敗）。Run: `python3 -m pytest -q tests/sandbox/`；Expected: PASS（或環境無 bwrap 時 unit PASS + integration skip）。
+- [x] **Step 4:** Commit: `feat(sandbox): bubblewrap isolation runner with bind allowlist`（acceptance「隔離」第 1 條的基礎，§13）。
 
 ---
 
