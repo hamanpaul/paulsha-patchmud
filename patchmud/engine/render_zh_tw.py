@@ -24,7 +24,8 @@ __all__ = [
 RENDER_LANGUAGE = "zh-TW"
 
 #: 文案表版本；文案任何改動必須 bump（golden 測試與 harness_prompt_version 鎖定）。
-RENDER_PACK_VERSION = "1.0.0"
+#: 1.1.0：新增 strategy enforcer verdict 與 plan schema 錯誤文案（Task 12）。
+RENDER_PACK_VERSION = "1.1.0"
 
 
 class RenderError(Exception):
@@ -100,6 +101,46 @@ MESSAGES: dict[str, str] = {
         "公開需求（MAIN）："
     ),
     "prompt.card_requirement": "- {req_id}：{text}",
+    # ---- strategy enforcer verdict（spec §6；illegal 動作的敘事理由） ------
+    "strategy.plan_forbidden": (
+        "本場 loadout 未啟用 PLAN（P0）：PLAY PLAN 不可用。"
+    ),
+    "strategy.plan_duplicate": (
+        "計畫已凍結：PLAY PLAN 只能提交一次，通過後的修改一律不合法。"
+    ),
+    "strategy.plan_after_patch": (
+        "已有 production PATCH 套用：PLAY PLAN 只能在第一次 PATCH 前提交。"
+    ),
+    "strategy.plan_required_before_patch": (
+        "P1 規則：第一次 PATCH 前必須先以 PLAY PLAN 提交通過 schema 驗證的計畫。"
+    ),
+    "strategy.tdd_red_required": (
+        "T1 規則：production PATCH 前必須先達成 valid red——tests/agent/** 內"
+        "新增測試以 pytest failed（assertion 失敗）收場；error（收集／import "
+        "失敗）不算。"
+    ),
+    "strategy.reviewer_forbidden": (
+        "本場 loadout 未啟用 REVIEWER（R0）：SUMMON REVIEWER 不可用。"
+    ),
+    "strategy.review_required_before_commit": (
+        "R1 規則：COMMIT 前必須有一次合格 review——schema 有效、輸入 diff 非空"
+        "（至少一個 production patch 已套用）、且 findings 已 render 給作者。"
+    ),
+    # ---- plan schema 錯誤（spec §6.3；PLAY PLAN illegal 的敘事理由） ------
+    "plan.invalid_yaml": "PLAN 區塊不是有效的 YAML：{detail}。",
+    "plan.not_mapping": "PLAN 區塊必須是 YAML mapping（key: value 結構）。",
+    "plan.field_missing": "plan 缺欄位「{field}」。",
+    "plan.field_empty": "plan 欄位「{field}」必須是非空字串列表。",
+    "plan.requirements_missing_ids": (
+        "plan 的 requirements 未涵蓋全部公開需求：缺 {ids}。"
+    ),
+    "plan.unknown_inspect_file": (
+        "plan 的 files_to_inspect 引用不存在於 frozen repo 的檔案：{path}。"
+    ),
+    "plan.bad_test_target": (
+        "plan 的 test_targets 必須是 tests/ 下的 repo-relative 路徑"
+        "（tests/agent/** 允許尚不存在，其餘必須存在）：{path}。"
+    ),
 }
 
 

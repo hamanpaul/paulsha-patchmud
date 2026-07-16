@@ -278,7 +278,7 @@
 - Consumes: `Action` 家族、`ProbeResults`、workspace 檔案 hash。
 - Produces: `StrategyEnforcer(loadout: Loadout)`、`.check(action, state) -> Verdict(legal: bool, reason)`、`.on_probe_results(results)`（追蹤 valid red）、`.tdd_state -> TddState(red_nodeids, red_file_hashes, compliant)`、`.reviewer_gate_satisfied -> bool`、`.observed_tdd_workflow -> bool`；`validate_plan(yaml_text, card) -> PlanArtifact | PlanError`（§6.3 逐條）。
 
-- [ ] **Step 1: RED（gaming 向量全覆蓋）** —
+- [x] **Step 1: RED（gaming 向量全覆蓋）** —
   ```python
   def test_assert_false_never_compliant():
       e = enforcer(T=1)
@@ -292,8 +292,8 @@
   ```
   另鎖定：P1 先 PATCH → illegal、plan 空列表/漏 MAIN id → `PlanError`（F7）；T1 下 `error` 態不算 red（import error 案例）；R1 空 diff review 不滿足 gate、合格 review（非空 diff + schema-valid + 已 render）後 COMMIT 合法（F8）；T0 自發 red-first → `observed_tdd_workflow=True` 且一切合法（F5）；P0/T0/R0 對應 PLAY/SUMMON illegal。
   Run: `python3 -m pytest -q tests/engine/test_strategy.py tests/engine/test_plan_schema.py`；Expected: FAIL。
-- [ ] **Step 2–3:** 實作 → PASS。
-- [ ] **Step 4:** Commit: `feat(engine): loadout enforcement with hardened tdd/plan/review gates`。
+- [x] **Step 2–3:** 實作 → PASS。
+- [x] **Step 4:** Commit: `feat(engine): loadout enforcement with hardened tdd/plan/review gates`。
 
 ---
 
