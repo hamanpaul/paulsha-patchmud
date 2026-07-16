@@ -215,10 +215,10 @@
 **Interfaces:**
 - Produces: `ModelAdapter.complete(messages: list[dict]) -> AdapterResponse(text: str, usage_raw: dict, wall_ms: int)`；`ScriptedAdapter(replies: list[str])` 依序回放；HTTP adapters 以注入的 transport callable 測試（不打真網路）。
 
-- [ ] **Step 1: RED** — 鎖定：兩個 HTTP adapter 對 fake transport 的 request 組裝（model、messages、max_tokens）與 usage_raw 原樣透傳（mapping 是 ledger 的事，adapter 不拆）；`ScriptedAdapter` 耗盡 replies → raise。
+- [x] **Step 1: RED** — 鎖定：兩個 HTTP adapter 對 fake transport 的 request 組裝（model、messages、max_tokens）與 usage_raw 原樣透傳（mapping 是 ledger 的事，adapter 不拆）；`ScriptedAdapter` 耗盡 replies → raise。
   Run: `python3 -m pytest -q tests/adapters/`；Expected: FAIL。
-- [ ] **Step 2–3:** 實作 → PASS。
-- [ ] **Step 4:** Commit: `feat(adapters): anthropic/openai-compatible/scripted adapters`。
+- [x] **Step 2–3:** 實作 → PASS。
+- [x] **Step 4:** Commit: `feat(adapters): anthropic/openai-compatible/scripted adapters`。
 
 ---
 
