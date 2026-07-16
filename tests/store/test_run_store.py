@@ -20,6 +20,7 @@ import yaml
 from patchmud.store.run_store import RunStore
 from patchmud.store.schemas import (
     EVENT_SCHEMA_VERSION,
+    RESULT_SCHEMA_VERSION,
     RUN_SCHEMA_VERSION,
     StoreError,
 )
@@ -123,6 +124,26 @@ class TestCreate:
         config = make_config(encounter, encounter_dir=str(tmp_path / "nowhere"))
         with pytest.raises(StoreError):
             RunStore.create(config, runs_root=tmp_path / "runs")
+
+    def test_create_rejects_foreign_schema_version(self, tmp_path, encounter):
+        """caller 自帶外來 schema_version 不得靜默覆寫 store 版本戳（fail-early）。
+
+        否則 run.yaml 寫入當下零錯誤，事後 open / archive 全部 StoreError，
+        整場 run 永久不可讀不可封存（fail-late 資料喪失）。
+        """
+        config = make_config(encounter, schema_version=999)
+        with pytest.raises(StoreError):
+            RunStore.create(config, runs_root=tmp_path / "runs")
+        # fail-early：不得留下半成品 run 目錄
+        assert not (tmp_path / "runs" / "run-0001").exists()
+
+    def test_create_accepts_matching_schema_version(self, tmp_path, encounter):
+        """與 store 版本一致的 schema_version 無害，比照 validate_new_event。"""
+        config = make_config(encounter, schema_version=RUN_SCHEMA_VERSION)
+        store = RunStore.create(config, runs_root=tmp_path / "runs")
+        data = yaml.safe_load((store.run_dir / "run.yaml").read_text(encoding="utf-8"))
+        assert data["schema_version"] == RUN_SCHEMA_VERSION
+        RunStore.open(store.run_dir)  # 寫出的 run.yaml 必須可重開
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +262,31 @@ class TestWriteResult:
         store.write_result({"power_total": 72})
         with pytest.raises(StoreError):
             store.write_result({"power_total": 99})
+
+    def test_write_result_rejects_foreign_schema_version(self, store):
+        """caller 自帶外來 schema_version 必須拒收，不得毒化一次性 result.yaml。
+
+        result.yaml 寫入即不可覆寫；若外來版本落盤，replay fail-closed 必拒
+        且無法修復，並會被 archive 靜默打包。
+        """
+        with pytest.raises(StoreError):
+            store.write_result({"schema_version": 999, "power_total": 72})
+        # 拒收不得消耗一次性寫入額度：合法 result 仍可落盤
+        assert not (store.run_dir / "result.yaml").exists()
+        store.write_result({"power_total": 72})
+        data = yaml.safe_load(
+            (store.run_dir / "result.yaml").read_text(encoding="utf-8")
+        )
+        assert data["schema_version"] == RESULT_SCHEMA_VERSION
+        assert data["power_total"] == 72
+
+    def test_write_result_accepts_matching_schema_version(self, store):
+        """與 store 版本一致的 schema_version 無害，比照 validate_new_event。"""
+        store.write_result({"schema_version": RESULT_SCHEMA_VERSION, "power_total": 5})
+        data = yaml.safe_load(
+            (store.run_dir / "result.yaml").read_text(encoding="utf-8")
+        )
+        assert data["schema_version"] == RESULT_SCHEMA_VERSION
 
 
 # ---------------------------------------------------------------------------

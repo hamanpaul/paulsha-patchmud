@@ -26,6 +26,7 @@ from patchmud.store.schemas import (
     RUN_SCHEMA_VERSION,
     StoreError,
     validate_new_event,
+    validate_new_result,
     validate_run_config,
     validate_run_record,
     validate_stored_event,
@@ -131,8 +132,7 @@ class RunStore:
     # -- result ------------------------------------------------------------
 
     def write_result(self, result: dict) -> None:
-        if not isinstance(result, dict):
-            raise StoreError("result 必須是 dict")
+        validate_new_result(result)
         dest = self.run_dir / _RESULT_FILE
         if dest.exists():
             raise StoreError(f"result.yaml 已存在，不可覆寫：{dest}")

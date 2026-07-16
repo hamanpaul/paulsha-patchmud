@@ -28,9 +28,18 @@ class StoreError(ValueError):
 
 
 def validate_run_config(config: Any) -> None:
-    """run_config 必備欄位驗證（create 時 fail-closed）。"""
+    """run_config 必備欄位驗證（create 時 fail-closed）。
+
+    ``schema_version`` 由 store 配發；caller 自帶外來版本會靜默覆寫版本戳，
+    使 run.yaml 寫入當下零錯誤、事後永久不可讀不可封存，故比照
+    ``validate_new_event`` 在寫入前拒絕。
+    """
     if not isinstance(config, dict):
         raise StoreError("run_config 必須是 dict")
+    if "schema_version" in config and config["schema_version"] != RUN_SCHEMA_VERSION:
+        raise StoreError(
+            f"run_config schema_version 不符：{config['schema_version']!r}"
+        )
     for key in REQUIRED_RUN_CONFIG_KEYS:
         value = config.get(key)
         if not isinstance(value, str) or not value:
@@ -46,6 +55,20 @@ def validate_run_record(record: Any) -> None:
             f"run.yaml schema_version 不符：{record.get('schema_version')!r}"
         )
     validate_run_config(record)
+
+
+def validate_new_result(result: Any) -> None:
+    """write_result 輸入驗證：``schema_version`` 由 store 配發，外來版本拒收。
+
+    result.yaml 一次寫入即不可覆寫；外來版本一旦落盤即毒化無法修復，
+    並會被 archive 靜默打包成 replay fail-closed 必拒的封存。
+    """
+    if not isinstance(result, dict):
+        raise StoreError("result 必須是 dict")
+    if "schema_version" in result and result["schema_version"] != RESULT_SCHEMA_VERSION:
+        raise StoreError(
+            f"result schema_version 不符：{result['schema_version']!r}"
+        )
 
 
 def validate_new_event(event: Any) -> None:
