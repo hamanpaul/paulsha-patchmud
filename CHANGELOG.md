@@ -7,6 +7,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- **pytest 移入 runtime dependencies**：引擎在沙箱內執行 probe 需要 pytest；先前只列在 `[test]` extras 導致 pipx 安裝的 CLI `score-diff` fail-closed（找不到 pytest）。e2e 驗證：reference patch → clear=1 power=97、空 diff → clear=0。
+
 ### Added
 - **MVP milestone A（離線評分核心）**：
   - Task 1 deck 契約與 fixture 物化——`IssueCard` frozen dataclass（spec §4.2 全欄位）、`load_card` fail-closed schema 驗證（缺必填欄位／`expected_paths ⊄ allowed_paths`／public-hidden 路徑重疊／未知 `schema_version` → `DeckError`）、`materialize_repo` deterministic 物化（固定 author、epoch 0 timestamp、單一 initial commit、hidden 資產永不進 worktree）、`tests/fixtures/mini_encounter` 最小 encounter fixture（含 hidden probe、`reference.patch`、`reference_timings.yaml`、`provenance.yaml`）。
