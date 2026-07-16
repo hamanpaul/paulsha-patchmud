@@ -25,7 +25,7 @@ import pytest
 from patchmud.deck.loader import load_card
 from patchmud.deck.materialize import materialize_repo
 from patchmud.evaluator.evaluate import EvaluatorError, FinalEvaluation, evaluate_final
-from patchmud.evaluator.gates import COMPAT_BREAK_CAP
+from patchmud.evaluator.gates import COMPAT_BREAK_CAP, CRITICAL_FAIL_UTILITY_CAP
 from patchmud.sandbox.isolate import Execution, IsolationRunner
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "mini_encounter"
@@ -64,6 +64,76 @@ XML_ONE_FAIL_3 = textwrap.dedent(
 RUFF_CLEAN = Execution(
     exit_code=0, stdout="[]", stderr="", wall_ms=5, cpu_ms=3, timed_out=False
 )
+
+#: pytest hook 將任何 `failed` case 竄改為 `passed`——hidden probe 偽綠的核心攻擊。
+FORGE_HOOK = textwrap.dedent(
+    '''
+
+    import pytest
+
+
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_runtest_makereport(item, call):
+        outcome = yield
+        rep = outcome.get_result()
+        if rep.when == "call" and rep.outcome == "failed":
+            rep.outcome = "passed"
+    '''
+)
+
+_GIT_ENV = {
+    "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+    "GIT_CONFIG_GLOBAL": os.devnull,
+    "GIT_CONFIG_SYSTEM": os.devnull,
+}
+
+
+def _clone(frozen, dest: Path) -> Path:
+    subprocess.run(
+        ["git", "clone", "--quiet", str(frozen.path), str(dest)],
+        env=_GIT_ENV,
+        check=True,
+        capture_output=True,
+    )
+    return dest
+
+
+def _forge_conftest_diff(frozen, tmp_path: Path) -> str:
+    """只竄改 root `conftest.py`（注入 forge hook），SUT 保持未修。"""
+    clone = _clone(frozen, tmp_path / "forge")
+    conftest = clone / "conftest.py"
+    conftest.write_text(conftest.read_text(encoding="utf-8") + FORGE_HOOK, encoding="utf-8")
+    diff = subprocess.run(
+        ["git", "-C", str(clone), "diff"],
+        env=_GIT_ENV,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "pytest_runtest_makereport" in diff
+    return diff
+
+
+def _harness_tamper_diff(frozen, tmp_path: Path) -> str:
+    """竄改 root conftest.py + 新增 agent 控制的 harness 設定檔（pytest.ini、子目錄 conftest）。"""
+    clone = _clone(frozen, tmp_path / "tamper")
+    conftest = clone / "conftest.py"
+    conftest.write_text(conftest.read_text(encoding="utf-8") + FORGE_HOOK, encoding="utf-8")
+    (clone / "pytest.ini").write_text("[pytest]\naddopts = -p evil\n", encoding="utf-8")
+    (clone / "src" / "conftest.py").write_text("raise SystemExit(0)\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "-C", str(clone), "add", "-A"],
+        env=_GIT_ENV,
+        check=True,
+        capture_output=True,
+    )
+    return subprocess.run(
+        ["git", "-C", str(clone), "diff", "--cached"],
+        env=_GIT_ENV,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
 
 
 class FakeEvalRunner:
@@ -255,6 +325,56 @@ class TestScoringWiring:
 
 
 # ---------------------------------------------------------------------------
+# unit：harness 竄改中和（fake runner，確定性；無需真 namespace）
+# ---------------------------------------------------------------------------
+
+
+class TestHarnessTamperNeutralized:
+    """evaluator 在跑 hidden/compat probes 前，必以 deck 原始 bytes 中和 harness 設定檔。
+
+    agent 的 final diff 可觸及 checkout 內任何非保護區檔案（root conftest.py、
+    pytest.ini、子目錄 conftest…）；這些都是 pytest 自動載入的 harness，能偽造
+    probe 判定。evaluator 必須在探測前還原 deck 原始 harness、移除 agent 新增者。
+    """
+
+    def test_tampered_conftest_restored_before_probes(self, card, frozen, tmp_path):
+        diff = _harness_tamper_diff(frozen, tmp_path)
+        deck_conftest = (FIXTURE / "repo" / "conftest.py").read_bytes()
+        seen: list[bytes | None] = []
+
+        class CapturingRunner(FakeEvalRunner):
+            def run(self, argv: list[str], cwd: Path, timeout_s: float) -> Execution:
+                if any(a.startswith("--junitxml=") for a in argv):  # 只在 probe 執行時取樣
+                    p = Path(cwd) / "conftest.py"
+                    seen.append(p.read_bytes() if p.exists() else None)
+                return super().run(argv, cwd, timeout_s)
+
+        _evaluate(card, frozen, diff, CapturingRunner(), tmp_path)
+
+        # 每次 probe 執行時，root conftest 都已還原為 deck 原始 bytes
+        assert seen and all(s == deck_conftest for s in seen)
+
+    def test_agent_added_harness_config_removed(self, card, frozen, tmp_path):
+        diff = _harness_tamper_diff(frozen, tmp_path)
+
+        removed: dict[str, bool] = {}
+
+        class CheckingRunner(FakeEvalRunner):
+            def run(self, argv: list[str], cwd: Path, timeout_s: float) -> Execution:
+                if any(a.startswith("--junitxml=") for a in argv):
+                    removed["pytest.ini"] = not (Path(cwd) / "pytest.ini").exists()
+                    removed["src/conftest.py"] = not (
+                        Path(cwd) / "src" / "conftest.py"
+                    ).exists()
+                return super().run(argv, cwd, timeout_s)
+
+        _evaluate(card, frozen, diff, CheckingRunner(), tmp_path)
+
+        # agent 新增的 harness 設定檔在探測時已不存在（deck 未宣告 → 移除）
+        assert removed == {"pytest.ini": True, "src/conftest.py": True}
+
+
+# ---------------------------------------------------------------------------
 # integration：mini_encounter（真 bwrap；無能力時 skip）
 # ---------------------------------------------------------------------------
 
@@ -336,6 +456,31 @@ class TestMiniEncounterIntegration:
         # perf 判定以量測當下值封存（供 L1 重算）
         assert result.power.perf_judgments[0].probe_id == HIDDEN_PROBE
         assert result.power.perf_judgments[0].wall_ms > 0
+
+    def test_conftest_forge_cannot_fake_hidden_pass(
+        self, real_capabilities, card, frozen, tmp_path
+    ):
+        """真 bwrap：SUT 未修、只用 forge conftest 想偽造 hidden 綠 → 必被中和。
+
+        finding #1 的 PROOF 情境：`pytest_runtest_makereport` 把 failed 改 passed。
+        修正後 evaluator 於探測前還原 deck 原始 conftest，hidden probe 真的執行、
+        真的紅，critical_pass=False，Power 不被偽造抬高。
+        """
+        diff = _forge_conftest_diff(frozen, tmp_path)
+        result = evaluate_final(
+            card,
+            frozen,
+            diff,
+            _runner_factory,
+            encounter_dir=FIXTURE,
+            checkout_dir=tmp_path / "eval",
+            pytest_argv=_sandbox_pytest_argv(),
+        )
+        # hidden probe 是 assertion 級失敗（SUT 未修），forge hook 已失效
+        assert result.probe_outcomes[HIDDEN_PROBE].status == "failed"
+        assert result.gates.critical_pass is False
+        assert result.power.functional == 0
+        assert result.power.total <= CRITICAL_FAIL_UTILITY_CAP
 
     def test_broken_api_diff_power_le_50(
         self, real_capabilities, card, frozen, tmp_path

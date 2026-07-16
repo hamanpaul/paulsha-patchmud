@@ -20,11 +20,34 @@ from typing import Callable, Literal
 
 from patchmud.deck.materialize import FrozenRepo
 
-__all__ = ["ApplyResult", "DiffStats", "Workspace", "WorkspaceError"]
+__all__ = [
+    "ApplyResult",
+    "DiffStats",
+    "HARNESS_CONFIG_NAMES",
+    "Workspace",
+    "WorkspaceError",
+]
 
 PROTECTED_PREFIXES: tuple[str, ...] = ("tests/public/", "tests/starter/", "benchmark/")
 _PROTECTED_DIRS: tuple[str, ...] = ("tests/public", "tests/starter", "benchmark")
 _TEST_PREFIX = "tests/agent/"
+
+#: pytest / Python 於啟動與 collection 時自動載入的 harness 設定檔名。任一被
+#: agent 竄改都能偽造 probe 判定（`conftest.py` hook、ini/toml/cfg 的 addopts
+#: 注入外掛、`sitecustomize.py` 於 import 時執行），故視同唯讀保護區——production
+#: patch 一律拒收（spec §7 杜絕改測試過關）。evaluator 另於獨立 checkout 以 deck
+#: 原始 bytes 中和（見 evaluate.py），兩層防禦。
+HARNESS_CONFIG_NAMES: frozenset[str] = frozenset(
+    {
+        "conftest.py",
+        "pytest.ini",
+        "tox.ini",
+        "setup.cfg",
+        "pyproject.toml",
+        "sitecustomize.py",
+        "usercustomize.py",
+    }
+)
 
 _FIXED_IDENTITY_NAME = "PatchMUD Engine"
 _FIXED_IDENTITY_EMAIL = "engine@patchmud.invalid"
@@ -195,6 +218,8 @@ class Workspace:
                 for prefix in PROTECTED_PREFIXES:
                     if p.startswith(prefix):
                         return f"production patch 不得觸及保護區：{p}"
+                if pure.name in HARNESS_CONFIG_NAMES:
+                    return f"production patch 不得觸及 harness 設定檔：{p}"
         return None
 
     def _track_revert(self, diff: str) -> None:

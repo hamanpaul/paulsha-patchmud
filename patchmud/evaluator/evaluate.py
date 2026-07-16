@@ -50,7 +50,7 @@ from patchmud.sandbox.probes import (
     ProbeResults,
     ProbeSuite,
 )
-from patchmud.sandbox.workspace import PROTECTED_PREFIXES
+from patchmud.sandbox.workspace import HARNESS_CONFIG_NAMES, PROTECTED_PREFIXES
 
 __all__ = ["EvaluatorError", "FinalEvaluation", "evaluate_final"]
 
@@ -179,7 +179,14 @@ class _EvaluatorCheckout:
         return self._worktree
 
     def restore_protected(self) -> None:
-        """以 deck 原始 bytes 還原保護區（plan invariant 2）。"""
+        """以 deck 原始 bytes 還原保護區與 harness 設定檔（plan invariant 2、§7）。
+
+        除三個保護區目錄外，另中和 pytest / Python 自動載入的 harness 設定檔
+        （`conftest.py`、`pytest.ini`、`pyproject.toml`、`tox.ini`、`setup.cfg`、
+        `sitecustomize.py`…）：deck 宣告者還原原始 bytes、agent 於 final diff 新增
+        者一律移除。否則 agent 可在保護區外的 auto-loaded 設定檔注入 hook（例如
+        `pytest_runtest_makereport` 將 failed 改 passed）偽造 hidden probe 判定。
+        """
         deck_repo = self._encounter_dir / "repo"
         for prefix in PROTECTED_PREFIXES:
             rel = prefix.rstrip("/")
@@ -189,6 +196,34 @@ class _EvaluatorCheckout:
                 shutil.rmtree(dst)
             if src.is_dir():
                 shutil.copytree(src, dst)
+        self._neutralize_harness_config(deck_repo)
+
+    def _neutralize_harness_config(self, deck_repo: Path) -> None:
+        """checkout 內所有 harness 設定檔 → deck 原始 bytes 或（agent 新增者）移除。"""
+        deck_files: dict[str, Path] = {}
+        for src in deck_repo.rglob("*"):
+            if ".git" in src.parts:
+                continue
+            if src.is_file() and src.name in HARNESS_CONFIG_NAMES:
+                deck_files[src.relative_to(deck_repo).as_posix()] = src
+
+        for dst in list(self._worktree.rglob("*")):
+            if ".git" in dst.parts:
+                continue
+            if not dst.is_file() or dst.name not in HARNESS_CONFIG_NAMES:
+                continue
+            rel = dst.relative_to(self._worktree).as_posix()
+            deck_src = deck_files.get(rel)
+            if deck_src is not None:
+                shutil.copyfile(deck_src, dst)  # deck 宣告 → 還原原始 bytes
+            else:
+                dst.unlink()  # agent 新增 → 移除
+
+        for rel, src in deck_files.items():  # deck 宣告但被 agent 刪除 → 補回
+            dst = self._worktree / rel
+            if not dst.exists():
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(src, dst)
 
 
 def _clone_frozen(frozen: FrozenRepo, checkout: Path) -> None:

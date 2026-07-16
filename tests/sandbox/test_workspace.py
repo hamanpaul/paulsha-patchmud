@@ -115,6 +115,32 @@ class TestApply:
         assert ws.apply_patch(evil, kind="production").rejected
         assert not (ws.worktree / ".git/hooks/pwn").exists()
 
+    def test_production_patch_to_harness_config_rejected(self, ws: Workspace):
+        """harness 設定檔（pytest auto-load）是改測試過關的側門，production patch 必拒。
+
+        root `conftest.py` 被 pytest 自動載入；`pytest.ini` / `pyproject.toml` /
+        `tox.ini` / `setup.cfg` 的 addopts、`sitecustomize.py` 於 import 時執行——
+        任一都能偽造 probe 判定，故 kind=production 一律拒收（spec §7 杜絕改測試過關）。
+        """
+        before = (ws.worktree / "conftest.py").read_bytes()
+        tamper = make_patch(
+            ws.worktree, lambda c: _append_lines(c / "conftest.py", 1, "hook")
+        )
+        res = ws.apply_patch(tamper, kind="production")
+        assert res.rejected and res.reason
+        assert (ws.worktree / "conftest.py").read_bytes() == before
+
+        def add_config(name: str):
+            def _mutate(c: Path):
+                (c / name).write_text("[pytest]\naddopts = -p evil\n")
+
+            return _mutate
+
+        for name in ("pytest.ini", "pyproject.toml", "tox.ini", "setup.cfg", "sitecustomize.py"):
+            diff = make_patch(ws.worktree, add_config(name))
+            assert ws.apply_patch(diff, kind="production").rejected, name
+            assert not (ws.worktree / name).exists(), name
+
 
 class TestProtectedRestore:
     def test_restore_protected_from_deck_bytes(self, ws: Workspace):
