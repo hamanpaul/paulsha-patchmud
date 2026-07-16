@@ -62,6 +62,9 @@ def make_card(
     perf_points: int = 5,
     timeout_factor: float = 3.0,
     card_compat_probes: tuple[str, ...] = (API,),
+    regression_probes: tuple[RegressionProbe, ...] = (
+        RegressionProbe(path="tests/starter/"),
+    ),
 ) -> IssueCard:
     rubric = PowerRubric(
         functional=FunctionalRubric(
@@ -97,7 +100,7 @@ def make_card(
             PublicRequirement(id="MAIN-1", text="t", probe="tests/public/test_main.py"),
         ),
         critical_requirements=(CriticalRequirement(id="CR-1", hidden_probe=CR1),),
-        regression_probes=(RegressionProbe(path="tests/starter/"),),
+        regression_probes=tuple(regression_probes),
         compat_probes=tuple(CompatProbe(probe=p) for p in card_compat_probes),
         power_rubric=rubric,
         reference_cost=None,

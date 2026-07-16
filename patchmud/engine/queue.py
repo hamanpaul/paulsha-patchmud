@@ -23,7 +23,7 @@ from typing import Literal, Mapping, Sequence
 from patchmud.deck.model import IssueCard, PublicRequirement
 from patchmud.engine.protocol import Action, Patch, Triage
 from patchmud.evaluator.power import FileChange
-from patchmud.sandbox.probes import ProbeOutcome, ProbeResults
+from patchmud.sandbox.probes import ProbeOutcome, ProbeResults, smoke_probe_id
 
 __all__ = [
     "DEFAULT_CHURN_THRESHOLD",
@@ -165,13 +165,14 @@ class IssueQueue:
         self._churn_seq = 0
         self._duplicate_seq = 0
 
-        # regression／compat probe 監看集合（id 與 ProbeSuite.from_card 對齊）
+        # regression／compat probe 監看集合（id 與 ProbeSuite.from_card 同源：
+        # smoke id 一律經 smoke_probe_id 建構，杜絕格式漂移的 fail-open）
         watched: list[str] = []
         for rp in card.regression_probes:
             if rp.path is not None:
                 watched.append(rp.path)
             elif rp.smoke is not None:
-                watched.append("smoke:" + " ".join(rp.smoke))
+                watched.append(smoke_probe_id(rp.smoke))
         watched.extend(cp.probe for cp in card.compat_probes)
         self._watched: tuple[str, ...] = tuple(dict.fromkeys(watched))
         self._open_regression: dict[str, str] = {}  # probe_id -> item_id

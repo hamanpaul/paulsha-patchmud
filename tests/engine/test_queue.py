@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import pytest
 
+from patchmud.deck.model import RegressionProbe
 from patchmud.engine.protocol import Patch, Triage
 from patchmud.engine.queue import (
     DiffGeometry,
@@ -28,7 +29,7 @@ from patchmud.engine.queue import (
     QueueError,
 )
 from patchmud.evaluator.power import FileChange
-from patchmud.sandbox.probes import ProbeResults
+from patchmud.sandbox.probes import ProbeResults, ProbeSuite
 from tests.evaluator.helpers import make_card, make_outcome
 
 # make_card 綁定的 public probe id（見 tests/evaluator/helpers.py）
@@ -108,14 +109,21 @@ class TestReopenAndClaims:
 
     def test_failed_claim_counts_without_reopen(self) -> None:
         q = queue_with_main_red()
-        q.update(results(main="failed"), NO_DIFF, patch_claiming("MAIN-1"))
+        d = q.update(results(main="failed"), NO_DIFF, patch_claiming("MAIN-1"))
         assert q.counters.failed_claims == 1 and q.counters.reopen == 0
+        # 宣告 open item 是最常見的正當 PATCH 路徑：絕不 spawn DUPLICATE
+        # （§8.1 只認「已 resolved／已關閉」引用；負向邊界）
+        assert d.spawned == ()
+        assert q.counters.duplicate == 0
 
     def test_claim_that_resolves_is_not_failed_claim(self) -> None:
         q = queue_with_main_red()
         d = q.update(results(main="passed"), NO_DIFF, patch_claiming("MAIN-1"))
         assert [i.item_id for i in d.resolved] == ["MAIN-1"]
         assert q.counters.failed_claims == 0
+        # 宣告當下 item 仍 open（resolve 在本次 update 才發生）：不生 DUPLICATE
+        assert d.spawned == ()
+        assert q.counters.duplicate == 0
 
     def test_reopened_resolves_and_can_reopen_again(self) -> None:
         q = queue_with_main_red()
@@ -162,6 +170,68 @@ class TestRegression:
         d3 = q.update(results(reg="passed"), NO_DIFF, Patch())
         assert [i.item_id for i in d3.resolved] == [item.item_id]
         assert q.counters.regression == 1
+
+
+# ---------------------------------------------------------------------------
+# smoke 型 regression probe：watched id 與 ProbeSuite.from_card 是同一契約
+# ---------------------------------------------------------------------------
+
+SMOKE_CMD = ("python3", "-c", "import app")
+#: 跨模組 id 格式 pin（event log／replay 穩定性）；ProbeSuite 與 queue 必須同值
+SMOKE_ID = "smoke:python3 -c import app"
+
+
+class _NullRunner:
+    """ProbeSuite 建構用 stub；unit test 永不執行 probe（invariant 3）。"""
+
+    def run(self, argv, cwd, timeout_s):  # pragma: no cover
+        raise AssertionError("unit test 不得執行 probe")
+
+
+def make_smoke_card():
+    return make_card(
+        regression_probes=(
+            RegressionProbe(path="tests/starter/"),
+            RegressionProbe(smoke=SMOKE_CMD),
+        )
+    )
+
+
+class TestSmokeRegressionContract:
+    def test_smoke_watched_id_matches_probe_suite_and_detects_regression(
+        self,
+    ) -> None:
+        # queue 的 watched id 必須與 ProbeSuite.from_card 產出的 probe id
+        # 同一格式；漂移時 smoke probe 的 REGRESSION 偵測會靜默失效
+        # （§8.1 規則 fail-open），故以 suite 產出的 id 當 baseline 鍵鎖端到端。
+        card = make_smoke_card()
+        suite = ProbeSuite.from_card(card, _NullRunner())
+        assert SMOKE_ID in suite.probe_ids  # 格式字面值 pin
+        baseline = ProbeResults(
+            {
+                pid: make_outcome("failed" if pid == MAIN_PROBE else "passed")
+                for pid in suite.probe_ids
+            }
+        )
+        q = IssueQueue.from_card(card, baseline)  # id 不對齊 → QueueError
+        smoke_red = ProbeResults(
+            {
+                pid: make_outcome(
+                    "failed" if pid in (MAIN_PROBE, SMOKE_ID) else "passed"
+                )
+                for pid in suite.probe_ids
+            }
+        )
+        d = q.update(smoke_red, NO_DIFF, Patch())
+        assert [i.type for i in d.spawned] == ["REGRESSION"]
+        assert d.spawned[0].probe == SMOKE_ID
+        assert q.counters.regression == 1
+
+    def test_baseline_missing_smoke_probe_fail_closed(self) -> None:
+        # smoke regression probe 是 watched 集合一員：baseline 缺它必須
+        # QueueError（否則 watched 掉隊 → REGRESSION 偵測 fail-open）。
+        with pytest.raises(QueueError):
+            IssueQueue.from_card(make_smoke_card(), results())
 
 
 # ---------------------------------------------------------------------------
@@ -260,6 +330,31 @@ class TestDuplicate:
         assert q.counters.duplicate == 1
         # 引用已 resolved item 不是 failed claim
         assert q.counters.failed_claims == 0
+
+    def test_patch_targeting_open_items_never_spawns_duplicate(self) -> None:
+        # §8.1 負向邊界：DUPLICATE 只認已 resolved／已關閉引用。引用 open
+        # item 是正當修復宣告，若也 spawn 會污染 duplicate counter、B_t 與
+        # FloodArea_excess。逐一鎖 open MAIN／REGRESSION／REOPENED。
+        q = queue_with_main_red()
+        d1 = q.update(results(reg="failed"), NO_DIFF, Patch())
+        reg_id = d1.spawned[0].item_id  # open REGRESSION
+        d2 = q.update(
+            results(reg="failed"), NO_DIFF, patch_claiming("MAIN-1", reg_id)
+        )
+        assert all(i.type != "DUPLICATE" for i in d2.spawned)
+        assert q.counters.duplicate == 0
+        # MAIN resolve 後再紅 → open REOPENED；宣告它同樣不生 DUPLICATE
+        q.update(results(main="passed", reg="failed"), NO_DIFF, Patch())
+        d3 = q.update(results(main="failed", reg="failed"), NO_DIFF, Patch())
+        assert [i.type for i in d3.spawned] == ["REOPENED"]
+        reopened_id = d3.spawned[0].item_id
+        d4 = q.update(
+            results(main="failed", reg="failed"),
+            NO_DIFF,
+            patch_claiming(reopened_id),
+        )
+        assert all(i.type != "DUPLICATE" for i in d4.spawned)
+        assert q.counters.duplicate == 0
 
     def test_triage_closes_open_duplicates(self) -> None:
         q = queue_with_main_red()

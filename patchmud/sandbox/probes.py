@@ -30,6 +30,7 @@ __all__ = [
     "ProbeResults",
     "ProbeSuite",
     "Transition",
+    "smoke_probe_id",
 ]
 
 ProbeStatus = Literal["passed", "failed", "error"]
@@ -49,6 +50,16 @@ _DEFAULT_TIMEOUT_S = 120.0
 
 class ProbeError(Exception):
     """probe 套件層錯誤（未知 subset id 等），fail-closed。"""
+
+
+def smoke_probe_id(smoke: Sequence[str]) -> str:
+    """smoke 命令的 probe id。
+
+    跨模組契約的唯一定義：`ProbeSuite.from_card` 產出的 probe id 與
+    `IssueQueue` 的 regression 監看集合（engine/queue.py）都必須經此函數
+    建構，格式漂移會讓 smoke probe 的 REGRESSION 偵測靜默失效（fail-open）。
+    """
+    return "smoke:" + " ".join(smoke)
 
 
 class _Runner(Protocol):
@@ -151,7 +162,7 @@ class ProbeSuite:
             elif rp.smoke is not None:
                 probes.append(
                     Probe(
-                        probe_id="smoke:" + " ".join(rp.smoke),
+                        probe_id=smoke_probe_id(rp.smoke),
                         kind="smoke",
                         smoke=tuple(rp.smoke),
                     )
