@@ -15,6 +15,7 @@
 | 裁判原則 | 排名資料流零 LLM 裁判；reviewer finding 不進 ranked Control（附錄 D F10），只留 post-hoc 分析 | 報告 §3「所有關鍵結果均由 artifact、測試、版本差異與可稽核事件日誌決定」 |
 | 沙箱隔離 | probe / candidate code 一律在 mount+net+pid namespace（bubblewrap 或等效）內執行，bind allowlist 只含 worktree 與唯讀 toolchain | `unshare -rn` 缺 mount namespace，candidate code 可讀 host 上的 hidden 資產（F1）；ranked run 無 namespace 支援即拒絕啟動 |
 | ★ 地端模型經濟性 | MVP 不給地端模型單一數字 CostPerClear 排名；以預註冊成本情境帶（low/mid/high）平行報告 | 地端無 API 價目，填 0 會除零、填 NA 會整排消失（F18）；正式能耗模型 deferred |
+| 中文呈現與可玩性（2026-07-17 goal 增補） | agent-facing 敘事 render、人類觀戰（watch）與親自遊玩（play）介面預設 zh-TW；`render_language` 進 treatment | 使用者目標：看得懂遊戲發生什麼事、能玩、能跑 benchmark 的中文 MUD；語言影響模型表現，必須是 treatment 欄位不可混排（見 §5.4） |
 
 ## 1. 目標與非目標
 
@@ -28,6 +29,7 @@
 4. 以互斥 token ledger 與版本化計價快照計算 run 成本（報告 §5）。
 5. 在終局執行 hidden evaluator，產出 Power、hard gates 與 Control / Economy 分數（報告 §6、§7、§11）。
 6. 執行 forced loadout pilot（4 母題 × 2 變體 × 8 loadouts × N 模型）並輸出研究指標（報告 §13、§15）。
+7. 以 zh-TW 呈現整場遊戲：agent 看到的狀態 render、人類觀戰（`patchmud watch`）與人類親自遊玩（`patchmud play`）都是看得懂的中文 MUD 敘事（§5.4）。
 
 ### 1.2 非目標（MVP 不做）
 
@@ -37,7 +39,7 @@
 - 地端模型正式能耗 / 硬體攤提計算器（見 §10.5 的情境帶替代）。
 - Mutation testing。`mutation_score` 欄位保留為 `NA`。
 - 階層式貝氏三維能力估計與 RQ6「預測穩定性」比較、RQ7 的條件控制迴歸（F20）。MVP 產出原始指標、bootstrap CI 與分析就緒欄位；正式統計方法於 pilot 後 pre-register。
-- 任何 leaderboard 網站 / TUI 前端。MVP 的 frontend 是 CLI 與純文字 render。
+- 任何 leaderboard 網站 / 圖形前端。MVP 的 frontend 是 CLI 與純文字 render；但 zh-TW 觀戰與人類遊玩模式（§5.4）在 MVP 內。
 
 ## 2. 系統架構
 
@@ -192,6 +194,14 @@ reference_cost: null           # C_ref；pilot 後依 §10.4 estimator 填入
 ### 5.3 harness prompt
 
 system prompt 與狀態 render 模板版本化為 `harness_prompt_version`，寫入 run.yaml。每 turn 傳送：系統規則 + issue card 公開部分 + 累積對話 transcript + 當回合狀態 render。完整 transcript 落盤，token 用量按 adapter 回報計量（含 cache 與 billed totals 欄位）。
+
+### 5.4 中文呈現、觀戰與遊玩（2026-07-17 增補）
+
+- **zh-TW render pack**：所有 agent-facing 狀態 render 與引擎回覆訊息（戰報、probe 結果、queue 變化、flood 壓力、錯誤提示）的敘事文字來自版本化 render pack（`patchmud/engine/render_zh_tw.py` 文案表）。命令關鍵字（`LOOK` / `PATCH` / …）、issue item ID 與 artifact 格式維持英文——那是結構化協定；敘事一律中文。例：`[REGRESSION] 真實刪除不再被偵測（tests/starter/test_delete.py 轉紅）`。
+- **語言是 treatment 欄位**：`render_language` 加入 §11 的 treatment tuple；`harness_prompt_version` 包含 render pack 版本。MVP 只出 `zh-TW`；跨語言比較 deferred，不同語言的 run 不得混入同一排行。
+- **`patchmud play`**：`HumanAdapter`（stdin/stdout）取代模型 adapter，人類以同一命令協定親自打一場 encounter。引擎、probe、queue、評分完全同構；token 欄位記 `NA`、成本 `NA`，run 標記 `human: true`，**永不進 ranked 資料與任何聚合指標**。這同時是引擎的手動驗收與 demo 工具。
+- **`patchmud watch <run_dir>`**：離線把 `events.jsonl` 重放成逐回合中文戰報（回合、行動、probe 結果、queue before/after、flood 壓力、成本消耗、終局結算），支援 `--turn N` 跳轉。資料只來自封存 events（與 replay L1 同源），不重新執行任何 probe 或模型呼叫。
+- 觀戰 / 遊玩是純視圖層：不改變任何評分資料流、不新增事件、不觸碰 store 原始檔。
 
 ## 6. Strategy enforcer
 
@@ -376,7 +386,7 @@ MVP 不宣稱地端模型的單一 CostPerClear：
 - `patchmud pilot --deck pilot-v1 --models models.yaml --seed <s>`：展開 encounters × 8 loadouts × models 的 run 矩陣。
 - **排程（F21）**：seed 經 PRNG 決定**完整 run 排程**——整個矩陣的全域執行順序單一隨機排列（encounter、loadout、model 三軸都被打散，非只有 block 內模型順序）。生成的 schedule 在任何 run 開跑前落盤封存（`schedule.yaml` + hash），runner 必須依序執行；provider 限流等執行期偏差記入 run log，不得改變順序。
 - 所有模型共享同一 frozen SHA、同一 harness_prompt_version、同一 probe 命令。
-- treatment 定義 = `(provider, snapshot, reasoning_setting, quantization, serving_stack, harness_prompt_version)`；任一欄不同即不同 treatment（報告 §13.4）。
+- treatment 定義 = `(provider, snapshot, reasoning_setting, quantization, serving_stack, harness_prompt_version, render_language)`；任一欄不同即不同 treatment（報告 §13.4、§5.4）。
 - run registry（JSONL）支援中斷續跑：已完成 run 以 run_id 冪等跳過；重跑同 run_id 必須顯式 `--force` 並保留舊 run 目錄。
 - Pilot 驗收即 Phase 4 校準：依 §10.4 執行 estimator，產出 `reference_cost`、`difficulty_scale`、τ、EuTB budget 並凍結。
 
@@ -435,6 +445,12 @@ MVP 不宣稱地端模型的單一 CostPerClear：
 - F14 情境（1k token 造 flood、9k token 修 flood）：FTR = 0.9（start-of-turn 語意），且 create/repair 分欄正確。
 - agent 從不 RUN_TEST 直接 COMMIT：引擎終局自動跑全套 public + hidden，Clear 依 §5.2 唯一公式判定（F3）。
 - replay L1 重算的 FloodArea / Control / Power 與封存值位元一致；perf probe 不參與 L1 重執行（F2）。
+
+### 中文呈現與可玩性
+
+- render golden tests 以 zh-TW 文案鎖定；render pack 版本變更必然帶動 `harness_prompt_version` 變更。
+- `patchmud play` 可用 scripted stdin 完整打完 mini encounter 並產出 result.yaml（`human: true`）；ranked 聚合對 human run 一律拒收。
+- `patchmud watch` 對封存 run 輸出逐回合中文戰報；執行期間 `IsolationRunner` 零呼叫（純視圖）。
 
 ### Pilot
 

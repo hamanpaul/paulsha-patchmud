@@ -20,6 +20,7 @@
 - `Clear` 只有 §5.2 的唯一布林公式一種算法。
 - 計費一律以 billed totals；互斥 token 欄位不可得記 `NA` 不記 0；NA 聚合傳染（§10.1）。
 - 校準參數（C_ref、D、τ、EuTB B）只能由 `analysis/registered/estimators.yaml` 的 estimator 產出（§10.4）。
+- 敘事文字一律出自 zh-TW render pack；命令關鍵字與 artifact 格式維持英文（§5.4）；`render_language` 進 treatment。
 - 每個 code task 同步更新新 repo 的 `CHANGELOG.md [Unreleased]`；Task 1 建 umbrella entry，之後只在行為實質改變時補充。
 - 每個 task 結束跑 `python3 -m pytest -q` 全綠 + `python3 -m policy_check --repo .` 零 fail 才可 commit claim done。
 
@@ -40,6 +41,7 @@
 | B 回合引擎與策略 | 9–13 | §5、§6 | 真模型可打完一場 encounter |
 | C Flooding 與 metrics | 14–17 | §8、§10.3、§12.2 | Control/效率指標＋兩級 replay |
 | D Pilot | 18–21 | §10.4–10.5、§11、§13 | 8×8×N 矩陣可跑、校準凍結 |
+| E 中文可玩性 | 22–23（Task 10 已含 zh-TW render pack） | §5.4 | 人可親自玩（play）、可觀戰（watch） |
 
 ---
 
@@ -223,13 +225,13 @@
 ### Task 10: 回合協定 parser 與 renderer
 
 **Files:**
-- Create: `patchmud/engine/protocol.py`、`patchmud/engine/render.py`、`patchmud/engine/prompts.py`（`HARNESS_PROMPT_VERSION` 常數與模板）
+- Create: `patchmud/engine/protocol.py`、`patchmud/engine/render.py`、`patchmud/engine/render_zh_tw.py`（zh-TW 文案表）、`patchmud/engine/prompts.py`（`HARNESS_PROMPT_VERSION` 常數與模板，含 render pack 版本）
 - Test: `tests/engine/test_protocol.py`、`tests/engine/test_render.py`
 
 **Interfaces:**
-- Produces: `parse_reply(text) -> Action`（dataclass 家族：`Look/Inspect/PlayPlan/WriteTest/Patch/RunTest/SummonReviewer/Triage/Rollback/Commit`，帶 `target_issues/files/claim/payload`）或 `ParseFailure(hint)`；`render_state(run_state) -> str`（§5.3；含 queue、資源、flood 文案門檻——文案不進分數）。
+- Produces: `parse_reply(text) -> Action`（dataclass 家族：`Look/Inspect/PlayPlan/WriteTest/Patch/RunTest/SummonReviewer/Triage/Rollback/Commit`，帶 `target_issues/files/claim/payload`）或 `ParseFailure(hint)`；`render_state(run_state) -> str`（§5.3、§5.4；敘事 zh-TW、命令關鍵字英文；含 queue、資源、flood 文案門檻——文案不進分數）。
 
-- [ ] **Step 1: RED** — 鎖定：報告 §9.3 格式的合法回覆逐命令解析；缺 `ACTION:` / 未知動作 / PATCH 無 diff 區塊 → `ParseFailure`；render 對固定 run_state fixture 輸出穩定 golden 字串（版本化）。
+- [ ] **Step 1: RED** — 鎖定：報告 §9.3 格式的合法回覆逐命令解析；缺 `ACTION:` / 未知動作 / PATCH 無 diff 區塊 → `ParseFailure`（錯誤提示為 zh-TW）；render 對固定 run_state fixture 輸出穩定 zh-TW golden 字串（版本化，含「回合」「戰場」「洪水壓力」等敘事詞）；文案全部經 `render_zh_tw.py` 查表，`render.py` 內不得出現硬編中文字串。
   Run: `python3 -m pytest -q tests/engine/test_protocol.py tests/engine/test_render.py`；Expected: FAIL。
 - [ ] **Step 2–3:** 實作 → PASS。
 - [ ] **Step 4:** Commit: `feat(engine): reply parser and versioned state renderer`。
@@ -451,6 +453,45 @@
 - [ ] **Step 2:** Run: `python3 -m pytest -q && python3 -m policy_check --repo .`；Expected: 全綠。
 - [ ] **Step 3:** Commit: `test(pilot): full-matrix dry-run acceptance (milestone D)`。
 - [ ] **Step 4:** 之後的真模型 pilot（校準 → 凍結 → 正式）是**營運動作**，不在本 plan：依 spec §11 執行並以 Task 19 calibrate 凍結參數。
+
+---
+
+### Task 22: `patchmud play`——人類親自對局（HumanAdapter）
+
+**Files:**
+- Create: `patchmud/adapters/human.py`
+- Modify: `patchmud/cli.py`（`patchmud play --encounter <dir> --loadout P0T0R0`）
+- Test: `tests/adapters/test_human.py`、`tests/test_play_e2e.py`
+
+**Interfaces:**
+- Consumes: `ModelAdapter` 介面（Task 9）、`run_encounter`（Task 13）。
+- Produces: `HumanAdapter(input_fn=input, output_fn=print)`——`complete(messages)` 先 `output_fn` 最新狀態 render，再讀 `input_fn()` 為回覆；`usage_raw = {}`（ledger 全欄位 `NA`）；`run_encounter` 收到 `human=True` 時在 run.yaml 標記 `human: true`。
+
+- [ ] **Step 1: RED** — 以 scripted `input_fn` 餵完整命令序列打完 `mini_encounter`：run 完成且 result.yaml 有 `human: true`；ledger 全 token 欄位 `NA`、成本 `NA`；`metrics` 聚合函數（Task 15）對含 human run 的集合 raise `HumanRunExcluded`；互動順序正確（先看到 render 再要求輸入）。
+  Run: `python3 -m pytest -q tests/adapters/test_human.py tests/test_play_e2e.py`；Expected: FAIL。
+- [ ] **Step 2:** 實作 `HumanAdapter` 與 `play` 子命令（含 Ctrl-D → 視同 `COMMIT` 的收尾語意）。
+- [ ] **Step 3:** Run 同上；Expected: PASS。
+- [ ] **Step 4:** 手動驗收：真人打一場 `mini_encounter`（這同時是引擎 demo）。
+- [ ] **Step 5:** Commit: `feat(play): human adapter and interactive zh-TW encounter`。
+
+---
+
+### Task 23: `patchmud watch`——逐回合中文戰報 viewer
+
+**Files:**
+- Create: `patchmud/store/watch.py`
+- Modify: `patchmud/cli.py`（`patchmud watch <run_dir> [--turn N]`）
+- Test: `tests/store/test_watch.py`
+
+**Interfaces:**
+- Consumes: `RunStore.load_events()`（Task 6）、zh-TW render pack（Task 10）。
+- Produces: `render_battle_report(events, result) -> str`（全場）與 `render_turn(events, n) -> str`；只讀封存資料。
+
+- [ ] **Step 1: RED** — 對 e2e run 的封存 events 鎖定：輸出含「回合 N」、行動敘述、queue 變化（新增/解決 issue 的中文敘事）、flood 壓力、終局結算段；`--turn N` 只輸出該回合；執行期間 `IsolationRunner` 零呼叫、run 目錄零寫入（spy + mtime 驗證）；文案全部經 render pack 查表。
+  Run: `python3 -m pytest -q tests/store/test_watch.py`；Expected: FAIL。
+- [ ] **Step 2:** 實作。
+- [ ] **Step 3:** Run 同上；Expected: PASS。
+- [ ] **Step 4:** Commit: `feat(watch): turn-by-turn zh-TW battle report viewer`。
 
 ---
 
