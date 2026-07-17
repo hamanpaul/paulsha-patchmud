@@ -1,9 +1,8 @@
 schema_version: 1
 issue_id: state-recovery-v1
-archetype_source: >-
-  改編自 docs/PatchMUD_research_report_zh-TW_v0.2.md 附錄 A 的
-  phantom-removal-v1 範例（狀態機 recovery 母題：暫時性掃描失敗不得誤判為
-  刪除、真實刪除仍須被偵測），非公開題庫改編。
+archetype_source: 改編自 docs/PatchMUD_research_report_zh-TW_v0.2.md 附錄 A 的 phantom-removal-v1
+  範例（狀態機 recovery 母題：暫時性掃描失敗不得誤判為 刪除、真實刪除仍須被偵測），非公開題庫改編。
 published_at: null
-variant_notes: "母題：diff_removed 完全忽略 scan_errors 參數，任何本次掃描讀不到的項目一律誤判為刪除"
-frozen_at: "2026-07-17"
+variant_notes: 母題：diff_removed 完全忽略 scan_errors 參數，任何本次掃描讀不到的項目一律誤判為刪除
+frozen_at: '2026-07-17'
+content_sha256: 80586a49d792d8f9ce447c804d4482cb5d1a1673040e4f8718e241802cdb767b

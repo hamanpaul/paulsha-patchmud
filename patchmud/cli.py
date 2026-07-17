@@ -450,6 +450,51 @@ def _check_provenance_file(encounter_dir: Path) -> None:
     missing = [k for k in _PROVENANCE_REQUIRED_FIELDS if k not in data]
     if missing:
         raise DeckError(f"provenance.yaml 缺欄位：{', '.join(missing)}")
+    # F5：frozen deck drift 偵測——provenance 若 pin 了 content_sha256，
+    # 重算 encounter 內容 hash 並比對；改動 repo/src、hidden 測資或 card 而
+    # 未同步更新 pin 一律 fail（避免 frozen deck 靜默漂移）。
+    pinned = data.get("content_sha256")
+    if pinned is not None:
+        actual = encounter_content_sha256(encounter_dir)
+        if actual != pinned:
+            raise DeckError(
+                f"frozen deck 漂移：{encounter_dir.name} 內容 hash 與 provenance "
+                f"content_sha256 不符（pinned={pinned[:12]}… actual={actual[:12]}…）"
+            )
+
+
+#: content hash 排除項：快取產物、reference_timings（validate-deck 會覆寫）。
+_CONTENT_HASH_EXCLUDE_NAMES = frozenset({"reference_timings.yaml"})
+
+
+def encounter_content_sha256(encounter_dir: Path) -> str:
+    """encounter 的內容指紋（F5）：card.yaml + repo/** + hidden/**（排除快取與
+    reference_timings.yaml）的 sha256，綁死 frozen deck 的授權狀態。"""
+    encounter_dir = Path(encounter_dir)
+    targets: list[Path] = []
+    card = encounter_dir / "card.yaml"
+    if card.is_file():
+        targets.append(card)
+    for sub in ("repo", "hidden"):
+        root = encounter_dir / sub
+        if not root.is_dir():
+            continue
+        for path in root.rglob("*"):
+            if not path.is_file():
+                continue
+            if "__pycache__" in path.parts or path.suffix == ".pyc":
+                continue
+            if path.name in _CONTENT_HASH_EXCLUDE_NAMES:
+                continue
+            targets.append(path)
+    digest = hashlib.sha256()
+    for path in sorted(targets, key=lambda p: p.relative_to(encounter_dir).as_posix()):
+        rel = path.relative_to(encounter_dir).as_posix()
+        digest.update(rel.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
 
 
 def _check_probe_files_exist(card: IssueCard, encounter_dir: Path) -> None:

@@ -1,12 +1,8 @@
 schema_version: 1
 issue_id: state-recovery-v2
-archetype_source: >-
-  母題 state-recovery-v1（改編自研究報告附錄 A phantom-removal-v1 範例）的
-  變體，非公開題庫改編。
+archetype_source: 母題 state-recovery-v1（改編自研究報告附錄 A phantom-removal-v1 範例）的 變體，非公開題庫改編。
 published_at: null
-variant_notes: >-
-  母題以獨立 scan_errors 參數標記暫時性失敗、bug 是「完全忽略該參數」
-  （遺漏防護）；此變體改以 in-band sentinel 值（"UNREACHABLE"）標記，
-  bug 反轉為「過度防護」——把 sentinel 值誤判為需要移除，機制與錯誤方向
-  皆與母題不同。
-frozen_at: "2026-07-17"
+variant_notes: 母題以獨立 scan_errors 參數標記暫時性失敗、bug 是「完全忽略該參數」 （遺漏防護）；此變體改以 in-band sentinel
+  值（"UNREACHABLE"）標記， bug 反轉為「過度防護」——把 sentinel 值誤判為需要移除，機制與錯誤方向 皆與母題不同。
+frozen_at: '2026-07-17'
+content_sha256: d18a891979920537b4a814b1b9db0af13cfae046ebaf6825b38cfe4baeffea39

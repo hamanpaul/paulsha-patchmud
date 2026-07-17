@@ -15,12 +15,18 @@ codex 先自證排除的假問題（有價值的負面結論）：
 | F2 | blocker | `replay_l1` 只驗 snapshot 自洽（`b_t==len(open_items)`），未依規則重建 queue，未比對 Flood/Control/strategy → 「位元一致」不完整 | **確認**：`_queue_trajectory_diffs` 僅自洽檢查 | 修（重建 queue＋比對 flood/control/strategy） |
 | F3 | major | `materialize_repo` 用預設 `shutil.copytree`（解 symlink）→ `repo/x -> ../hidden/ref.patch` 會把 hidden bytes 複製進 worktree | 待驗 | 修（拒 symlink/特殊檔＋materialize 掃描） |
 | F4 | major | public/hidden 隔離只用 `startswith("hidden/")` 未正規化 `..` → `hidden/../repo/tests/public/x.py` 可偽裝 critical hidden probe | 待驗 | 修（deck path 正規化＋root containment） |
-| F5 | major | 缺 `repo_commit`/`public_spec`、無 frozen manifest 綁 hash → 改 `repo/src` 後不被判 drift | 待驗 | 修（encounter manifest 釘 hash） |
-| F6 | major | Task 21 T1 fixer 用永久 `assert False,"red"` 假 red，32 個 T1 fixer run 必 `strategy_violation`，測試只斷言 `clear==1` 未讀 strategy | 待驗 | 修（encounter-specific red→green＋斷言 tdd_compliant） |
-| F7 | major | namespace 不足時整份 128-run `pytest.skip` 仍綠；CI 未裝 bwrap | 待驗（本機有 bwrap，e2e 實跑 267s；codex 沙箱無 → skip） | 修（caps 不足 `pytest.fail`＋CI 裝驗 bwrap） |
-| F8 | major | 8 卡 `runtime_efficiency.probes` 重用 functional critical test，無 workload → 量到 pytest 啟動雜訊且與 functional 重複計分 | 待驗 | 修（獨立 perf probe 含 workload） |
-| F9 | minor | Task 21「kill 中途」在真 wiring 前拋例外，未驗 mid-run partial（unit test 有覆蓋） | 待驗 | 修/接受（unit 已覆蓋，e2e 強化） |
-| F10 | minor | `state-recovery-v1` 需求文字英中混排，其他 7 卡純 zh-TW，每回合顯示給模型 | **確認** | 修（改純 zh-TW） |
+| F5 | major | 缺 frozen manifest 綁 hash → 改 `repo/src`/hidden/card 後不被判 drift | **確認** | **已修**：provenance pin `content_sha256`（card+repo+hidden，排除 reference_timings），validate-deck 重算比對，漂移 fail（`19d0858` 後續 commit） |
+| F6 | major | Task 21 T1 fixer 用永久 `assert False,"red"` 假 red，32 個 T1 fixer run 必 `strategy_violation`，測試只斷言 `clear==1` 未讀 strategy | **確認** | **已修**（`d37ea63`）：fixer WRITE_TEST 鏡射 public MAIN 測試（真 red→green），斷言全 T1 fixer `tdd_compliant=true`/`strategy_violation=false`；128-run e2e 通過 |
+| F7 | major | namespace 不足時整份 128-run `pytest.skip` 仍綠；CI 未裝 bwrap | **確認**（本機有 bwrap 實跑 379s；codex 沙箱無 → skip） | **已修**（`d37ea63`）：acceptance caps 不足 `pytest.fail`（可 env 降級）；CI tests.yml 安裝並驗證 bubblewrap |
+| F8 | major | 8 卡 `runtime_efficiency.probes` 重用 functional critical test，無 workload → 量到 pytest 啟動雜訊且與 functional 重複計分 | **確認** | **scoped 延後**：5 分 runtime 子分數的量測品質問題，不讓 agent 假造 Clear/Power；正式修法需為 8 卡各撰寫獨立 perf workload（含 pinned reference timing），列為 deck 內容硬化 workstream（spec §14） |
+| F9 | minor | Task 21「kill 中途」在真 wiring 前拋例外，未驗 mid-run partial（unit test 有覆蓋） | **確認**（codex 自述 `tests/engine/test_pilot.py` 已有 partial-dir unit test） | **scoped 延後**：真實 mid-run partial 已由 unit test 覆蓋；e2e 只驗 inter-run 續跑冪等。強化 e2e 為 follow-up（spec §14） |
+| F10 | minor | `state-recovery-v1` 需求文字英中混排，其他 7 卡純 zh-TW，每回合顯示給模型 | **確認** | **已修**（`c1e800f`） |
+
+## 最終處置摘要
+
+- **10 條全數確認成立**（codex 自證排除了「只改名」「reference patch 過不了」等假問題）。
+- **已修 8 條**：F1、F2（兩個 blocker）、F3、F4、F5、F6、F7、F10——涵蓋 codex verdict 點名的**全部三個「最危險」項**（F1 隔離、F2 replay、F6/F7 假綠）。
+- **scoped 延後 2 條**：F8（perf probe 量測品質，需 8 卡 workload 撰寫）、F9（e2e mid-run 保真度，unit test 已覆蓋真實情境）——皆非可被 agent 利用取得不當 Clear/Power 的洞，列入 spec §14 deferred workstream。
 
 ## Verdict（codex）
 

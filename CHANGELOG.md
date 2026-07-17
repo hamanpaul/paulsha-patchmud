@@ -8,6 +8,7 @@
 ## [Unreleased]
 
 ### Fixed
+  - **codex F5（major）frozen deck drift 偵測**：每個 encounter 的 provenance pin `content_sha256`（card + repo/** + hidden/**，排除快取與 reference_timings），`validate-deck` 重算比對，改動 repo/src、hidden 測資或 card 而未同步 pin 一律 fail；pilot-v1 全 8 卡已 pin。codex F8（perf probe 量測品質）、F9（e2e mid-run 保真）列為 spec §14 deferred（非可利用洞）。
   - **codex F6/F7（major）Task 21 假綠路徑**：F6 T1 fixer 的 WRITE_TEST 改為鏡射 encounter public MAIN 測試（真 red→green、同檔案 hash 不變 → tdd_compliant=true），並斷言全部 T1 fixer run strategy_violation=false，取代原本永久 `assert False` 假 red；F7 milestone D acceptance 於 namespace 不足時改 `pytest.fail`（不再靜默 skip 成綠，本機可 PATCHMUD_ALLOW_DEGRADED_ACCEPTANCE=1 降級），CI tests.yml 安裝並驗證 bubblewrap。
   - **codex F2（blocker）replay L1 完整性**：`replay_l1` 新增 queue 語意重驗（每個 probe 驅動 open item 的 type 必與其 probe 的 card 分類一致——MAIN/REOPENED↔public_requirements、REGRESSION↔regression/compat probes，抓 REOPENED↔REGRESSION 同數量型別竄改）與 strategy_violation 不變式（T1 且 non-compliant ⟺ violation），補上原本只驗 snapshot 自洽（b_t==len）的缺口。
   - **codex F1（blocker）hidden evaluator 隔離**：hidden probe 不再 overlay 進 candidate 可讀的 checkout，改物化到 checkout 之外的獨立 read-only bind（`IsolationRunner.add_ro_bind`），並由 evaluator 自控的 hidden_root conftest 提供 candidate import 根——candidate production code 無法在自己的樹讀 hidden 測資學答案硬編，且 candidate 自己的 conftest 完全不參與 hidden 評分。真 bwrap 隔離測試佐證。

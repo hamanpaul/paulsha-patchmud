@@ -469,6 +469,10 @@ MVP 不宣稱地端模型的單一 CostPerClear：
 | 容器級 sandbox（gVisor 等） | bubblewrap namespace 對 MVP fixture 足夠 | deck 引入不可信第三方 fixture |
 | Capability-normalized track（固定 token budget） | end-to-end track 先行 | EuTB registered budget 凍結後 |
 | RPG Exhibition Mode | 與研究效度無關 | 研究版穩定後另案 |
+| 獨立 perf probe（codex F8） | MVP runtime_efficiency 重用 correctness test，量測品質不足但不影響 Clear/Power 正確性 | 為每卡撰寫含 workload 的 perf probe 與 pinned reference timing |
+| e2e mid-run 中斷保真（codex F9） | 真實 mid-run partial 已由 `tests/engine/test_pilot.py` unit test 覆蓋 | 在真 `_wire_and_run_encounter` 建立 store 後注入中斷，e2e 驗 partial 保留 |
+| hidden 隔離 RPC 化（codex F1 殘留） | MVP 已把 hidden 移出 candidate 可讀樹（ro-bind），杜絕自樹讀題；in-process 猜路徑的極端對手仍非形式證明 | 需要獨立 process/FS 邊界（受限 RPC 呼叫 candidate） |
+| replay queue 完全重建（codex F2 殘留） | MVP 已驗 type↔probe 分類與 strategy 不變式；SCOPE/CHURN/DUPLICATE 幾何驅動項未逐 turn 重建 | turn event 記錄 per-turn geometry，以引擎完整重放 queue |
 
 ## 15. RQ ↔ 資料 traceability
 

@@ -1,9 +1,8 @@
 schema_version: 1
 issue_id: parser-edge-v2
-archetype_source: "原創 micro-issue（依報告 §12.2「parser edge cases」類型自製，非公開題庫改編）"
+archetype_source: 原創 micro-issue（依報告 §12.2「parser edge cases」類型自製，非公開題庫改編）
 published_at: null
-variant_notes: >-
-  母題 parser-edge-v1 的變體：換域（設定檔逐行解析 → URL 查詢字串解析）、
-  不同錯誤機制（母題是「值被截斷」，此變體是「連續分隔符產生偽造空鍵」）、
+variant_notes: 母題 parser-edge-v1 的變體：換域（設定檔逐行解析 → URL 查詢字串解析）、 不同錯誤機制（母題是「值被截斷」，此變體是「連續分隔符產生偽造空鍵」）、
   常數不同（分隔字元為 '&' 而非整行）。
-frozen_at: "2026-07-17"
+frozen_at: '2026-07-17'
+content_sha256: f4b51d60083e8837878dbc8043baec7bd39306cc749a6a7307d97aab0c97753c
