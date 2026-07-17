@@ -14,10 +14,17 @@
 - EuTB：pre-registered ``eutb_budget.yaml`` 缺失 → 該榜標記 ``skipped``
   而非假值（報告 §19.9）；registered 檔存在 → 正常計算。
 - human run（``human: true``）不進 ranked 榜：列入 runs_skipped。
+- 跨 disclosure cohort（F17／§10.1）：群組 cohort 不一致 → 效率榜退為
+  non-ranking，rows **只發布** 以 input + output_visible 一致計算的
+  common-observable 描述性欄位（不得帶 cohort 依賴的 ``value`` 欄），且
+  YAML rows 與 CSV 逐列帶 ``non_ranking``＋``note`` 標註（§13——CSV 檔案層
+  必須能與排名榜區分）；排名一律委派 metrics 層 ``rank_efficiency``
+  （方向由指標 pin、跨 cohort 在該層被拒），report 層不得重實作。
 """
 
 from __future__ import annotations
 
+import csv
 from decimal import Decimal
 from pathlib import Path
 
@@ -210,6 +217,40 @@ def run_report(runs_root: Path, out_dir: Path, *extra: str) -> dict:
     return yaml.safe_load((out_dir / "report.yaml").read_text(encoding="utf-8"))
 
 
+def make_mixed_cohort_runs(tmp_path: Path) -> Path:
+    """兩場 run 分屬不同 disclosure cohort（F17 的現實情境：anthropic
+    mapper reasoning 恆 NA → observable、openai 揭露 reasoning_tokens →
+    full）。scripted run 的 T^work 皆 NA，這裡把 fixer 的封存改寫成
+    full-disclosure（ledger.work_tokens 為正整數）製造 mixed cohort。"""
+    runs_root = make_fixture_runs(tmp_path)
+    result_path = runs_root / "report-fixer" / "result.yaml"
+    data = yaml.safe_load(result_path.read_text(encoding="utf-8"))
+    assert data["ledger"]["work_tokens"] == "NA"  # 前提：scripted → NA
+    data["ledger"]["work_tokens"] = 4321
+    result_path.write_text(
+        yaml.safe_dump(data, sort_keys=True, allow_unicode=True),
+        encoding="utf-8",
+    )
+    return runs_root
+
+
+def write_registered_budget(tmp_path: Path) -> Path:
+    registered = tmp_path / "registered"
+    registered.mkdir()
+    (registered / "eutb_budget.yaml").write_text(
+        yaml.safe_dump(
+            {"schema_version": 1, "budget_tokens": 100_000, "grid_points": 256}
+        ),
+        encoding="utf-8",
+    )
+    return registered
+
+
+def read_csv_rows(path: Path) -> list[dict]:
+    with path.open(encoding="utf-8", newline="") as fh:
+        return list(csv.DictReader(fh))
+
+
 def row_of(board: dict, model: str) -> dict:
     matches = [row for row in board["rows"] if row["model"] == model]
     assert len(matches) == 1, f"{model} 應恰有一列：{board['rows']!r}"
@@ -367,3 +408,113 @@ class TestReportLeaderboards:
             "scripted:fixer",
             "scripted:quitter",
         }
+
+
+# ---------------------------------------------------------------------------
+# 跨 disclosure cohort 發布契約（F17／§10.1／§13；review findings 1–3）
+# ---------------------------------------------------------------------------
+
+#: F17 管轄的效率榜（TokensPerClear／QATY／EuTB）。
+EFFICIENCY_BOARDS = ("tokens_per_clear", "qaty", "eutb")
+
+
+class TestMixedCohortPublication:
+    def test_mixed_cohort_publishes_only_common_observable(self, tmp_path) -> None:
+        """cohort 不一致 → 效率榜 rows 不得帶 cohort 依賴的 value 欄。
+
+        full-disclosure 群組的 T^work 基礎值一旦發布，跨 cohort 比較就
+        繞過 non_ranking 標註成立（F17：「跨 cohort 只發布以 input +
+        output_visible 一致計算的 common-observable 描述性欄位」）。
+        """
+        runs_root = make_mixed_cohort_runs(tmp_path)
+        registered = write_registered_budget(tmp_path)
+        report = run_report(
+            runs_root, tmp_path / "out", "--registered", str(registered)
+        )
+
+        for name in EFFICIENCY_BOARDS:
+            board = report["leaderboards"][name]
+            assert board["status"] == "ok", name
+            assert board["non_ranking"] is True, name
+            assert "F17" in board["note"], name
+            # 列序退為群組名稱字典序（不構成排名）
+            assert [row["model"] for row in board["rows"]] == [
+                "scripted:fixer",
+                "scripted:quitter",
+            ], name
+            for row in board["rows"]:
+                # cohort 依賴的 value 欄不得出現在發布產物
+                assert "value" not in row, (name, row)
+                assert "observable" in row, (name, row)
+                # 逐列標註：YAML rows 即 CSV rows，檔案層自我描述（§13）
+                assert row["non_ranking"] is True, (name, row)
+                assert "F17" in row["note"], (name, row)
+            cohorts = {row["disclosure_cohort"] for row in board["rows"]}
+            assert cohorts == {"full", "observable"}, name
+
+    def test_mixed_cohort_csv_marked_and_without_value_column(
+        self, tmp_path
+    ) -> None:
+        """non_ranking 榜的 CSV 檔內必須自帶標註（§13）。
+
+        ranked 榜 CSV 的列序即排名——跨 cohort CSV 若無 non_ranking／note
+        欄位，檔案層與排名榜無法區分（review finding 2）。
+        """
+        runs_root = make_mixed_cohort_runs(tmp_path)
+        registered = write_registered_budget(tmp_path)
+        out = tmp_path / "out"
+        run_report(runs_root, out, "--registered", str(registered))
+
+        for name in EFFICIENCY_BOARDS:
+            rows = read_csv_rows(out / f"{name}.csv")
+            assert len(rows) == 2, name
+            for row in rows:
+                assert "value" not in row, (name, row)
+                assert row["non_ranking"] == "True", (name, row)
+                assert "F17" in row["note"], (name, row)
+
+    def test_ranked_efficiency_rows_marked_non_ranking_false(
+        self, tmp_path
+    ) -> None:
+        """同 cohort 的排名榜逐列帶 non_ranking=False——CSV 檔案層即可
+        與跨 cohort 榜區分（§13），不必回頭翻 report.yaml。"""
+        runs_root = make_fixture_runs(tmp_path)  # 兩群組同為 observable
+        out = tmp_path / "out"
+        report = run_report(runs_root, out)
+
+        board = report["leaderboards"]["tokens_per_clear"]
+        assert board["non_ranking"] is False
+        for row in board["rows"]:
+            assert row["non_ranking"] is False
+        csv_rows = read_csv_rows(out / "tokens_per_clear.csv")
+        assert [row["non_ranking"] for row in csv_rows] == ["False", "False"]
+
+    def test_efficiency_ordering_delegates_to_rank_efficiency(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """report 層排名必須委派 metrics 層 rank_efficiency（F17 防線）。
+
+        report 層若自行重實作排名，metrics 層的 CohortMismatchError 防線
+        對 report 不生效（review finding 3）——以 stub 座標鎖住委派：列序
+        必須跟著 rank_efficiency 的回傳走。
+        """
+        import patchmud.cli as cli_mod
+
+        calls: list[dict] = []
+
+        def fake_rank(results):
+            calls.append(dict(results))
+            return tuple(sorted(results, reverse=True))  # 反字典序
+
+        monkeypatch.setattr(cli_mod, "rank_efficiency", fake_rank)
+        runs_root = make_fixture_runs(tmp_path)
+        report = run_report(runs_root, tmp_path / "out")
+
+        assert calls, "report 層未呼叫 rank_efficiency"
+        # 真排名會把 fixer（有限 observable）排在 quitter（inf）前；
+        # stub 反字典序 → quitter 在前 ⟺ 列序確實來自 rank_efficiency
+        board = report["leaderboards"]["tokens_per_clear"]
+        assert [row["model"] for row in board["rows"]] == [
+            "scripted:quitter",
+            "scripted:fixer",
+        ]

@@ -30,8 +30,11 @@ fail——再走 L1。
 events.jsonl／ledger.jsonl）＋ deck card，逐 (model, loadout) 群組輸出多榜
 YAML/CSV：clear rate、cost per clear（run pin 的 pricing snapshot 計價；
 未 pin／snapshot 不可得 → "NA" 不假 0）、tokens per clear／QATY／EuTB
-（雙欄＋disclosure cohort，F17；EuTB 缺 pre-registered 預算檔 → 標記
-skipped 而非假值，§19.9）、Power／Control／FTR（τ 未校準標記
+（雙欄＋disclosure cohort，F17——排名委派 metrics 層 rank_efficiency；跨
+cohort 整榜 non-ranking，rows 只發布 common-observable 描述性欄位且逐列
+帶 non_ranking＋note 標註，CSV 檔案層即可與排名榜區分，§13；EuTB 缺
+pre-registered 預算檔 → 標記 skipped 而非假值，§19.9）、Power／Control／
+FTR（τ 未校準標記
 tau_uncalibrated）。§11.2 其餘榜（MTY 曲線、one-shot、Pareto、composite）
 待 pilot 資料齊備另行擴充。human run 不進 ranked 榜（列入 runs_skipped）。
 """
@@ -82,6 +85,7 @@ from patchmud.metrics.efficiency import (
     eutb,
     load_eutb_budget,
     qaty,
+    rank_efficiency,
     tokens_per_clear,
 )
 from patchmud.metrics.flood import FloodError, flood_metrics, load_flood_coeffs
@@ -917,8 +921,8 @@ def _build_leaderboards(runs: list[_ReportRun], registered_dir: Path) -> dict:
     boards = {
         "clear_rate": _clear_rate_board(groups),
         "cost_per_clear": _cost_board(groups, samples),
-        "tokens_per_clear": _efficiency_board(samples, tokens_per_clear, higher_is_better=False),
-        "qaty": _efficiency_board(samples, qaty, higher_is_better=True),
+        "tokens_per_clear": _efficiency_board(samples, tokens_per_clear),
+        "qaty": _efficiency_board(samples, qaty),
         "eutb": _eutb_board(samples, registered_dir),
         "power": _mean_board(groups, lambda run: run.power_total, reverse=True),
         "control": _control_board(groups),
@@ -994,13 +998,10 @@ def _cost_board(
 
 
 def _efficiency_board(
-    samples: dict[tuple[str, str], list[RunSample]],
-    metric_fn,
-    *,
-    higher_is_better: bool,
+    samples: dict[tuple[str, str], list[RunSample]], metric_fn
 ) -> dict:
     results = {key: metric_fn(samples[key]) for key in samples}
-    return _efficiency_rows(results, higher_is_better=higher_is_better)
+    return _efficiency_rows(results)
 
 
 def _eutb_board(
@@ -1012,47 +1013,45 @@ def _eutb_board(
     except NotRegisteredError as exc:
         return {"status": "skipped", "reason": str(exc)}
     results = {key: eutb(samples[key], budget) for key in samples}
-    return _efficiency_rows(results, higher_is_better=True)
+    return _efficiency_rows(results)
 
 
-def _efficiency_rows(
-    results: dict[tuple[str, str], EfficiencyResult], *, higher_is_better: bool
-) -> dict:
-    """EfficiencyResult → 榜列（雙欄＋cohort，F17）。
+def _efficiency_rows(results: dict[tuple[str, str], EfficiencyResult]) -> dict:
+    """EfficiencyResult → 榜列（雙欄＋cohort，F17／§13）。
 
-    群組間 cohort 不一致時整榜標 ``non_ranking``（跨 cohort 只發布
-    common-observable 描述性欄位），列序退為群組名稱字典序。
+    排名一律委派 metrics 層 ``rank_efficiency``（方向由指標 pin，caller
+    不得自選；跨 cohort 排名在該層被拒）。跨 cohort 時整榜退為
+    ``non_ranking``：rows **只發布**以 input + output_visible 一致計算的
+    common-observable 描述性欄位——cohort 依賴的 ``value`` 欄（full
+    群組為 T^work 基礎值）一概不出——列序退為群組名稱字典序。兩分支
+    的 rows 皆逐列帶 ``non_ranking`` 標註（non-ranking 另帶 ``note``），
+    CSV 由 rows 直出，檔案層即可與排名榜區分（§13）。
     """
-    cohorts = {result.disclosure_cohort for result in results.values()}
-    non_ranking = len(cohorts) > 1
-    rows = []
-    for key, result in results.items():
-        rows.append(
+    try:
+        ordered = rank_efficiency(results)
+    except CohortMismatchError as exc:
+        note = str(exc)
+        rows = [
             {
                 **_group_fields(key),
-                "value": _num(result.value),
-                "observable": _num(result.observable),
-                "disclosure_cohort": result.disclosure_cohort,
+                "observable": _num(results[key].observable),
+                "disclosure_cohort": results[key].disclosure_cohort,
+                "non_ranking": True,
+                "note": note,
             }
-        )
-    if non_ranking:
-        rows.sort(key=lambda row: (row["model"], row["loadout"]))
-        note = str(
-            CohortMismatchError(
-                f"跨 disclosure cohort（F17）：{sorted(cohorts)}；"
-                "observable 欄僅供描述、不構成排名"
-            )
-        )
+            for key in sorted(results)
+        ]
         return {"status": "ok", "non_ranking": True, "note": note, "rows": rows}
-
-    def _rank_key(key: tuple[str, str]) -> tuple:
-        result = results[key]
-        value = result.value if result.value is not None else result.observable
-        return (-value if higher_is_better else value, key[0], key[1])
-
-    ordered = sorted(results, key=_rank_key)
-    index = {key: i for i, key in enumerate(ordered)}
-    rows.sort(key=lambda row: index[(row["model"], row["loadout"])])
+    rows = [
+        {
+            **_group_fields(key),
+            "value": _num(results[key].value),
+            "observable": _num(results[key].observable),
+            "disclosure_cohort": results[key].disclosure_cohort,
+            "non_ranking": False,
+        }
+        for key in ordered
+    ]
     return {"status": "ok", "non_ranking": False, "rows": rows}
 
 
