@@ -21,7 +21,12 @@ jobs:
       - name: Detect test suite
         id: detect
         run: |
-          if [ -d tests ] && ls tests/test_*.py tests/*_test.py >/dev/null 2>&1; then
+          # 以 find 遞迴偵測（涵蓋子目錄）；template 骨架用的
+          # `ls a b` 在其中一個 glob 無匹配時整體回非零 → 誤判 has_tests=false
+          # 而靜默 skip 成綠（正是 codex F7 警告的 CI-detect 層假綠）。
+          count=$(find tests -type f \( -name 'test_*.py' -o -name '*_test.py' \) 2>/dev/null | wc -l)
+          if [ -d tests ] && [ "$count" -gt 0 ]; then
+            echo "Detected $count test files."
             echo "has_tests=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_tests=false" >> "$GITHUB_OUTPUT"
@@ -33,6 +38,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y bubblewrap
+          # ubuntu-24.04 runner 預設以 AppArmor 擋 unprivileged userns，
+          # bwrap 因此建不了 namespace（capabilities 全 False）。放行後
+          # F7 的 capability gate 才能真正驗證隔離而非誤判 degraded。
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           bwrap --version
 
       - name: Setup Python
