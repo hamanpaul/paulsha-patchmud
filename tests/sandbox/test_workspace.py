@@ -215,3 +215,27 @@ class TestRevertedLoc:
 
         ws.apply_patch(make_patch(ws.worktree, strip), kind="production")
         assert ws.diff_stats().reverted_loc == 0
+
+
+class TestRelativeShadowDir:
+    """相對 shadow_dir（如 `patchmud play --runs-root runs`）不得破壞 checkpoint。
+
+    checkpoint() 以 cwd=worktree（frozen tempdir）執行 git，GIT_DIR 若為相對路徑
+    會被 git 相對 cwd 解析 → 找不到 shadow repo（`not a git repository`）。
+    """
+
+    def test_relative_shadow_dir_resolved_and_checkpoints(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        frozen = materialize_repo(FIXTURE, tmp_path / "wt")  # worktree 為絕對 tempdir
+        ws = Workspace(
+            frozen=frozen,
+            encounter_dir=FIXTURE,
+            shadow_dir=Path("relruns/run-x/checkpoints"),  # 相對於 cwd
+        )
+        assert ws.shadow_dir.is_absolute()
+        sha = ws.checkpoint()  # bug 時會 fatal: not a git repository
+        assert sha
+        # 套 patch 後 checkpoint 仍可推進
+        diff = make_patch(ws.worktree, lambda c: _append_lines(c / "src/inventory.py", 1, "p"))
+        ws.apply_patch(diff, kind="production")
+        assert ws.checkpoint() != sha
