@@ -16,6 +16,13 @@ queue → checkpoint → event）→ 終局四觸發全套評分 → result.yaml
 `scripted:<file>`（回覆以 `-----` 行分隔；dry-run 用）、
 `anthropic:<model>`（env `ANTHROPIC_API_KEY`）、
 `openai:<model>[@<base_url>]`（env `OPENAI_API_KEY`，涵蓋地端 vllm/ollama）。
+
+`replay`（Task 16，spec §12.2）：`patchmud replay <run_dir> [--l2]`——L1 位元
+一致重算（不執行任何 probe；runtime_efficiency 引用封存 outcome），與封存
+`result.yaml` 不一致 → exit non-zero；`--l2` 於 pinned 環境（deck 重物化 SHA
+必須與封存一致）自 checkpoints shadow repo 重建 final diff 後重執行全部
+probes——functional/compat/robustness 必須相等、perf-only 差異落 report 不算
+fail——再走 L1。
 """
 
 from __future__ import annotations
@@ -25,11 +32,14 @@ import hashlib
 import importlib.util
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
+
+import yaml
 
 from patchmud.adapters.anthropic import AnthropicAdapter
 from patchmud.adapters.base import AdapterError, ModelAdapter
@@ -45,6 +55,7 @@ from patchmud.evaluator.evaluate import EvaluatorError, FinalEvaluation, evaluat
 from patchmud.evaluator.gates import compute_clear
 from patchmud.evaluator.power import PowerReport
 from patchmud.ledger.tokens import LedgerError
+from patchmud.metrics.flood import FloodError
 from patchmud.sandbox.isolate import DEFAULT_BWRAP_PATH, IsolationRunner
 from patchmud.sandbox.probes import (
     DEFAULT_PYTEST_ARGV,
@@ -53,6 +64,12 @@ from patchmud.sandbox.probes import (
     ProbeSuite,
 )
 from patchmud.sandbox.workspace import Workspace, WorkspaceError
+from patchmud.store.replay import (
+    ReexecutedProbes,
+    ReplayError,
+    replay_l1,
+    replay_l2,
+)
 from patchmud.store.run_store import RunStore
 from patchmud.store.schemas import StoreError
 
@@ -85,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
     if not args:
         print(
-            "patchmud 0.0.0 — 子命令：score-diff；其餘見 "
+            "patchmud 0.0.0 — 子命令：score-diff / run / replay；其餘見 "
             "docs/superpowers/plans/2026-07-16-patchmud-mvp.md"
         )
         return 0
@@ -93,6 +110,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_score_diff(args[1:])
     if args[0] == "run":
         return _cmd_run(args[1:])
+    if args[0] == "replay":
+        return _cmd_replay(args[1:])
     print(f"patchmud: 子命令尚未實作：{args[0]}", file=sys.stderr)
     return 2
 
@@ -404,6 +423,188 @@ def _split_script(text: str) -> list[str]:
             current.append(line)
     replies.append("\n".join(current))
     return [reply for reply in replies if reply.strip()]
+
+
+# ---------------------------------------------------------------------------
+# replay 子命令（Task 16，spec §12.2）
+# ---------------------------------------------------------------------------
+
+
+def _cmd_replay(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="patchmud replay",
+        description=(
+            "兩級 replay：預設 L1 位元一致重算（不執行 probe）；"
+            "--l2 於 pinned 環境重執行全部 probes 後走 L1（spec §12.2）。"
+        ),
+    )
+    parser.add_argument("run_dir", type=Path, help="run 目錄（runs/<run_id>）")
+    parser.add_argument(
+        "--l2",
+        action="store_true",
+        help="L2：pinned 環境重執行全部 probes（functional/compat/robustness 必須相等，perf 容忍帶）",
+    )
+    ns = parser.parse_args(argv)
+
+    try:
+        if ns.l2:
+            report = replay_l2(ns.run_dir, _pinned_reexecute)
+        else:
+            report = replay_l1(ns.run_dir)
+    except (
+        ReplayError,
+        ScoreDiffError,
+        DeckError,
+        EvaluatorError,
+        StoreError,
+        WorkspaceError,
+        FloodError,
+        LedgerError,
+    ) as exc:
+        print(f"replay 失敗：{exc}", file=sys.stderr)
+        return 2
+
+    print(
+        f"replay {report.level}: identical={report.identical} "
+        f"diffs={len(report.diffs)} perf_deviations={len(report.perf_deviations)}"
+    )
+    for diff in report.diffs:
+        print(
+            f"  diff {diff.field}: archived={diff.archived!r} "
+            f"recomputed={diff.recomputed!r}"
+        )
+    for dev in report.perf_deviations:
+        print(
+            f"  perf {dev.section}/{dev.probe_id}: "
+            f"status {dev.archived_status}->{dev.reexecuted_status} "
+            f"wall_ms {dev.archived_wall_ms}->{dev.reexecuted_wall_ms}"
+        )
+    # L1 輸出與封存 result.yaml 不一致 → exit non-zero（spec §12.2）
+    return 0 if report.identical else 1
+
+
+def _pinned_reexecute(
+    run_dir: Path, *, bwrap_path: str = DEFAULT_BWRAP_PATH
+) -> ReexecutedProbes:
+    """L2 真佈線：pinned 環境重執行全部 probes（spec §12.2）。
+
+    deck 重物化的 frozen SHA 必須與 run.yaml 封存完全一致（deck 漂移 →
+    拒絕）；final worktree 自 checkpoints shadow bare repo 的最末 checkpoint
+    重建（`git fetch` 進 frozen clone 後 `git diff <frozen>..<checkpoint>`），
+    diff 於原始 run 已逐回合過 workspace 路徑規則，此處不重新裁決、直接
+    `git apply`；public suite 與 hidden evaluator 全部經 IsolationRunner
+    重新執行。
+    """
+    run_dir = Path(run_dir)
+    store = RunStore.open(run_dir)
+    events = store.load_events()
+    record = yaml.safe_load((run_dir / "run.yaml").read_text(encoding="utf-8"))
+    encounter_dir = Path(record["encounter_dir"])
+    card = load_card(encounter_dir / "card.yaml")
+
+    checkpoints = [
+        event["checkpoint"]
+        for event in events
+        if isinstance(event.get("checkpoint"), str) and event["checkpoint"]
+    ]
+    if not checkpoints:
+        raise ReplayError("events 無 checkpoint，無法重建 final worktree（L2）")
+    checkpoints_dir = run_dir / "checkpoints"
+    if not checkpoints_dir.is_dir():
+        raise ReplayError(
+            f"run 目錄缺 checkpoints/ shadow repo，無法 L2 重執行：{run_dir}"
+        )
+
+    toolchain = _toolchain_paths()
+    pytest_argv = _sandbox_pytest_argv()
+    ruff_argv = _ruff_argv(toolchain)
+    _require_isolation(bwrap_path, toolchain)
+
+    with tempfile.TemporaryDirectory(prefix="patchmud-replay-") as tmp:
+        tmp_path = Path(tmp)
+        frozen = materialize_repo(encounter_dir, tmp_path / "worktree")
+        if frozen.sha != record.get("frozen_sha"):
+            raise ReplayError(
+                "deck 重物化 SHA 與封存不符（deck 已漂移，pinned 重執行不成立）："
+                f"{frozen.sha} != {record.get('frozen_sha')!r}"
+            )
+        final_diff = _checkpoint_diff(checkpoints_dir, frozen, checkpoints[-1])
+
+        workspace = Workspace(
+            frozen=frozen, encounter_dir=encounter_dir, shadow_dir=tmp_path / "shadow"
+        )
+        if final_diff.strip():
+            _replay_apply(final_diff, workspace.worktree)
+
+        runner = IsolationRunner(frozen.path, toolchain, bwrap_path=bwrap_path)
+        suite = ProbeSuite.from_card(card, runner, pytest_argv=pytest_argv)
+        public = suite.run(workspace)
+        evaluation = evaluate_final(
+            card,
+            frozen,
+            final_diff,
+            lambda checkout: IsolationRunner(checkout, toolchain, bwrap_path=bwrap_path),
+            encounter_dir=encounter_dir,
+            pytest_argv=pytest_argv,
+            ruff_argv=ruff_argv,
+        )
+        return ReexecutedProbes(
+            public={probe_id: public[probe_id] for probe_id in public},
+            evaluator={
+                probe_id: evaluation.probe_outcomes[probe_id]
+                for probe_id in evaluation.probe_outcomes
+            },
+        )
+
+
+def _replay_git_env() -> dict[str, str]:
+    return {
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_SYSTEM": os.devnull,
+    }
+
+
+def _checkpoint_diff(checkpoints_dir: Path, frozen, checkpoint_sha: str) -> str:
+    """checkpoint shadow repo → final diff（fetch 進 frozen clone 後 diff）。"""
+    fetch = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(frozen.path),
+            "fetch",
+            "--quiet",
+            str(checkpoints_dir),
+            "refs/heads/checkpoints",
+        ],
+        env=_replay_git_env(),
+        capture_output=True,
+        text=True,
+    )
+    if fetch.returncode != 0:
+        raise ReplayError(f"checkpoints fetch 失敗：{fetch.stderr.strip()[:200]}")
+    diff = subprocess.run(
+        ["git", "-C", str(frozen.path), "diff", frozen.sha, checkpoint_sha],
+        env=_replay_git_env(),
+        capture_output=True,
+        text=True,
+    )
+    if diff.returncode != 0:
+        raise ReplayError(f"checkpoint diff 失敗：{diff.stderr.strip()[:200]}")
+    return diff.stdout
+
+
+def _replay_apply(diff: str, worktree: Path) -> None:
+    res = subprocess.run(
+        ["git", "apply", "--whitespace=nowarn", "-"],
+        cwd=str(worktree),
+        input=diff,
+        env=_replay_git_env(),
+        capture_output=True,
+        text=True,
+    )
+    if res.returncode != 0:
+        raise ReplayError(f"final diff 重建後無法套用：{res.stderr.strip()[:200]}")
 
 
 # ---------------------------------------------------------------------------

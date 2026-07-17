@@ -374,10 +374,10 @@
 - Consumes: run 目錄（events、checkpoints、封存 probe outcomes、result.yaml）。
 - Produces: `replay_l1(run_dir) -> ReplayReport(identical: bool, diffs)`（重算 queue/flood/power/metrics，**不執行 probe**，runtime_efficiency 引用封存 outcome，§12.2）；`replay_l2(run_dir, runner)`（pinned 環境重執行 probes；functional/compat/robustness 必須相等，perf 容忍帶）。
 
-- [ ] **Step 1: RED** — e2e run 一場（scripted）→ `replay_l1` identical=True；手動竄改 result.yaml 一個分數 → identical=False、exit non-zero；L2 對 perf 差異不 fail、對 functional 差異 fail。
+- [x] **Step 1: RED** — e2e run 一場（scripted）→ `replay_l1` identical=True；手動竄改 result.yaml 一個分數 → identical=False、exit non-zero；L2 對 perf 差異不 fail、對 functional 差異 fail。
   Run: `python3 -m pytest -q tests/store/test_replay.py`；Expected: FAIL。
-- [ ] **Step 2–3:** 實作 → PASS。
-- [ ] **Step 4:** Commit: `feat(store): bit-exact L1 replay and pinned L2 re-execution`。
+- [x] **Step 2–3:** 實作 → PASS。
+- [x] **Step 4:** Commit: `feat(store): bit-exact L1 replay and pinned L2 re-execution`。
 
 ---
 

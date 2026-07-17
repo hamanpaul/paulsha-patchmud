@@ -36,6 +36,7 @@ __all__ = [
     "MaintainabilityReport",
     "PerfJudgment",
     "PowerReport",
+    "maintainability_from_observations",
     "runtime_efficiency_from_judgments",
     "score_compatibility",
     "score_functional",
@@ -165,26 +166,10 @@ def score_maintainability(
     - `S_scope`（allowed 內、expected 外的 production LOC）= 0 → 再 1 分。
     - lint：`lint_new_diagnostics == 0` → 3 分；>0 或 None（無法驗證）→ 0。
     """
-    points = card.power_rubric.maintainability.points
-    if points != _MAINTAINABILITY_POINTS:
-        raise EvaluatorError(
-            f"maintainability points 必須為 {_MAINTAINABILITY_POINTS}（spec §9.3 pin），"
-            f"card 宣告 {points}"
-        )
-
-    lo, hi = card.expected_patch_loc
-    if hi <= 0:
-        raise EvaluatorError(f"expected_patch_loc 上限必須 > 0：{card.expected_patch_loc}")
-
     production = [
         fc for fc in file_changes if not fc.path.startswith(_AGENT_TEST_PREFIX)
     ]
     loc = sum(fc.loc for fc in production)
-    if loc <= hi:
-        diff_size = float(_DIFF_POINTS)
-    else:
-        diff_size = _DIFF_POINTS * max(0.0, 1.0 - (loc - hi) / hi)
-
     hard_files = tuple(
         sorted(
             fc.path
@@ -198,8 +183,48 @@ def score_maintainability(
         if _matches_any(fc.path, card.allowed_paths)
         and not _matches_any(fc.path, card.expected_paths)
     )
+    return maintainability_from_observations(
+        card,
+        production_loc=loc,
+        scope_hard_files=hard_files,
+        scope_soft_loc=soft_loc,
+        lint_new_diagnostics=lint_new_diagnostics,
+    )
+
+
+def maintainability_from_observations(
+    card: IssueCard,
+    *,
+    production_loc: int,
+    scope_hard_files: Sequence[str],
+    scope_soft_loc: int,
+    lint_new_diagnostics: int | None,
+) -> MaintainabilityReport:
+    """由封存觀測值重算 maintainability 分數（L1 重算入口，spec §12.2）。
+
+    與 `score_maintainability` 完全同源：後者只負責從 file_changes 導出
+    觀測值（production_loc／scope_hard_files／scope_soft_loc）再委派此函數，
+    確保 replay 重算與原始評分不會公式漂移。
+    """
+    points = card.power_rubric.maintainability.points
+    if points != _MAINTAINABILITY_POINTS:
+        raise EvaluatorError(
+            f"maintainability points 必須為 {_MAINTAINABILITY_POINTS}（spec §9.3 pin），"
+            f"card 宣告 {points}"
+        )
+
+    _, hi = card.expected_patch_loc
+    if hi <= 0:
+        raise EvaluatorError(f"expected_patch_loc 上限必須 > 0：{card.expected_patch_loc}")
+
+    if production_loc <= hi:
+        diff_size = float(_DIFF_POINTS)
+    else:
+        diff_size = _DIFF_POINTS * max(0.0, 1.0 - (production_loc - hi) / hi)
+
+    hard_files = tuple(scope_hard_files)
     scope = (0 if hard_files else _SCOPE_HARD_POINTS) + (
-        _SCOPE_SOFT_POINTS if soft_loc == 0 else 0
+        _SCOPE_SOFT_POINTS if scope_soft_loc == 0 else 0
     )
 
     lint = _LINT_POINTS if lint_new_diagnostics == 0 else 0
@@ -209,9 +234,9 @@ def score_maintainability(
         scope=scope,
         lint=lint,
         total=diff_size + scope + lint,
-        production_loc=loc,
+        production_loc=production_loc,
         scope_hard_files=hard_files,
-        scope_soft_loc=soft_loc,
+        scope_soft_loc=scope_soft_loc,
         lint_new_diagnostics=lint_new_diagnostics,
     )
 
