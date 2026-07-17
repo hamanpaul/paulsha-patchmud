@@ -29,7 +29,8 @@ MVP CLI（依實作計劃逐步落地）：
 
 ```bash
 patchmud play <關卡>                            # 人類親自玩（關卡可只打名字，如 input-validation-v1）
-patchmud run <關卡> --model anthropic:claude-sonnet-5 --live   # 看模型即時玩（--delay N 放慢節奏）
+patchmud run <關卡> --model sonnet --live        # 看模型即時玩（--delay N 放慢節奏）
+patchmud versus <關卡> --models sonnet,haiku     # 多模型並排對戰 + 記分板
 patchmud watch <run_dir> [--turn N]            # 離線觀戰：逐回合 zh-TW 戰報
 patchmud validate-deck decks/pilot-v1          # deck 契約與 fixture 驗證
 patchmud score-diff --encounter <dir> --diff <file>   # 離線評分（milestone A）
@@ -38,7 +39,9 @@ patchmud replay <run_dir> [--l2]               # 兩級重播驗證
 patchmud report --runs "runs/*"                # 多榜研究報告（模型比較）
 ```
 
-`play` / `run` 的關卡可只打名字（自動找 `decks/pilot-v1/<名字>`），`--loadout` 預設 `P0T0R0`（SOLO），`--runs-root` 預設 `runs`。最短：`patchmud play input-validation-v1`。
+- 關卡可只打名字（自動找 `decks/pilot-v1/<名字>`），`--loadout` 預設 `P0T0R0`（SOLO）。最短：`patchmud play input-validation-v1`。
+- 模型別名：`sonnet` / `haiku` / `opus` / `fable`（展開為對應的 `anthropic:claude-*`）。
+- 認證兩選一：`export ANTHROPIC_API_KEY=…`，**或** 用 Claude 帳號 OAuth——`ant auth login` 後 `set -a; eval "$(ant auth print-credentials --env)"; set +a`（設定 `ANTHROPIC_AUTH_TOKEN`，不必管 API key）。
 
 ## Version
 

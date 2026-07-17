@@ -797,7 +797,7 @@ def _cmd_run(argv: list[str]) -> int:
     parser.add_argument(
         "--model",
         required=True,
-        help="model spec：scripted:<file> / anthropic:<model> / openai:<model>[@<base_url>]",
+        help="模型：別名 sonnet/haiku/opus/fable，或 anthropic:<model> / openai:<model>[@url] / scripted:<file>",
     )
     parser.add_argument(
         "--loadout", default="P0T0R0", help="forced loadout（預設 P0T0R0 = SOLO）"
@@ -872,7 +872,7 @@ def _cmd_versus(argv: list[str]) -> int:
     parser.add_argument(
         "--models",
         required=True,
-        help="逗號分隔的 model spec，如 anthropic:claude-sonnet-5,anthropic:claude-haiku-4-5",
+        help="逗號分隔的模型（可用別名），如 sonnet,haiku,opus",
     )
     parser.add_argument(
         "--loadout", default="P0T0R0", help="forced loadout（預設 P0T0R0 = SOLO）"
@@ -1146,8 +1146,29 @@ def _cmd_play(argv: list[str]) -> int:
 _SCRIPT_DELIMITER = "-----"
 
 
+#: 模型別名 → anthropic 完整 model id（指令只打 sonnet/haiku/opus/fable）。
+_MODEL_ALIASES = {
+    "sonnet": "anthropic:claude-sonnet-5",
+    "haiku": "anthropic:claude-haiku-4-5",
+    "opus": "anthropic:claude-opus-4-8",
+    "fable": "anthropic:claude-fable-5",
+}
+
+
+def normalize_model_spec(spec: str) -> str:
+    """把別名展開成完整 model spec：`sonnet` → `anthropic:claude-sonnet-5`；
+    `anthropic:sonnet` → `anthropic:claude-sonnet-5`。其餘原樣。"""
+    if spec in _MODEL_ALIASES:
+        return _MODEL_ALIASES[spec]
+    kind, sep, rest = spec.partition(":")
+    if kind == "anthropic" and sep and rest in _MODEL_ALIASES:
+        return _MODEL_ALIASES[rest]
+    return spec
+
+
 def _build_adapter(spec: str) -> ModelAdapter:
-    """model spec → adapter；HTTP adapter 的 api key 一律取自 env（不進 CLI）。"""
+    """model spec → adapter；HTTP adapter 的憑證一律取自 env（不進 CLI）。"""
+    spec = normalize_model_spec(spec)
     kind, _, rest = spec.partition(":")
     if kind == "scripted":
         script = Path(rest)
@@ -1160,10 +1181,17 @@ def _build_adapter(spec: str) -> ModelAdapter:
     if kind == "anthropic":
         if not rest:
             raise RunCliError("anthropic spec 缺 model id：anthropic:<model>")
+        # 憑證：ANTHROPIC_API_KEY（x-api-key）優先；否則 ANTHROPIC_AUTH_TOKEN
+        # （OAuth bearer，來自 `ant auth login`）。兩者皆無 → 明確指引。
         api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        if not api_key:
-            raise RunCliError("env ANTHROPIC_API_KEY 未設定")
-        return AnthropicAdapter(rest, api_key)
+        auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
+        if not api_key and not auth_token:
+            raise RunCliError(
+                "未設定 Anthropic 憑證：設 ANTHROPIC_API_KEY，或用 OAuth——"
+                "`ant auth login` 後 `set -a; eval \"$(ant auth print-credentials --env)\"; set +a`"
+                "（會設 ANTHROPIC_AUTH_TOKEN）"
+            )
+        return AnthropicAdapter(rest, api_key, auth_token=auth_token)
     if kind == "openai":
         if not rest:
             raise RunCliError("openai spec 缺 model id：openai:<model>[@<base_url>]")

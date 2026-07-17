@@ -17,30 +17,41 @@ from patchmud.adapters.base import (
     Transport,
 )
 
-__all__ = ["ANTHROPIC_VERSION", "AnthropicAdapter", "DEFAULT_BASE_URL"]
+__all__ = ["ANTHROPIC_VERSION", "OAUTH_BETA", "AnthropicAdapter", "DEFAULT_BASE_URL"]
 
 ANTHROPIC_VERSION = "2023-06-01"
 DEFAULT_BASE_URL = "https://api.anthropic.com"
+#: OAuth bearer token 認證所需的 beta header（`/v1/messages` 不帶會 401）。
+OAUTH_BETA = "oauth-2025-04-20"
 
 
 class AnthropicAdapter(HttpModelAdapter):
-    """Anthropic Messages API（``POST {base_url}/v1/messages``）。"""
+    """Anthropic Messages API（``POST {base_url}/v1/messages``）。
+
+    認證兩選一：``api_key`` → ``x-api-key``；``auth_token`` → OAuth bearer
+    （``Authorization: Bearer`` + ``anthropic-beta: oauth-2025-04-20``），
+    讓使用者用 ``ant auth login`` 的 Claude 帳號登入而不必管 API key。
+    """
 
     usage_provider = "anthropic"
 
     def __init__(
         self,
         model: str,
-        api_key: str,
+        api_key: str = "",
         *,
+        auth_token: str = "",
         max_tokens: int = 4096,
         base_url: str = DEFAULT_BASE_URL,
         transport: Transport | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         super().__init__(transport=transport, clock=clock)
+        if not api_key and not auth_token:
+            raise AdapterError("AnthropicAdapter 需要 api_key 或 auth_token 其一")
         self._model = model
         self._api_key = api_key
+        self._auth_token = auth_token
         self._max_tokens = max_tokens
         self._base_url = base_url.rstrip("/")
 
@@ -57,10 +68,14 @@ class AnthropicAdapter(HttpModelAdapter):
         if system_parts:
             payload["system"] = "\n\n".join(system_parts)
         headers = {
-            "x-api-key": self._api_key,
             "anthropic-version": ANTHROPIC_VERSION,
             "content-type": "application/json",
         }
+        if self._auth_token:  # OAuth bearer（優先）
+            headers["authorization"] = f"Bearer {self._auth_token}"
+            headers["anthropic-beta"] = OAUTH_BETA
+        else:
+            headers["x-api-key"] = self._api_key
         return HttpRequest(
             url=f"{self._base_url}/v1/messages", headers=headers, payload=payload
         )
