@@ -420,10 +420,10 @@
 **Interfaces:**
 - Produces: `calibrate(runs) -> CalibrationResult(reference_costs, difficulty_scales, tau, eutb_budget, grid)`；輸出寫入 deck 與 `analysis/registered/`（含 hash），已存在即拒絕覆寫（凍結語意）。
 
-- [ ] **Step 1: RED** — 合成 pilot runs 鎖定：C_ref = 成功 run 成本中位數、成功數 <3 → 該 encounter 標記不產 Economy；D 公式與 clamp；τ = F>0 中位數、無樣本 → 1.0；EuTB B = P95 向上取整 10k、網格 256 點；重複 calibrate → 拒絕覆寫。
+- [x] **Step 1: RED** — 合成 pilot runs 鎖定：C_ref = 成功 run 成本中位數、成功數 <3 → 該 encounter 標記不產 Economy；D 公式與 clamp；τ = F>0 中位數、無樣本 → 1.0；EuTB B = P95 向上取整 10k、網格 256 點；重複 calibrate → 拒絕覆寫。
   Run: `python3 -m pytest -q tests/metrics/test_calibration.py`；Expected: FAIL。
-- [ ] **Step 2–3:** 實作 → PASS。
-- [ ] **Step 4:** Commit: `feat(metrics): pre-registered calibration estimators with freeze semantics`。
+- [x] **Step 2–3:** 實作 → PASS。
+- [x] **Step 4:** Commit: `feat(metrics): pre-registered calibration estimators with freeze semantics`。
 
 ---
 

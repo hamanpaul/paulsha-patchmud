@@ -116,6 +116,13 @@ from patchmud.metrics.efficiency import (
     rank_efficiency,
     tokens_per_clear,
 )
+from patchmud.metrics.calibration import (
+    CalibrationError,
+    CalibrationRun,
+    FrozenCalibrationError,
+    calibrate,
+    freeze_calibration,
+)
 from patchmud.metrics.flood import FloodError, flood_metrics, load_flood_coeffs
 from patchmud.sandbox.isolate import DEFAULT_BWRAP_PATH, IsolationRunner
 from patchmud.sandbox.probes import (
@@ -198,6 +205,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_report(args[1:])
     if args[0] == "pilot":
         return _cmd_pilot(args[1:])
+    if args[0] == "calibrate":
+        return _cmd_calibrate(args[1:])
     print(f"patchmud: 子命令尚未實作：{args[0]}", file=sys.stderr)
     return 2
 
@@ -1652,6 +1661,137 @@ def _ruff_argv(toolchain: tuple[Path, ...]) -> tuple[str, ...]:
         if any(ruff.is_relative_to(root) for root in toolchain):
             return (str(ruff),)
     return ("ruff",)
+
+
+# ---------------------------------------------------------------------------
+# calibrate 子命令（plan Task 19；spec §10.4、F4）
+# ---------------------------------------------------------------------------
+
+
+def _cmd_calibrate(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="patchmud calibrate",
+        description=(
+            "pilot 後校準：從封存 run 產出 reference_cost/difficulty_scale/τ/"
+            "EuTB 預算，寫回 deck card 並凍結進 --out（§10.4）。"
+        ),
+    )
+    parser.add_argument("--runs", required=True, help="run 目錄 glob，如 'runs/*'")
+    parser.add_argument(
+        "--out", type=Path, default=DEFAULT_REGISTERED_DIR, help="registered 參數目錄"
+    )
+    parser.add_argument("--pricing", required=True, type=Path, help="pricing snapshot 檔")
+    ns = parser.parse_args(argv)
+
+    try:
+        calibration_path, _ = calibrate_from_runs(ns.runs, ns.out, ns.pricing)
+    except (
+        CalibrationError,
+        FrozenCalibrationError,
+        ReportError,
+        DeckError,
+        StoreError,
+        ReplayError,
+        FloodError,
+        LedgerError,
+    ) as exc:
+        print(f"calibrate 失敗：{exc}", file=sys.stderr)
+        return 2
+
+    print(f"校準凍結：{calibration_path}")
+    return 0
+
+
+def calibrate_from_runs(
+    runs_glob: str, out_dir: Path, pricing_path: Path
+) -> tuple[Path, Path]:
+    """封存 run → estimator → 凍結。`--out` 缺 pre-registered estimators.yaml
+    一律拒絕產出（F4）；估計、寫回 card 與 registered 檔為全有全無。"""
+    out_dir = Path(out_dir)
+    if not (out_dir / "estimators.yaml").is_file():
+        raise CalibrationError(
+            f"--out 缺 pre-registered estimators.yaml，拒絕產出校準值：{out_dir}"
+        )
+
+    snapshot = PricingSnapshot.load(Path(pricing_path))
+    coeffs = load_flood_coeffs()
+
+    matches = sorted(globmod.glob(str(runs_glob)))
+    if not matches:
+        raise CalibrationError(f"--runs glob 無任何匹配：{runs_glob!r}")
+
+    runs: list[CalibrationRun] = []
+    deck: dict[str, Path] = {}
+    for match in matches:
+        run_dir = Path(match)
+        if not (run_dir / "run.yaml").is_file():
+            continue
+        loaded = _load_calibration_run(run_dir, snapshot, coeffs)
+        if loaded is None:
+            continue
+        run, encounter_dir = loaded
+        runs.append(run)
+        deck.setdefault(run.encounter, encounter_dir)
+
+    if not runs:
+        raise CalibrationError(f"glob 匹配 {len(matches)} 項但無任何可校準 run")
+
+    result = calibrate(runs)
+    return freeze_calibration(result, out_dir, deck)
+
+
+def _load_calibration_run(
+    run_dir: Path, snapshot: PricingSnapshot, coeffs: object
+) -> tuple[CalibrationRun, Path] | None:
+    """單一封存 run → CalibrationRun（human / 非 run mode → None，不進校準）。"""
+    store = RunStore.open(run_dir)  # fail-closed：run.yaml schema、event seq
+    record = yaml.safe_load((run_dir / "run.yaml").read_text(encoding="utf-8"))
+
+    result_path = run_dir / "result.yaml"
+    if not result_path.is_file():
+        return None
+    result = yaml.safe_load(result_path.read_text(encoding="utf-8"))
+    if not isinstance(result, dict):
+        raise ReportError(f"result.yaml 內容必須是 mapping：{run_dir.name}")
+    if result.get("human") is True or result.get("mode") != "run":
+        return None
+
+    clear = result.get("clear")
+    if clear not in (0, 1):
+        raise ReportError(f"result.yaml clear 非 0/1（{run_dir.name}）：{clear!r}")
+
+    encounter_dir = Path(str(record["encounter_dir"]))
+    card = load_card(encounter_dir / "card.yaml")
+
+    power = result.get("power")
+    breakdown = power.get("maintainability_breakdown") if isinstance(power, dict) else None
+    if not isinstance(breakdown, dict) or not isinstance(
+        breakdown.get("production_loc"), int
+    ):
+        raise ReportError(
+            f"result.yaml 缺 power.maintainability_breakdown.production_loc（{run_dir.name}）"
+        )
+    production_loc = int(breakdown["production_loc"])
+
+    ledger_obj = result.get("ledger")
+    if not isinstance(ledger_obj, dict) or "work_tokens" not in ledger_obj:
+        raise ReportError(f"result.yaml 缺 ledger.work_tokens（{run_dir.name}）")
+    work_tokens = ledger_obj["work_tokens"]
+
+    entries = load_ledger(run_dir)
+    cost = compute_run_cost(entries, snapshot).total
+    flood = flood_metrics(store.load_events(), card, coeffs)
+
+    run = CalibrationRun(
+        run_id=str(record["run_id"]),
+        encounter=card.issue_id,
+        clear=int(clear),
+        cost=cost,
+        final_diff_loc=production_loc,
+        flood_index=float(flood.flood_index),
+        work_tokens=work_tokens if isinstance(work_tokens, int) else 0,
+    )
+    return run, encounter_dir
 
 
 if __name__ == "__main__":
