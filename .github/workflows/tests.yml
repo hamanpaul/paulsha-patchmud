@@ -38,6 +38,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y bubblewrap
+          # ubuntu-24.04 runner 預設以 AppArmor 擋 unprivileged userns，
+          # bwrap 因此建不了 namespace（capabilities 全 False）。放行後
+          # F7 的 capability gate 才能真正驗證隔離而非誤判 degraded。
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           bwrap --version
 
       - name: Setup Python
