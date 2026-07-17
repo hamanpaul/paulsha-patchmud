@@ -356,10 +356,10 @@
 - Consumes: 多 run 的 result.yaml + ledger 聚合。
 - Produces: `cost_per_clear(runs) -> Decimal | inf`、`economy_score(run, card) -> int | None`（reference_cost null → None）、`tokens_per_clear / qaty / eutb(runs, registered_budget) / mty(checkpoint_scores)`；`eutb` 在 registered 檔缺失時 raise `NotRegisteredError`（fail-closed）；`bootstrap_ci(values, b=10000, seed)`；所有效率排名輸出帶 `disclosure_cohort` 欄位，跨 cohort 排名請求 → raise（F17）。
 
-- [ ] **Step 1: RED** — 鎖定：零 clear → `inf` 且不剔除；NA 傳染到 TokensPerClear（含 None entry 的 run 集 → observable 雙欄）；EuTB 對手算小例（2 run、B=1000）值正確且無 registered 檔即拒絕；QATY 手算例；跨 cohort 排名拒絕；bootstrap 固定 seed 重現。
+- [x] **Step 1: RED** — 鎖定：零 clear → `inf` 且不剔除；NA 傳染到 TokensPerClear（含 None entry 的 run 集 → observable 雙欄）；EuTB 對手算小例（2 run、B=1000）值正確且無 registered 檔即拒絕；QATY 手算例；跨 cohort 排名拒絕；bootstrap 固定 seed 重現。
   Run: `python3 -m pytest -q tests/metrics/`；Expected: FAIL。
-- [ ] **Step 2–3:** 實作 → PASS。
-- [ ] **Step 4:** Commit: `feat(metrics): economy and token-efficiency suite with fail-closed registration`。
+- [x] **Step 2–3:** 實作 → PASS。
+- [x] **Step 4:** Commit: `feat(metrics): economy and token-efficiency suite with fail-closed registration`。
 
 ---
 
