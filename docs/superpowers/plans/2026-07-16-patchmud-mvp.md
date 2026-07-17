@@ -308,11 +308,11 @@
 - Consumes: Task 1–12 全部。
 - Produces: `run_encounter(card, adapter, loadout, config, store) -> RunResult`；每 author turn：render → adapter.complete → parse → enforcer.check → 執行 → probe 排程（§5.2）→ queue update → checkpoint → event；終局四觸發 → 全套 public + hidden evaluator → `Clear` 唯一公式 → result.yaml。`reviewer.py`：組 reviewer 輸入（§6.2 白名單）、驗 findings schema、findings 只落盤與 render。
 
-- [ ] **Step 1: RED（loop 語意）** — 以 `ScriptedAdapter` 鎖定：連續 3 次亂文 → `failed:protocol` 且 evaluator 仍執行、Clear=0；`max_turns=2` 用盡 → 強制終局；agent 從不 RUN_TEST 直接 COMMIT → 引擎自動全套判定 Clear（F3）；turn 7 SUMMON → reviewer subcall 不耗 turn、turn 8 仍屬作者（F9）；reviewer 輸入 render 字串不含作者 transcript 與 hidden 路徑（F－隔離）；每 turn 恰一 checkpoint 與一筆 turn event。
+- [x] **Step 1: RED（loop 語意）** — 以 `ScriptedAdapter` 鎖定：連續 3 次亂文 → `failed:protocol` 且 evaluator 仍執行、Clear=0；`max_turns=2` 用盡 → 強制終局；agent 從不 RUN_TEST 直接 COMMIT → 引擎自動全套判定 Clear（F3）；turn 7 SUMMON → reviewer subcall 不耗 turn、turn 8 仍屬作者（F9）；reviewer 輸入 render 字串不含作者 transcript 與 hidden 路徑（F－隔離）；每 turn 恰一 checkpoint 與一筆 turn event。
   Run: `python3 -m pytest -q tests/engine/test_loop.py tests/engine/test_reviewer.py`；Expected: FAIL。
-- [ ] **Step 2–3:** 實作 → PASS。
-- [ ] **Step 4: e2e** — `mini_encounter` + scripted「兩回合修好」劇本：Clear=1、ledger 有 entries、result.yaml 完整。Run: `python3 -m pytest -q && python3 -m policy_check --repo .`；Expected: 全綠。
-- [ ] **Step 5:** Commit: `feat(engine): full turn loop with reviewer subcall (milestone B)`。
+- [x] **Step 2–3:** 實作 → PASS。
+- [x] **Step 4: e2e** — `mini_encounter` + scripted「兩回合修好」劇本：Clear=1、ledger 有 entries、result.yaml 完整。Run: `python3 -m pytest -q && python3 -m policy_check --repo .`；Expected: 全綠。
+- [x] **Step 5:** Commit: `feat(engine): full turn loop with reviewer subcall (milestone B)`。
 
 ---
 

@@ -8,6 +8,14 @@ docs/superpowers/plans/2026-07-16-patchmud-mvp.md 逐 task 落地。
 落盤 `result.yaml`（PowerReport、gates、probe outcomes、Clear、Economy）並
 產出私有封存（§12.1）。執行 candidate code 的唯一 seam 是 `IsolationRunner`；
 namespace 能力不足一律 fail-closed 拒絕執行。
+
+`run`（Task 13，milestone B 收口）：`patchmud run --encounter --model
+--loadout`——真模型（或 scripted 劇本）打完一場 encounter：turn 0 baseline →
+author turns（render → complete → parse → enforcer → 執行 → probe 排程 →
+queue → checkpoint → event）→ 終局四觸發全套評分 → result.yaml。model spec：
+`scripted:<file>`（回覆以 `-----` 行分隔；dry-run 用）、
+`anthropic:<model>`（env `ANTHROPIC_API_KEY`）、
+`openai:<model>[@<base_url>]`（env `OPENAI_API_KEY`，涵蓋地端 vllm/ollama）。
 """
 
 from __future__ import annotations
@@ -15,6 +23,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import importlib.util
+import os
 import shutil
 import sys
 import tempfile
@@ -22,9 +31,16 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from patchmud.adapters.anthropic import AnthropicAdapter
+from patchmud.adapters.base import AdapterError, ModelAdapter
+from patchmud.adapters.openai_compat import OpenAICompatAdapter
+from patchmud.adapters.scripted import ScriptedAdapter
 from patchmud.deck.loader import load_card
 from patchmud.deck.materialize import materialize_repo
 from patchmud.deck.model import DeckError, IssueCard
+from patchmud.engine.loop import RunConfig, build_agent_test_runner, run_encounter
+from patchmud.engine.prompts import HARNESS_PROMPT_VERSION
+from patchmud.engine.strategy import Loadout
 from patchmud.evaluator.evaluate import EvaluatorError, FinalEvaluation, evaluate_final
 from patchmud.evaluator.gates import compute_clear
 from patchmud.evaluator.power import PowerReport
@@ -40,7 +56,7 @@ from patchmud.sandbox.workspace import Workspace, WorkspaceError
 from patchmud.store.run_store import RunStore
 from patchmud.store.schemas import StoreError
 
-__all__ = ["ScoreDiffError", "ScoreDiffSummary", "main", "score_diff"]
+__all__ = ["RunCliError", "ScoreDiffError", "ScoreDiffSummary", "main", "score_diff"]
 
 #: 離線評分沒有 harness prompt / pricing / schedule；欄位以 NA 佔位（非 0，§10.1）。
 _OFFLINE_NA = "NA"
@@ -48,6 +64,10 @@ _OFFLINE_NA = "NA"
 
 class ScoreDiffError(Exception):
     """score-diff 操作性失敗（輸入缺漏、隔離能力不足、diff 遭拒等）。"""
+
+
+class RunCliError(Exception):
+    """run 子命令操作性失敗（model spec 非法、api key 缺席等）。"""
 
 
 @dataclass(frozen=True)
@@ -71,6 +91,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args[0] == "score-diff":
         return _cmd_score_diff(args[1:])
+    if args[0] == "run":
+        return _cmd_run(args[1:])
     print(f"patchmud: 子命令尚未實作：{args[0]}", file=sys.stderr)
     return 2
 
@@ -219,6 +241,169 @@ def score_diff(
         critical_pass=evaluation.gates.critical_pass,
         power_total=evaluation.power.total,
     )
+
+
+# ---------------------------------------------------------------------------
+# run 子命令（Task 13，milestone B 收口）
+# ---------------------------------------------------------------------------
+
+
+def _cmd_run(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="patchmud run",
+        description="回合制對局：模型（或 scripted 劇本）打完一場 encounter。",
+    )
+    parser.add_argument("--encounter", required=True, type=Path, help="encounter 目錄")
+    parser.add_argument(
+        "--model",
+        required=True,
+        help="model spec：scripted:<file> / anthropic:<model> / openai:<model>[@<base_url>]",
+    )
+    parser.add_argument("--loadout", required=True, help="forced loadout，如 P0T0R0")
+    parser.add_argument("--runs-root", type=Path, default=Path("runs"), help="run 目錄根")
+    parser.add_argument("--run-id", default=None, help="run 識別字串（預設自動產生）")
+    ns = parser.parse_args(argv)
+
+    try:
+        result = run_cli(
+            ns.encounter, ns.model, ns.loadout, ns.runs_root, run_id=ns.run_id
+        )
+    except (
+        RunCliError,
+        ScoreDiffError,
+        AdapterError,
+        DeckError,
+        EvaluatorError,
+        StoreError,
+        WorkspaceError,
+        LedgerError,
+        ValueError,
+    ) as exc:
+        print(f"run 失敗：{exc}", file=sys.stderr)
+        return 2
+
+    print(
+        f"end_reason={result.end_reason} clear={result.clear} "
+        f"turns={result.turns_used} power_total={result.evaluation.power.total}"
+    )
+    return 0
+
+
+def run_cli(
+    encounter_dir: Path,
+    model_spec: str,
+    loadout_spec: str,
+    runs_root: Path,
+    *,
+    run_id: str | None = None,
+    bwrap_path: str = DEFAULT_BWRAP_PATH,
+):
+    """`patchmud run` 串線：真佈線（IsolationRunner／ProbeSuite／evaluator）
+    交給 `run_encounter`（spec §5、§6；plan Task 13）。"""
+    encounter_dir = Path(encounter_dir).resolve()
+    card = load_card(encounter_dir / "card.yaml")
+    loadout = Loadout.from_string(loadout_spec)
+    adapter = _build_adapter(model_spec)
+
+    toolchain = _toolchain_paths()
+    pytest_argv = _sandbox_pytest_argv()
+    ruff_argv = _ruff_argv(toolchain)
+    _require_isolation(bwrap_path, toolchain)
+
+    if run_id is None:
+        run_id = f"run-{card.issue_id}-{time.strftime('%Y%m%d%H%M%S')}"
+
+    runs_root = Path(runs_root)
+    with tempfile.TemporaryDirectory(prefix="patchmud-run-") as tmp:
+        tmp_path = Path(tmp)
+        frozen = materialize_repo(encounter_dir, tmp_path / "worktree")
+
+        store = RunStore.create(
+            {
+                "run_id": run_id,
+                "frozen_sha": frozen.sha,
+                "pricing_hash": _OFFLINE_NA,
+                "harness_prompt_version": HARNESS_PROMPT_VERSION,
+                "schedule_ref": _OFFLINE_NA,
+                "encounter_dir": str(encounter_dir),
+                "loadout": loadout.name,
+                "model": model_spec,
+            },
+            runs_root,
+        )
+
+        # checkpoints 落在 run 目錄（spec §3：shadow bare repo 供離線重播）
+        workspace = Workspace(
+            frozen=frozen,
+            encounter_dir=encounter_dir,
+            shadow_dir=store.run_dir / "checkpoints",
+        )
+        runner = IsolationRunner(frozen.path, toolchain, bwrap_path=bwrap_path)
+        config = RunConfig(
+            workspace=workspace,
+            probe_suite=ProbeSuite.from_card(card, runner, pytest_argv=pytest_argv),
+            evaluate=lambda final_diff: evaluate_final(
+                card,
+                frozen,
+                final_diff,
+                lambda checkout: IsolationRunner(
+                    checkout, toolchain, bwrap_path=bwrap_path
+                ),
+                encounter_dir=encounter_dir,
+                pytest_argv=pytest_argv,
+                ruff_argv=ruff_argv,
+            ),
+            run_agent_tests=build_agent_test_runner(runner, pytest_argv=pytest_argv),
+        )
+        return run_encounter(card, adapter, loadout, config, store)
+
+
+_SCRIPT_DELIMITER = "-----"
+
+
+def _build_adapter(spec: str) -> ModelAdapter:
+    """model spec → adapter；HTTP adapter 的 api key 一律取自 env（不進 CLI）。"""
+    kind, _, rest = spec.partition(":")
+    if kind == "scripted":
+        script = Path(rest)
+        if not rest or not script.is_file():
+            raise RunCliError(f"scripted 劇本檔不存在：{rest!r}")
+        replies = _split_script(script.read_text(encoding="utf-8"))
+        if not replies:
+            raise RunCliError(f"scripted 劇本檔沒有任何回覆：{script}")
+        return ScriptedAdapter(replies)
+    if kind == "anthropic":
+        if not rest:
+            raise RunCliError("anthropic spec 缺 model id：anthropic:<model>")
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            raise RunCliError("env ANTHROPIC_API_KEY 未設定")
+        return AnthropicAdapter(rest, api_key)
+    if kind == "openai":
+        if not rest:
+            raise RunCliError("openai spec 缺 model id：openai:<model>[@<base_url>]")
+        model, _, base_url = rest.partition("@")
+        kwargs: dict = {}
+        if base_url:
+            kwargs["base_url"] = base_url
+        return OpenAICompatAdapter(
+            model, os.environ.get("OPENAI_API_KEY", ""), **kwargs
+        )
+    raise RunCliError(f"未知 model spec：{spec!r}")
+
+
+def _split_script(text: str) -> list[str]:
+    """scripted 劇本：回覆以獨立一行 `-----` 分隔（回覆內容逐 byte 保留）。"""
+    replies: list[str] = []
+    current: list[str] = []
+    for line in text.splitlines():
+        if line.strip() == _SCRIPT_DELIMITER:
+            replies.append("\n".join(current))
+            current = []
+        else:
+            current.append(line)
+    replies.append("\n".join(current))
+    return [reply for reply in replies if reply.strip()]
 
 
 # ---------------------------------------------------------------------------

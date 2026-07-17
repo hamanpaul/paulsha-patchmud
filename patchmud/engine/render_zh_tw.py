@@ -25,7 +25,8 @@ RENDER_LANGUAGE = "zh-TW"
 
 #: 文案表版本；文案任何改動必須 bump（golden 測試與 harness_prompt_version 鎖定）。
 #: 1.1.0：新增 strategy enforcer verdict 與 plan schema 錯誤文案（Task 12）。
-RENDER_PACK_VERSION = "1.1.0"
+#: 1.2.0：新增 turn loop 執行結果與 reviewer subcall 文案（Task 13）。
+RENDER_PACK_VERSION = "1.2.0"
 
 
 class RenderError(Exception):
@@ -141,6 +142,45 @@ MESSAGES: dict[str, str] = {
         "plan 的 test_targets 必須是 tests/ 下的 repo-relative 路徑"
         "（tests/agent/** 允許尚不存在，其餘必須存在）：{path}。"
     ),
+    # ---- turn loop 執行結果（spec §5.1–5.2；Task 13） ----------------------
+    "loop.illegal": "【裁定】動作不合法：{reason}",
+    "loop.patch_applied": "PATCH 已套用，工作區已更新。",
+    "loop.patch_rejected": "PATCH 套用失敗：{reason}（工作區未變動）。",
+    "loop.write_test_applied": "WRITE_TEST 已套用，tests/agent/** 已更新。",
+    "loop.look_header": "【repo 樹】（深度上限 {depth}）",
+    "loop.inspect_header": "【檔案】{path}（{size} bytes）",
+    "loop.inspect_truncated": "……（內容超過 {limit} bytes，已截斷）",
+    "loop.inspect_denied": (
+        "INSPECT 遭拒：路徑「{path}」不在 sandbox 內、不存在或位於黑名單。"
+    ),
+    "loop.plan_accepted": "計畫已通過 schema 驗證並凍結；後續修改一律不合法。",
+    "loop.rollback_done": "已撤回最近一個成功套用的 patch。",
+    "loop.rollback_empty": "無可撤回的 patch（stack 為空）。",
+    "loop.triage_done": "TRIAGE 完成：開放的 DUPLICATE 已全數關閉。",
+    "loop.run_test_bad_target": (
+        "RUN_TEST 目標不在白名單（public probe id 或 tests/agent/**）：{target}。"
+    ),
+    "loop.probe_header": "【probe 結果】",
+    "loop.probe_line": "- {probe_id}：{status}",
+    # ---- reviewer subcall（spec §6.2；findings advisory，F10） -------------
+    "reviewer.system_rules": (
+        "你是 PatchMUD 對局中的 fresh-context 審查者：只依據下方提供的任務卡"
+        "公開部分、累積 diff、public probe 最新結果與作者可見 artifacts 審查，"
+        "你看不到作者對話，也不得臆測隱藏資產。回覆一份 YAML，頂層鍵 "
+        "findings，最多 5 筆；每筆欄位：category、severity、summary、"
+        "evidence（列表，每項 {{path, line}}）。summary 用中文敘述，"
+        "其餘欄位維持英文結構化格式。沒有 finding 時回 findings: []。"
+    ),
+    "reviewer.diff_header": "【累積 diff】",
+    "reviewer.diff_empty": "（目前沒有任何變更）",
+    "reviewer.probes_header": "【public probe 最新結果】",
+    "reviewer.plan_header": "【作者計畫（PlanArtifact）】",
+    "reviewer.claims_header": "【作者 claim 歷史】",
+    "reviewer.findings_header": "【審查回報】共 {count} 筆 finding：",
+    "reviewer.finding_item": "- [{severity}] {category}：{summary}（證據：{evidence}）",
+    "reviewer.finding_no_evidence": "無",
+    "reviewer.no_findings": "【審查回報】reviewer 未回報任何 finding。",
+    "reviewer.invalid": "本次審查輸出不符 schema，記為 invalid（成本照計）。",
 }
 
 
