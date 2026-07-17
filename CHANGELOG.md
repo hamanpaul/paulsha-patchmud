@@ -8,6 +8,7 @@
 ## [Unreleased]
 
 ### Fixed
+  - **codex F1（blocker）hidden evaluator 隔離**：hidden probe 不再 overlay 進 candidate 可讀的 checkout，改物化到 checkout 之外的獨立 read-only bind（`IsolationRunner.add_ro_bind`），並由 evaluator 自控的 hidden_root conftest 提供 candidate import 根——candidate production code 無法在自己的樹讀 hidden 測資學答案硬編，且 candidate 自己的 conftest 完全不參與 hidden 評分。真 bwrap 隔離測試佐證。
 - **pytest 移入 runtime dependencies**：引擎在沙箱內執行 probe 需要 pytest；先前只列在 `[test]` extras 導致 pipx 安裝的 CLI `score-diff` fail-closed（找不到 pytest）。e2e 驗證：reference patch → clear=1 power=97、空 diff → clear=0。
 
 ### Added

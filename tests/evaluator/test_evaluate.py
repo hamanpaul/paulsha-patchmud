@@ -165,7 +165,12 @@ class FakeEvalRunner:
                 return self.ruff_results.pop(0)
             return RUFF_CLEAN
 
-        target = next(t for t in self.pytest_results if t in argv)
+        # hidden probe target 現在是 candidate 樹外的絕對路徑（F1）；fake 以
+        # 尾段比對（key 仍為 deck 相對路徑，如 "hidden/test_x.py"）。
+        def _matches(key: str) -> bool:
+            return any(a == key or a.endswith("/" + key) for a in argv)
+
+        target = next(t for t in self.pytest_results if _matches(t))
         exit_code, xml = self.pytest_results[target]
         (Path(cwd) / report_rel).write_text(xml, encoding="utf-8")
         return Execution(
@@ -225,16 +230,16 @@ class TestIndependentCheckout:
         checkout = tmp_path / "eval_checkout"
         assert all(cwd == checkout for cwd in runner.cwds)
 
-    def test_checkout_has_diff_applied_and_hidden_overlaid(
+    def test_checkout_has_diff_applied_and_hidden_not_in_candidate_tree(
         self, card, frozen, tmp_path
     ):
         _evaluate(card, frozen, REFERENCE_DIFF, FakeEvalRunner(), tmp_path)
         checkout = tmp_path / "eval_checkout"
         content = (checkout / "src" / "inventory.py").read_text(encoding="utf-8")
         assert "raise KeyError(name)" in content  # final diff 已套
-        assert (checkout / HIDDEN_PROBE).read_bytes() == (
-            FIXTURE / HIDDEN_PROBE
-        ).read_bytes()
+        # F1：hidden probe 不得落在 candidate 可讀的 checkout 樹內
+        assert not (checkout / HIDDEN_PROBE).exists()
+        assert not (checkout / "hidden").exists()
 
     def test_probe_outcomes_cover_rubric_and_critical(self, card, frozen, tmp_path):
         result = _evaluate(card, frozen, REFERENCE_DIFF, FakeEvalRunner(), tmp_path)
@@ -456,6 +461,33 @@ class TestMiniEncounterIntegration:
         # perf 判定以量測當下值封存（供 L1 重算）
         assert result.power.perf_judgments[0].probe_id == HIDDEN_PROBE
         assert result.power.perf_judgments[0].wall_ms > 0
+
+    def test_hidden_not_present_in_candidate_checkout(
+        self, real_capabilities, card, frozen, tmp_path
+    ):
+        """F1：hidden probe bytes 不得落在 candidate 可讀的 checkout 樹內。
+
+        candidate production code（合法 patch，不會被 restore_protected 還原）
+        原本可讀 `checkout/hidden/*.py` 學答案硬編。修正後 hidden materialize 到
+        checkout 之外的獨立 ro-bind，candidate 自己的樹裡看不到答案。"""
+        checkout = tmp_path / "eval"
+        result = evaluate_final(
+            card,
+            frozen,
+            REFERENCE_DIFF,
+            _runner_factory,
+            encounter_dir=FIXTURE,
+            checkout_dir=checkout,
+            pytest_argv=_sandbox_pytest_argv(),
+        )
+        assert result.gates.critical_pass is True
+        assert result.probe_outcomes[HIDDEN_PROBE].status == "passed"
+        # candidate checkout 樹內不得出現 hidden probe 檔案
+        assert not (checkout / "hidden").exists()
+        leaked = [
+            p for p in checkout.rglob("test_cr1*.py") if p.is_file()
+        ]
+        assert leaked == [], f"hidden 洩漏進 candidate checkout：{leaked}"
 
     def test_conftest_forge_cannot_fake_hidden_pass(
         self, real_capabilities, card, frozen, tmp_path

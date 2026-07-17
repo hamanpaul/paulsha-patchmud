@@ -104,6 +104,11 @@ def evaluate_final(
         if checkout.exists() and any(checkout.iterdir()):
             raise EvaluatorError(f"checkout 目的地必須是不存在或空目錄：{checkout}")
 
+    # F1：hidden probe bytes 掛在 candidate 樹之外的獨立目錄（ro-bind），
+    # candidate production code（合法 patch，不被 restore_protected 還原）因此
+    # 無法在自己的 checkout 樹讀到 hidden 測資學答案硬編。
+    hidden_root = Path(tempfile.mkdtemp(prefix="patchmud-hidden-"))
+
     try:
         _clone_frozen(frozen, checkout)
 
@@ -130,12 +135,11 @@ def evaluate_final(
                 max(0, count - before[key]) for key, count in after.items()
             )
 
-        probes = _evaluation_probes(card)
-        _overlay_hidden(
-            [p.probe_id for p in probes if p.probe_id.startswith(_HIDDEN_PREFIX)],
-            encounter_dir,
-            checkout,
+        probes = _materialize_hidden_probes(
+            _evaluation_probes(card), encounter_dir, hidden_root, checkout
         )
+        if hasattr(runner_obj, "add_ro_bind"):
+            runner_obj.add_ro_bind(hidden_root)  # candidate 樹外的 hidden ro-bind
 
         suite = ProbeSuite(
             probes, runner_obj, pytest_argv=pytest_argv, timeout_s=timeout_s
@@ -158,6 +162,7 @@ def evaluate_final(
             gates=gates,
         )
     finally:
+        shutil.rmtree(hidden_root, ignore_errors=True)
         if cleanup:
             shutil.rmtree(checkout, ignore_errors=True)
 
@@ -283,16 +288,47 @@ def _numstat(diff: str, checkout: Path) -> tuple[FileChange, ...]:
     return tuple(changes)
 
 
-def _overlay_hidden(
-    hidden_paths: Sequence[str], encounter_dir: Path, checkout: Path
-) -> None:
-    for rel in sorted(set(hidden_paths)):
-        src = encounter_dir / rel
+def _materialize_hidden_probes(
+    probes: tuple[Probe, ...], encounter_dir: Path, hidden_root: Path, checkout: Path
+) -> tuple[Probe, ...]:
+    """把 hidden probe 物化到 candidate 樹外的 hidden_root，並把其 target 改成
+    hidden_root 下的絕對路徑（probe_id 不變，維持以 deck rel path 為 key）。
+
+    F1：hidden 不落在 candidate 可讀的 checkout；改由獨立 ro-bind 提供。
+    hidden_root 內生成 evaluator 自控的 conftest，把 candidate import 根
+    （checkout 與 checkout/src）加入 sys.path；candidate 自己的 conftest 因此
+    完全不參與 hidden 評分（比 restore-then-load 更強的隔離）。
+    """
+    hidden_probes = [
+        p for p in probes if p.target is not None and p.probe_id.startswith(_HIDDEN_PREFIX)
+    ]
+    if not hidden_probes:
+        return probes
+
+    checkout = Path(checkout).resolve()
+    conftest = hidden_root / "conftest.py"
+    conftest.write_text(
+        "import sys\n"
+        f"sys.path.insert(0, {str(checkout / 'src')!r})\n"
+        f"sys.path.insert(0, {str(checkout)!r})\n",
+        encoding="utf-8",
+    )
+
+    rewritten: list[Probe] = []
+    for probe in probes:
+        if probe.target is None or not probe.probe_id.startswith(_HIDDEN_PREFIX):
+            rewritten.append(probe)
+            continue
+        src = encounter_dir / probe.target
         if not src.is_file():
-            raise EvaluatorError(f"hidden probe 不存在於 deck：{rel}")
-        dst = checkout / rel
+            raise EvaluatorError(f"hidden probe 不存在於 deck：{probe.target}")
+        dst = hidden_root / probe.target
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(src, dst)
+        rewritten.append(
+            Probe(probe_id=probe.probe_id, kind=probe.kind, target=str(dst.resolve()))
+        )
+    return tuple(rewritten)
 
 
 def _evaluation_probes(card: IssueCard) -> tuple[Probe, ...]:

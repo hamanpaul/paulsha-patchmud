@@ -125,10 +125,16 @@ class IsolationRunner:
         toolchain_ro: Sequence[Path] = (Path("/usr"),),
         *,
         bwrap_path: str | os.PathLike[str] = DEFAULT_BWRAP_PATH,
+        extra_ro: Sequence[Path] = (),
     ) -> None:
         self._worktree = Path(worktree)
         self._toolchain_ro = tuple(Path(p) for p in toolchain_ro)
+        self._extra_ro = [Path(p) for p in extra_ro]
         self._bwrap_path = str(bwrap_path)
+
+    def add_ro_bind(self, path: Path) -> None:
+        """追加 read-only bind；evaluator 用來把 hidden 掛在 candidate 樹之外（F1）。"""
+        self._extra_ro.append(Path(path))
 
     def run(self, argv: list[str], cwd: Path, timeout_s: float) -> Execution:
         """在沙箱內執行 argv；timeout 時強制終止整個 process group。"""
@@ -142,7 +148,7 @@ class IsolationRunner:
 
         full_argv = build_bwrap_argv(
             self._worktree,
-            self._toolchain_ro,
+            (*self._toolchain_ro, *self._extra_ro),
             argv,
             bwrap_path=self._bwrap_path,
             chdir=cwd,
