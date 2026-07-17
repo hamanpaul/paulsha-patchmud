@@ -448,11 +448,11 @@
 **Files:**
 - Test: `tests/test_pilot_dryrun_e2e.py`
 
-- [ ] **Step 1: RED** — `pilot-v1`（8 encounters）× 8 loadouts × 2 個 `ScriptedAdapter` 假模型（一個「會修」、一個「會 flood」）跑完 128 runs：schedule 先存在且 hash 符；全部 run 有 result.yaml；report 產出；抽 3 個 run `replay_l1` identical；中斷（kill 中途）重啟後總 run 數不變。
+- [x] **Step 1: RED** — `pilot-v1`（8 encounters）× 8 loadouts × 2 個 `ScriptedAdapter` 假模型（一個「會修」、一個「會 flood」）跑完 128 runs：schedule 先存在且 hash 符；全部 run 有 result.yaml；report 產出；抽 3 個 run `replay_l1` identical；中斷（kill 中途）重啟後總 run 數不變。
   Run: `python3 -m pytest -q tests/test_pilot_dryrun_e2e.py`；Expected: FAIL → 修串線問題 → PASS。
-- [ ] **Step 2:** Run: `python3 -m pytest -q && python3 -m policy_check --repo .`；Expected: 全綠。
-- [ ] **Step 3:** Commit: `test(pilot): full-matrix dry-run acceptance (milestone D)`。
-- [ ] **Step 4:** 之後的真模型 pilot（校準 → 凍結 → 正式）是**營運動作**，不在本 plan：依 spec §11 執行並以 Task 19 calibrate 凍結參數。
+- [x] **Step 2:** Run: `python3 -m pytest -q && python3 -m policy_check --repo .`；Expected: 全綠。
+- [x] **Step 3:** Commit: `test(pilot): full-matrix dry-run acceptance (milestone D)`。
+- [x] **Step 4:** 之後的真模型 pilot（校準 → 凍結 → 正式）是**營運動作**，不在本 plan：依 spec §11 執行並以 Task 19 calibrate 凍結參數。
 
 ---
 
