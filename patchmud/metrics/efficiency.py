@@ -12,6 +12,10 @@
   元素 None（NA 傳染）。
 - **NA 傳染＋observable 雙欄（§10.1）**：run 集含 T^work NA 的 entry →
   work 欄輸出 ``None``、common-observable 欄（input + output_visible）照算。
+- **零 token fail-closed（§10.1）**：真實 model run 的 billed/observable
+  tokens 永遠可得且為正；零 token 樣本在 ``RunSample`` 構造層即拒絕
+  （``EconomyError``），tokens_per_clear／qaty／eutb 三者共用此單一防線
+  ——零 token run 不可能以 0.0 TokensPerClear／1.0 EuTB 奪榜首。
 - **Disclosure cohort（F17）**：所有效率排名輸出帶 ``disclosure_cohort``；
   ``rank_efficiency`` 只在同 cohort 內排名，跨 cohort 請求一律 raise——
   否則「少揭露 reasoning」的模型在固定 budget 指標上憑空得利。
@@ -185,15 +189,15 @@ def tokens_per_clear(runs: Sequence[RunSample]) -> EfficiencyResult:
 
 
 def qaty(runs: Sequence[RunSample]) -> EfficiencyResult:
-    """``QATY = 10^6·Σ Clear·(Power/100) / Σ T^work``；值愈高愈好。"""
+    """``QATY = 10^6·Σ Clear·(Power/100) / Σ T^work``；值愈高愈好。
+
+    分母不可能為 0：零 token 樣本在 ``RunSample`` 構造層已 fail-closed
+    （§10.1），非空 model run 集的 Σ tokens 恆為正。
+    """
     _require_runs(runs, context="qaty")
     numerator = 1_000_000 * sum(run.clear * (run.power / 100.0) for run in runs)
     work = _work_total(runs)
-    if work == 0:
-        raise EfficiencyError("qaty：Σ T^work = 0（run 集無 token 支出）")
     observable_total = _observable_total(runs)
-    if observable_total == 0:
-        raise EfficiencyError("qaty：Σ observable tokens = 0（run 集無 token 支出）")
     return EfficiencyResult(
         metric="qaty",
         value=None if work is None else numerator / work,

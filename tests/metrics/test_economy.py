@@ -5,7 +5,12 @@
   **不剔除**（留在分子）；金額全程 `decimal.Decimal`（invariant 6）。
 - `Economy_i = 100·min(1, sqrt(C_ref/C_run))`（報告 §5.5）；`reference_cost`
   未校準（None）→ Economy 輸出 `None`（NA），只報原始成本（§10.2）。
-- `C_run = 0` 是計價設定錯誤，fail-closed（F18 除零防線）。
+- `C_run = 0` 是計價設定錯誤，fail-closed（F18 除零防線）——**無條件**：
+  失敗 run（clear=0）的 `C_run = 0`／cost 缺漏一樣拒絕（spec §10.2）。
+- 零 token 樣本 fail-closed（§10.1）：真實 model run 的 billed/observable
+  tokens 永遠可得且為正，`observable_tokens = 0`（含漏填預設）與
+  `work_tokens = 0`（NA 必須記 None，不得記 0）都是資料錯誤，`RunSample`
+  構造即拒絕——否則零 token run 以 0.0 TokensPerClear／1.0 EuTB 直接奪榜首。
 - 含 human run 的聚合集合 raise `HumanRunExcluded`（human run 不進 ranked）。
 """
 
@@ -34,7 +39,7 @@ def _run(
     power: float = 100.0,
     cost: Decimal | None = None,
     work: int | None = None,
-    obs: int = 0,
+    obs: int = 100,
     human: bool = False,
 ) -> RunSample:
     return RunSample(
@@ -113,6 +118,30 @@ class TestRunSample:
         with pytest.raises(EconomyError):
             _run(power=101.0)
 
+    # -- 零 token fail-closed（review finding 1：fail-open / NA-as-0） -----
+
+    def test_default_observable_tokens_rejected_for_model_run(self) -> None:
+        # 漏填 observable_tokens（預設 0）不得與「量測為 0」混同：真實
+        # model run 的 billed/observable tokens 永遠為正（§10.1）——
+        # 否則該樣本以 observable=0.0 / eutb=1.0 直接奪榜首（fail-open）
+        with pytest.raises(EconomyError):
+            RunSample(clear=1, power=100.0)
+
+    def test_zero_observable_tokens_rejected_for_model_run(self) -> None:
+        with pytest.raises(EconomyError):
+            _run(obs=0)
+
+    def test_zero_work_tokens_rejected(self) -> None:
+        # NA 必須記 None、不得記 0（§10.1）；T^work = 0 只可能是資料錯誤
+        with pytest.raises(EconomyError):
+            _run(work=0, obs=100)
+
+    def test_human_run_may_omit_observable_tokens(self) -> None:
+        # human run ledger 全 NA（Task 22）：observable 預設 0 合法——
+        # human run 本來就進不了任何 ranked 聚合（HumanRunExcluded）
+        run = RunSample(clear=0, power=0.0, human=True)
+        assert run.observable_tokens == 0
+
 
 # ---------------------------------------------------------------------------
 # Economy 分數（報告 §5.5；reference_cost 未校準 → NA）
@@ -157,6 +186,26 @@ class TestEconomyScore:
         card = replace(CARD, reference_cost=Decimal("4"))
         with pytest.raises(EconomyError):
             economy_score(_run(clear=1, cost=Decimal("0")), card)
+
+    # -- F18 無條件生效（review finding 2：clear=0 早退繞過 _require_cost）
+
+    def test_failed_run_zero_cost_rejected_f18(self) -> None:
+        # spec §10.2：「C_run = 0 是設定錯誤，engine 拒絕」無條件——
+        # 失敗 run 不得以 Economy=0 靜默放行計價設定錯誤
+        card = replace(CARD, reference_cost=Decimal("4"))
+        with pytest.raises(EconomyError):
+            economy_score(_run(clear=0, cost=Decimal("0")), card)
+
+    def test_failed_run_missing_cost_rejected(self) -> None:
+        card = replace(CARD, reference_cost=Decimal("4"))
+        with pytest.raises(EconomyError):
+            economy_score(_run(clear=0, cost=None), card)
+
+    def test_uncalibrated_card_still_validates_cost_f18(self) -> None:
+        # reference_cost 未校準（→ NA）也不豁免 F18：兩個 economy 入口
+        # （cost_per_clear、economy_score）對 C_run=0 一致拒絕
+        with pytest.raises(EconomyError):
+            economy_score(_run(clear=1, cost=Decimal("0")), CARD)
 
     def test_returns_int(self) -> None:
         card = replace(CARD, reference_cost=Decimal("4"))

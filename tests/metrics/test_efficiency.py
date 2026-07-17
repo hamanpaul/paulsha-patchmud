@@ -21,7 +21,7 @@ import math
 import pytest
 
 from patchmud.metrics.bootstrap import BootstrapError, bootstrap_ci
-from patchmud.metrics.economy import HumanRunExcluded, RunSample
+from patchmud.metrics.economy import EconomyError, HumanRunExcluded, RunSample
 from patchmud.metrics.efficiency import (
     COHORT_FULL,
     COHORT_OBSERVABLE,
@@ -108,6 +108,13 @@ class TestTokensPerClear:
         with pytest.raises(EfficiencyError):
             tokens_per_clear([])
 
+    def test_zero_token_sample_fail_closed(self) -> None:
+        # review finding 1 repro：RunSample(clear=1, power=100.0)（work NA、
+        # observable 漏填預設 0）過去流進 tokens_per_clear 得 observable=0.0
+        # ——最佳值、直接奪榜首。零 token 樣本必須在構造層就拒絕（§10.1）
+        with pytest.raises(EconomyError):
+            RunSample(clear=1, power=100.0)
+
 
 # ---------------------------------------------------------------------------
 # QATY（報告 §5.6.3）
@@ -148,8 +155,10 @@ class TestQaty:
         assert r.disclosure_cohort == COHORT_OBSERVABLE
 
     def test_zero_token_denominator_rejected(self) -> None:
-        with pytest.raises(EfficiencyError):
-            qaty([_run(clear=1, work=0, obs=0)])
+        # Σ T^work = 0 的 run 集如今在 RunSample 構造層即 fail-closed
+        # （單一防線，qaty/tokens_per_clear/eutb 三者一致；§10.1）
+        with pytest.raises(EconomyError):
+            _run(clear=1, work=0, obs=0)
 
     def test_human_run_rejected(self) -> None:
         with pytest.raises(HumanRunExcluded):
@@ -224,6 +233,13 @@ class TestEutb:
     def test_human_run_rejected(self) -> None:
         with pytest.raises(HumanRunExcluded):
             eutb([_run(human=True)], BUDGET)
+
+    def test_zero_token_clear_run_fail_closed(self) -> None:
+        # review finding 1：零 token 的 clear run 在每個 budget 點都算
+        # 通關 → eutb=1.0 最佳值。此樣本必須在構造層即拒絕，
+        # 連「混在誠實 run 之中」的單顆零 token run 也建不出來
+        with pytest.raises(EconomyError):
+            _run(clear=1, work=0, obs=50_000)
 
 
 # ---------------------------------------------------------------------------
