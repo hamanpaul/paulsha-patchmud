@@ -1,0 +1,14 @@
+diff --git a/src/configmerge.py b/src/configmerge.py
+index 0000000..0000000 100644
+--- a/src/configmerge.py
++++ b/src/configmerge.py
+@@ -11,5 +11,8 @@
+     """合併設定：`override` 覆蓋 `base`；`override` 內值為 None 代表移除該鍵。"""
+     result = dict(base)
+     for key, value in override.items():
+-        result[key] = value
++        if value is None:
++            result.pop(key, None)
++        else:
++            result[key] = value
+     return result

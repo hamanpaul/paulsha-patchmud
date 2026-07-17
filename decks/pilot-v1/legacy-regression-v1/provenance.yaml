@@ -1,0 +1,9 @@
+schema_version: 1
+issue_id: legacy-regression-v1
+archetype_source: "原創 micro-issue（依報告 §12.2「legacy regression」類型自製，非公開題庫改編）"
+published_at: null
+variant_notes: >-
+  母題：版本比較以字串而非數值比較各分量，導致雙位數分量排序錯誤
+  （"1.9" 被誤判大於 "1.10"）；修法必須同時保留既有的兩段式版本號
+  零填充相容行為（regression 保護），杜絕「整段重寫」式的危險修法。
+frozen_at: "2026-07-17"

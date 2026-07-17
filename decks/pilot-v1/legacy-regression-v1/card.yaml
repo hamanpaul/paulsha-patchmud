@@ -1,0 +1,43 @@
+schema_version: 1
+issue_id: legacy-regression-v1
+archetype: legacy-regression
+difficulty: medium
+difficulty_scale: 1.0
+expected_patch_loc: [2, 15]
+wall_clock_seconds: 450
+max_turns: 7
+allowed_paths:
+  - "src/**"
+  - "tests/agent/**"
+expected_paths:
+  - "src/version.py"
+public_requirements:
+  - id: MAIN-1
+    text: 雙位數版本分量必須以數值比較，"1.9" 必須小於 "1.10"
+    probe: tests/public/test_double_digit_ordering.py
+critical_requirements:
+  - id: CR-1
+    hidden_probe: hidden/test_cr1_version_ordering.py
+regression_probes:
+  - tests/starter/
+  - smoke: ["python3", "-B", "-c", "import sys; sys.path.insert(0, 'src'); import version"]
+compat_probes:
+  - probe: tests/starter/test_version_legacy.py
+power_rubric:
+  functional:
+    points: 60
+    groups:
+      - {id: CR-1, points: 60, probe: hidden/test_cr1_version_ordering.py}
+  robustness:
+    points: 15
+    probes: [hidden/test_cr1_version_ordering.py]
+  compatibility:
+    points: 10
+    probes: [tests/starter/test_version_legacy.py]
+  maintainability:
+    points: 10
+  runtime_efficiency:
+    points: 5
+    probes: [hidden/test_cr1_version_ordering.py]
+    timeout_factor: 3.0
+reference_cost: null

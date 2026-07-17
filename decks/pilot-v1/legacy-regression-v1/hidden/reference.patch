@@ -1,0 +1,15 @@
+diff --git a/src/version.py b/src/version.py
+index 0000000..0000000 100644
+--- a/src/version.py
++++ b/src/version.py
+@@ -11,8 +11,8 @@
+     parts2 = v2.split(".")
+     length = max(len(parts1), len(parts2))
+     for i in range(length):
+-        p1 = parts1[i] if i < len(parts1) else "0"
+-        p2 = parts2[i] if i < len(parts2) else "0"
++        p1 = int(parts1[i]) if i < len(parts1) else 0
++        p2 = int(parts2[i]) if i < len(parts2) else 0
+         if p1 != p2:
+             return -1 if p1 < p2 else 1
+     return 0
