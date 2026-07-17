@@ -64,10 +64,10 @@ def _state(**overrides) -> RunState:
 
 class TestGoldenRender:
     def test_render_pack_version_pinned_for_golden(self) -> None:
-        # golden 字串對應 render pack 1.3.0（Task 22 新增 play 文案，
+        # golden 字串對應 render pack 1.4.0（Task 23 新增 watch 戰報文案，
         # 既有 golden 文案不變）；改文案必須 bump 版本並更新 golden。
         assert zh.RENDER_LANGUAGE == "zh-TW"
-        assert zh.RENDER_PACK_VERSION == "1.3.0"
+        assert zh.RENDER_PACK_VERSION == "1.4.0"
 
     def test_fixed_run_state_golden(self) -> None:
         golden = (

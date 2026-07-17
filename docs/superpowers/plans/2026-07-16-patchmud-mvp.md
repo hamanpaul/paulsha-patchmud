@@ -487,11 +487,11 @@
 - Consumes: `RunStore.load_events()`（Task 6）、zh-TW render pack（Task 10）。
 - Produces: `render_battle_report(events, result) -> str`（全場）與 `render_turn(events, n) -> str`；只讀封存資料。
 
-- [ ] **Step 1: RED** — 對 e2e run 的封存 events 鎖定：輸出含「回合 N」、行動敘述、queue 變化（新增/解決 issue 的中文敘事）、flood 壓力、終局結算段；`--turn N` 只輸出該回合；執行期間 `IsolationRunner` 零呼叫、run 目錄零寫入（spy + mtime 驗證）；文案全部經 render pack 查表。
+- [x] **Step 1: RED** — 對 e2e run 的封存 events 鎖定：輸出含「回合 N」、行動敘述、queue 變化（新增/解決 issue 的中文敘事）、flood 壓力、終局結算段；`--turn N` 只輸出該回合；執行期間 `IsolationRunner` 零呼叫、run 目錄零寫入（spy + mtime 驗證）；文案全部經 render pack 查表。
   Run: `python3 -m pytest -q tests/store/test_watch.py`；Expected: FAIL。
-- [ ] **Step 2:** 實作。
-- [ ] **Step 3:** Run 同上；Expected: PASS。
-- [ ] **Step 4:** Commit: `feat(watch): turn-by-turn zh-TW battle report viewer`。
+- [x] **Step 2:** 實作。
+- [x] **Step 3:** Run 同上；Expected: PASS。
+- [x] **Step 4:** Commit: `feat(watch): turn-by-turn zh-TW battle report viewer`。
 
 ---
 

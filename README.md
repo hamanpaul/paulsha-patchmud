@@ -32,6 +32,7 @@ patchmud validate-deck decks/pilot-v1          # deck 契約與 fixture 驗證
 patchmud score-diff --encounter <dir> --diff <file>   # 離線評分（milestone A）
 patchmud run --encounter <dir> --model <cfg> --loadout P0T0R0   # 單場 encounter
 patchmud pilot --deck pilot-v1 --models models.yaml --seed 42   # forced loadout 矩陣
+patchmud watch <run_dir> [--turn N]            # 離線觀戰：逐回合 zh-TW 戰報
 patchmud replay <run_dir> [--l2]               # 兩級重播驗證
 patchmud report --runs "runs/*"                # 多榜研究報告
 ```

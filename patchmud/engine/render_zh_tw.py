@@ -27,7 +27,8 @@ RENDER_LANGUAGE = "zh-TW"
 #: 1.1.0：新增 strategy enforcer verdict 與 plan schema 錯誤文案（Task 12）。
 #: 1.2.0：新增 turn loop 執行結果與 reviewer subcall 文案（Task 13）。
 #: 1.3.0：新增 `patchmud play` 人類對局文案（Task 22；既有文案不變）。
-RENDER_PACK_VERSION = "1.3.0"
+#: 1.4.0：新增 `patchmud watch` 戰報文案（Task 23；既有文案不變）。
+RENDER_PACK_VERSION = "1.4.0"
 
 
 class RenderError(Exception):
@@ -172,6 +173,34 @@ MESSAGES: dict[str, str] = {
     ),
     "play.input_prompt": "請輸入你的動作（回覆以空行結束；Ctrl-D 視同 COMMIT）：",
     "play.eof_commit": "偵測到輸入結束（EOF），視同 COMMIT 收尾。",
+    # ---- watch 戰報（patchmud watch，spec §5.4；Task 23） -------------------
+    "watch.report_header": "【戰報】run {run_id}｜loadout {loadout}",
+    "watch.baseline_header": "=== 開場（turn 0 基線） ===",
+    "watch.turn_header": "=== 回合 {turn} ===",
+    "watch.action": "【行動】{action}——{verdict}",
+    "watch.action_unparsed": "【行動】（回覆無法解析，未宣告任何動作）",
+    "watch.outcome.executed": "動作完成",
+    "watch.outcome.parse_error": "回覆無法解析（照樣消耗一回合）",
+    "watch.outcome.illegal": "動作不合法（照樣消耗一回合）",
+    "watch.outcome.error": "動作執行失敗（工作區未變動）",
+    "watch.detail": "【說明】{detail}",
+    "watch.reviewer_subcall": (
+        "【審查】本回合嵌入 reviewer subcall：findings {count} 筆（valid: {valid}）"
+    ),
+    "watch.queue_delta_header": "【議題變化】",
+    "watch.queue_spawned": "- 新增 {item_id} [{type}]",
+    "watch.queue_resolved": "- 解決 {item_id} [{type}]",
+    "watch.queue_unchanged": "- （議題佇列無變化）",
+    "watch.queue_open_header": "【開放議題】{count} 項",
+    "watch.queue_open_item": "- {item_id} [{type}]",
+    "watch.final_header": "=== 終局結算 ===",
+    "watch.final_summary": "終局原因 {end_reason}｜使用回合 {turns}｜Clear = {clear}",
+    # ---- watch 操作性錯誤（viewer 對人類的 fail-closed 敘事） --------------
+    "watch.error.result_not_mapping": "result 必須是 mapping（result.yaml 內容）",
+    "watch.error.missing_field": "event 缺欄位「{field}」（type {type}）",
+    "watch.error.no_baseline": "events 缺 turn-0 baseline，無法推導 queue 變化",
+    "watch.error.unknown_event": "未知事件型別「{type}」，非回合制 run 無法觀戰",
+    "watch.error.turn_not_found": "找不到回合 {turn} 的 turn event",
     # ---- reviewer subcall（spec §6.2；findings advisory，F10） -------------
     "reviewer.system_rules": (
         "你是 PatchMUD 對局中的 fresh-context 審查者：只依據下方提供的任務卡"

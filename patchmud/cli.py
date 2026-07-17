@@ -23,6 +23,12 @@ P0T0R0`——`HumanAdapter`（stdin/stdout）取代模型 adapter，人類以同
 token 欄位 `NA`、成本 `NA`；run 標記 `human: true`，永不進 ranked 資料與
 任何聚合指標。回覆以空行結束；Ctrl-D（EOF）視同 COMMIT 收尾。
 
+`watch`（Task 23，spec §5.4）：`patchmud watch <run_dir> [--turn N]`——離線把
+封存 `events.jsonl` 重放成逐回合 zh-TW 戰報（開場基線、行動、probe 結果、
+queue 變化、flood 壓力、終局結算），`--turn N` 只輸出該回合。資料只來自
+封存 events 與 result.yaml（與 replay L1 同源），不重新執行任何 probe 或
+模型呼叫、不寫回 run 目錄——純視圖層。
+
 `replay`（Task 16，spec §12.2）：`patchmud replay <run_dir> [--l2]`——L1 位元
 一致重算（不執行任何 probe；runtime_efficiency 引用封存 outcome），與封存
 `result.yaml` 不一致 → exit non-zero；`--l2` 於 pinned 環境（deck 重物化 SHA
@@ -114,6 +120,7 @@ from patchmud.store.replay import (
 )
 from patchmud.store.run_store import RunStore
 from patchmud.store.schemas import RESULT_SCHEMA_VERSION, StoreError
+from patchmud.store.watch import WatchError, render_battle_report, render_turn
 
 __all__ = [
     "ReportError",
@@ -158,8 +165,8 @@ def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
     if not args:
         print(
-            "patchmud 0.0.0 — 子命令：score-diff / run / play / replay / report；"
-            "其餘見 docs/superpowers/plans/2026-07-16-patchmud-mvp.md"
+            "patchmud 0.0.0 — 子命令：score-diff / run / play / watch / replay / "
+            "report；其餘見 docs/superpowers/plans/2026-07-16-patchmud-mvp.md"
         )
         return 0
     if args[0] == "score-diff":
@@ -168,6 +175,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_run(args[1:])
     if args[0] == "play":
         return _cmd_play(args[1:])
+    if args[0] == "watch":
+        return _cmd_watch(args[1:])
     if args[0] == "replay":
         return _cmd_replay(args[1:])
     if args[0] == "report":
@@ -617,6 +626,53 @@ def _split_script(text: str) -> list[str]:
             current.append(line)
     replies.append("\n".join(current))
     return [reply for reply in replies if reply.strip()]
+
+
+# ---------------------------------------------------------------------------
+# watch 子命令（Task 23，spec §5.4）
+# ---------------------------------------------------------------------------
+
+
+def _cmd_watch(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="patchmud watch",
+        description=(
+            "離線觀戰：把封存 events.jsonl 重放成逐回合 zh-TW 戰報"
+            "（只讀封存資料，不重新執行任何 probe 或模型呼叫，spec §5.4）。"
+        ),
+    )
+    parser.add_argument("run_dir", type=Path, help="run 目錄（runs/<run_id>）")
+    parser.add_argument(
+        "--turn", type=int, default=None, help="只輸出第 N 回合的戰報段落"
+    )
+    ns = parser.parse_args(argv)
+
+    try:
+        store = RunStore.open(ns.run_dir)  # fail-closed：run.yaml schema、event seq
+        events = store.load_events()
+        if ns.turn is not None:
+            print(render_turn(events, ns.turn))
+        else:
+            print(render_battle_report(events, _load_watch_result(ns.run_dir)))
+    except (WatchError, StoreError) as exc:
+        print(f"watch 失敗：{exc}", file=sys.stderr)
+        return 2
+    return 0
+
+
+def _load_watch_result(run_dir: Path) -> dict:
+    """result.yaml 讀取（只讀；schema fail-closed，與 report 載入同一契約）。"""
+    result_path = Path(run_dir) / "result.yaml"
+    if not result_path.is_file():
+        raise StoreError(f"run 未完成（缺 result.yaml），無法出全場戰報：{run_dir}")
+    result = yaml.safe_load(result_path.read_text(encoding="utf-8"))
+    if not isinstance(result, dict):
+        raise StoreError(f"result.yaml 內容必須是 mapping：{result_path}")
+    if result.get("schema_version") != RESULT_SCHEMA_VERSION:
+        raise StoreError(
+            f"result.yaml schema_version 不符：{result.get('schema_version')!r}"
+        )
+    return result
 
 
 # ---------------------------------------------------------------------------
