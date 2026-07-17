@@ -55,8 +55,7 @@ class TestTwoTurnFix:
         rc = main(
             [
                 "run",
-                "--encounter",
-                str(FIXTURE),
+                str(FIXTURE),  # encounter 為 positional（可為名字或路徑）
                 "--model",
                 f"scripted:{script}",
                 "--loadout",

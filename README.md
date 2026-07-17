@@ -28,14 +28,17 @@ python -m pip install -e ".[test]"
 MVP CLI（依實作計劃逐步落地）：
 
 ```bash
+patchmud play <關卡>                            # 人類親自玩（關卡可只打名字，如 input-validation-v1）
+patchmud run <關卡> --model anthropic:claude-sonnet-5 --live   # 看模型即時玩（--delay N 放慢節奏）
+patchmud watch <run_dir> [--turn N]            # 離線觀戰：逐回合 zh-TW 戰報
 patchmud validate-deck decks/pilot-v1          # deck 契約與 fixture 驗證
 patchmud score-diff --encounter <dir> --diff <file>   # 離線評分（milestone A）
-patchmud run --encounter <dir> --model <cfg> --loadout P0T0R0   # 單場 encounter
-patchmud pilot --deck pilot-v1 --models models.yaml --seed 42   # forced loadout 矩陣
-patchmud watch <run_dir> [--turn N]            # 離線觀戰：逐回合 zh-TW 戰報
+patchmud pilot --deck pilot-v1 --models models.yaml --seed 42   # forced loadout 矩陣（跑 benchmark）
 patchmud replay <run_dir> [--l2]               # 兩級重播驗證
-patchmud report --runs "runs/*"                # 多榜研究報告
+patchmud report --runs "runs/*"                # 多榜研究報告（模型比較）
 ```
+
+`play` / `run` 的關卡可只打名字（自動找 `decks/pilot-v1/<名字>`），`--loadout` 預設 `P0T0R0`（SOLO），`--runs-root` 預設 `runs`。最短：`patchmud play input-validation-v1`。
 
 ## Version
 
