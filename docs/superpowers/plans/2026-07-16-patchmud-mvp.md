@@ -435,11 +435,11 @@
 
 > 內容創作任務：每個 encounter 是獨立小 Python 專案。建議一個 encounter 一個 commit，先做母題再做變體（變體改邊界規則/錯誤契約/常數，§4.3）。`provenance.yaml` 記錄來源與封存時間。此 task 可與 Task 9–19 並行。
 
-- [ ] **Step 1:** 母題 1（輸入驗證）+ 變體，`validate-deck` 綠 → commit。
-- [ ] **Step 2:** 母題 2（parser edge）+ 變體 → commit。
-- [ ] **Step 3:** 母題 3（狀態機 recovery；可改編自報告 phantom-removal 範例）+ 變體 → commit。
-- [ ] **Step 4:** 母題 4（legacy regression）+ 變體 → commit。
-- [ ] **Step 5:** Run: `patchmud validate-deck decks/pilot-v1`；Expected: 8/8 PASS。Commit: `feat(deck): pilot-v1 deck (4 archetypes x 2 variants)`。
+- [x] **Step 1:** 母題 1（輸入驗證）+ 變體，`validate-deck` 綠 → commit。
+- [x] **Step 2:** 母題 2（parser edge）+ 變體 → commit。
+- [x] **Step 3:** 母題 3（狀態機 recovery；可改編自報告 phantom-removal 範例）+ 變體 → commit。
+- [x] **Step 4:** 母題 4（legacy regression）+ 變體 → commit。
+- [x] **Step 5:** Run: `patchmud validate-deck decks/pilot-v1`；Expected: 8/8 PASS。Commit: `feat(deck): pilot-v1 deck (4 archetypes x 2 variants)`。
 
 ---
 
