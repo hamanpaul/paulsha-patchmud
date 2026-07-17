@@ -94,6 +94,7 @@ from patchmud.deck.materialize import materialize_repo
 from patchmud.deck.model import DeckError, IssueCard
 from patchmud.engine import render_zh_tw as zh
 from patchmud.engine.loop import RunConfig, build_agent_test_runner, run_encounter
+from patchmud.engine.versus import VersusEntry, render_versus, run_versus
 from patchmud.engine.pilot import (
     PilotError,
     PilotReport,
@@ -246,6 +247,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_score_diff(args[1:])
     if args[0] == "run":
         return _cmd_run(args[1:])
+    if args[0] == "versus":
+        return _cmd_versus(args[1:])
     if args[0] == "play":
         return _cmd_play(args[1:])
     if args[0] == "watch":
@@ -847,6 +850,65 @@ def _cmd_run(argv: list[str]) -> int:
         f"end_reason={result.end_reason} clear={result.clear} "
         f"turns={result.turns_used} power_total={result.evaluation.power.total}"
     )
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# versus 子命令：多模型並排對戰視圖（各自隔離 run）
+# ---------------------------------------------------------------------------
+
+
+def _cmd_versus(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="patchmud versus",
+        description=(
+            "並排對戰：多個模型各自打同一關（隔離 run），跑完同步並排呈現逐回合"
+            "行動與 backlog，收尾記分板。隔離不可動搖——共用戰場會使 benchmark 失效。"
+        ),
+    )
+    parser.add_argument(
+        "encounter", help="關卡名字（如 input-validation-v1）或 encounter 目錄路徑"
+    )
+    parser.add_argument(
+        "--models",
+        required=True,
+        help="逗號分隔的 model spec，如 anthropic:claude-sonnet-5,anthropic:claude-haiku-4-5",
+    )
+    parser.add_argument(
+        "--loadout", default="P0T0R0", help="forced loadout（預設 P0T0R0 = SOLO）"
+    )
+    parser.add_argument("--runs-root", type=Path, default=Path("runs"), help="run 目錄根")
+    ns = parser.parse_args(argv)
+
+    model_specs = [m.strip() for m in ns.models.split(",") if m.strip()]
+    if len(model_specs) < 2:
+        print("versus 需要至少 2 個模型（--models a,b[,c]）", file=sys.stderr)
+        return 2
+
+    try:
+        encounter_dir = resolve_encounter(ns.encounter)
+
+        def run_one(enc, spec, loadout, runs_root, run_id):
+            return run_cli(enc, spec, loadout, runs_root, run_id=run_id)
+
+        entries = run_versus(
+            encounter_dir, model_specs, ns.loadout, ns.runs_root, run_one=run_one
+        )
+    except (
+        RunCliError,
+        ScoreDiffError,
+        AdapterError,
+        DeckError,
+        EvaluatorError,
+        StoreError,
+        WorkspaceError,
+        LedgerError,
+        ValueError,
+    ) as exc:
+        print(f"versus 失敗：{exc}", file=sys.stderr)
+        return 2
+
+    print(render_versus(entries, encounter=encounter_dir.name))
     return 0
 
 
