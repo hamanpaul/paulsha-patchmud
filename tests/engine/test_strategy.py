@@ -186,6 +186,22 @@ class TestTddGate:
         e.on_final(agent_test(PASSED, "test_red"), file_hashes={})
         assert e.tdd_state.compliant is False
 
+    def test_out_of_band_test_edit_at_final_not_compliant(self) -> None:
+        # red 後測試檔經非 WRITE_TEST 管道改動（workspace 保護區不含
+        # tests/agent/**，production PATCH / ROLLBACK 可觸及測試檔而不經
+        # record_write_test）：終局檔案仍存在但 hash 與 red 時不同 →
+        # 閉環不成立。§6.1.4a 的終局 hash 完全一致比對是此向量唯一防線，
+        # 「檔案存在」弱化（path in file_hashes）必須被本測試抓到（F6）。
+        e = enforcer(T=1)
+        e.record_write_test({TEST_FILE: HASH_A}, nodeids=["test_red"])
+        e.on_probe_results(agent_test(FAILED, "test_red"))
+        e.record_patch_applied()
+        e.on_final(
+            agent_test(PASSED, "test_red"), file_hashes={TEST_FILE: HASH_B}
+        )
+        assert e.tdd_state.compliant is False
+        assert e.observed_tdd_workflow is False
+
 
 # ---------------------------------------------------------------------------
 # F5：observed_tdd_workflow 於所有 cell 記錄；T0 不禁止自發 red-first

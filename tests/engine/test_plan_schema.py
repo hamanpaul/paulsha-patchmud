@@ -12,6 +12,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from patchmud.engine.plan_schema import PlanArtifact, PlanError, validate_plan
 from tests.evaluator.helpers import make_card
 
@@ -82,6 +84,44 @@ class TestSchemaFailures:
         # plan 空列表 → PlanError（F7，plan Task 12 指定）
         text = VALID_PLAN.replace("requirements: [MAIN-1]", "requirements: []")
         assert isinstance(validate(text), PlanError)
+
+    @pytest.mark.parametrize(
+        ("field", "block", "empty"),
+        [
+            (
+                "invariants",
+                "invariants:\n  - snapshot 不因刪除失敗而改變\n",
+                "invariants: []\n",
+            ),
+            (
+                "files_to_inspect",
+                "files_to_inspect:\n  - src/snapshot.py\n",
+                "files_to_inspect: []\n",
+            ),
+            (
+                "risks",
+                "risks:\n  - KeyError 邊界條件易誤判\n",
+                "risks: []\n",
+            ),
+            (
+                "test_targets",
+                "test_targets:\n  - tests/agent/test_snapshot_delete.py\n",
+                "test_targets: []\n",
+            ),
+        ],
+    )
+    def test_empty_list_fails_for_every_field(
+        self, field: str, block: str, empty: str
+    ) -> None:
+        # §6.3「任一欄空列表 → schema 不過」逐欄鎖定（F7）。requirements 的
+        # 空列表另有 MAIN id coverage 規則擋下（上一測試），非 requirements
+        # 四欄的 emptiness 必須由 schema 自身拒絕——存在性迴圈對空列表不
+        # 執行，弱化非空檢查即靜默放行。
+        text = VALID_PLAN.replace(block, empty)
+        assert text != VALID_PLAN  # guard：替換確實命中
+        err = validate(text)
+        assert isinstance(err, PlanError)
+        assert field in err.reason  # 必須敗在該欄的 emptiness，而非他處
 
     def test_empty_string_item_fails(self) -> None:
         text = VALID_PLAN.replace(
