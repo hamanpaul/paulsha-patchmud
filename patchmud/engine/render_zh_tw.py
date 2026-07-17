@@ -54,6 +54,22 @@ MESSAGES: dict[str, str] = {
         "結果：{clear_label}（{end_reason}）｜Power {power}／100"
         "（功能 {functional}／60｜critical gate {critical_pass}）"
     ),
+    # ---- versus 並排對戰 -------------------------------------------------
+    "versus.header": "════ VERSUS：{encounter}（loadout {loadout}）════",
+    "versus.participants": "參賽：{names}",
+    "versus.round_header": "── 回合 {n} ──",
+    "versus.baseline_header": "── 開場（基線）──",
+    "versus.model_line": "  {model}｜{action}｜backlog {backlog}{extra}",
+    "versus.resolved_extra": "｜解決 {ids}",
+    "versus.model_done": "  {model}｜（已收場）",
+    "versus.action_baseline": "基線",
+    "versus.action_none": "（回覆無法解析）",
+    "versus.scoreboard_header": "════ 記分板 ════",
+    "versus.score_row": (
+        "  {model}｜{result}｜Power {power}／100｜{turns} 回合｜{cost}"
+    ),
+    "versus.cost_na": "成本 NA",
+    "versus.cost": "成本 {cost}",
     # ---- parse 錯誤提示（spec §5.2：結構化 parse error 附格式提示） ------
     "parse.missing_action": (
         "無法解析回覆：找不到「ACTION: <命令>」行。請以 ACTION: 開頭宣告本回合"
