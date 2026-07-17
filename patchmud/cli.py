@@ -23,20 +23,36 @@ queue → checkpoint → event）→ 終局四觸發全套評分 → result.yaml
 必須與封存一致）自 checkpoints shadow repo 重建 final diff 後重執行全部
 probes——functional/compat/robustness 必須相等、perf-only 差異落 report 不算
 fail——再走 L1。
+
+`report`（Task 17，milestone C 收口；spec §10.3、§13、報告 §11.2）：
+`patchmud report --runs <glob> [--out <dir>] [--pricing <snapshot>]
+[--registered <dir>]`——只讀多場 run 的落盤封存（run.yaml／result.yaml／
+events.jsonl／ledger.jsonl）＋ deck card，逐 (model, loadout) 群組輸出多榜
+YAML/CSV：clear rate、cost per clear（run pin 的 pricing snapshot 計價；
+未 pin／snapshot 不可得 → "NA" 不假 0）、tokens per clear／QATY／EuTB
+（雙欄＋disclosure cohort，F17；EuTB 缺 pre-registered 預算檔 → 標記
+skipped 而非假值，§19.9）、Power／Control／FTR（τ 未校準標記
+tau_uncalibrated）。§11.2 其餘榜（MTY 曲線、one-shot、Pareto、composite）
+待 pilot 資料齊備另行擴充。human run 不進 ranked 榜（列入 runs_skipped）。
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
+import glob as globmod
 import hashlib
 import importlib.util
+import math
 import os
 import shutil
+import statistics
 import subprocess
 import sys
 import tempfile
 import time
 from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 
 import yaml
@@ -54,8 +70,21 @@ from patchmud.engine.strategy import Loadout
 from patchmud.evaluator.evaluate import EvaluatorError, FinalEvaluation, evaluate_final
 from patchmud.evaluator.gates import compute_clear
 from patchmud.evaluator.power import PowerReport
-from patchmud.ledger.tokens import LedgerError
-from patchmud.metrics.flood import FloodError
+from patchmud.ledger.cost import compute_run_cost
+from patchmud.ledger.pricing import PricingSnapshot
+from patchmud.ledger.tokens import LedgerEntry, LedgerError
+from patchmud.metrics.economy import EconomyError, RunSample, cost_per_clear
+from patchmud.metrics.efficiency import (
+    CohortMismatchError,
+    EfficiencyError,
+    EfficiencyResult,
+    NotRegisteredError,
+    eutb,
+    load_eutb_budget,
+    qaty,
+    tokens_per_clear,
+)
+from patchmud.metrics.flood import FloodError, flood_metrics, load_flood_coeffs
 from patchmud.sandbox.isolate import DEFAULT_BWRAP_PATH, IsolationRunner
 from patchmud.sandbox.probes import (
     DEFAULT_PYTEST_ARGV,
@@ -67,13 +96,22 @@ from patchmud.sandbox.workspace import Workspace, WorkspaceError
 from patchmud.store.replay import (
     ReexecutedProbes,
     ReplayError,
+    load_ledger,
     replay_l1,
     replay_l2,
 )
 from patchmud.store.run_store import RunStore
-from patchmud.store.schemas import StoreError
+from patchmud.store.schemas import RESULT_SCHEMA_VERSION, StoreError
 
-__all__ = ["RunCliError", "ScoreDiffError", "ScoreDiffSummary", "main", "score_diff"]
+__all__ = [
+    "ReportError",
+    "RunCliError",
+    "ScoreDiffError",
+    "ScoreDiffSummary",
+    "build_report",
+    "main",
+    "score_diff",
+]
 
 #: 離線評分沒有 harness prompt / pricing / schedule；欄位以 NA 佔位（非 0，§10.1）。
 _OFFLINE_NA = "NA"
@@ -85,6 +123,10 @@ class ScoreDiffError(Exception):
 
 class RunCliError(Exception):
     """run 子命令操作性失敗（model spec 非法、api key 缺席等）。"""
+
+
+class ReportError(Exception):
+    """report 子命令操作性失敗（glob 無 run、封存缺漏、欄位非法等）。"""
 
 
 @dataclass(frozen=True)
@@ -102,7 +144,7 @@ def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
     if not args:
         print(
-            "patchmud 0.0.0 — 子命令：score-diff / run / replay；其餘見 "
+            "patchmud 0.0.0 — 子命令：score-diff / run / replay / report；其餘見 "
             "docs/superpowers/plans/2026-07-16-patchmud-mvp.md"
         )
         return 0
@@ -112,6 +154,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_run(args[1:])
     if args[0] == "replay":
         return _cmd_replay(args[1:])
+    if args[0] == "report":
+        return _cmd_report(args[1:])
     print(f"patchmud: 子命令尚未實作：{args[0]}", file=sys.stderr)
     return 2
 
@@ -605,6 +649,482 @@ def _replay_apply(diff: str, worktree: Path) -> None:
     )
     if res.returncode != 0:
         raise ReplayError(f"final diff 重建後無法套用：{res.stderr.strip()[:200]}")
+
+
+# ---------------------------------------------------------------------------
+# report 子命令（Task 17，milestone C 收口；spec §10.3、§13、報告 §11.2）
+# ---------------------------------------------------------------------------
+
+REPORT_SCHEMA_VERSION = 1
+
+#: pre-registered EuTB 預算檔的預設位置（§10.4；Task 19 calibrate 產出）。
+DEFAULT_REGISTERED_DIR = Path("analysis/registered")
+_EUTB_BUDGET_FILE = "eutb_budget.yaml"
+
+#: 有列資料的榜各出一份 CSV；skipped 榜不出假 CSV。
+_BOARD_ORDER = (
+    "clear_rate",
+    "cost_per_clear",
+    "tokens_per_clear",
+    "qaty",
+    "eutb",
+    "power",
+    "control",
+    "ftr",
+)
+
+
+class _SkipRun(Exception):
+    """單場 run 不進 ranked 榜（列入 runs_skipped，不中止整份 report）。"""
+
+
+@dataclass(frozen=True)
+class _ReportRun:
+    """單場 run 的 report 聚合視圖（只讀封存；invariant 4）。"""
+
+    run_id: str
+    model: str
+    loadout: str
+    clear: int
+    power_total: float
+    cost: Decimal | None
+    cost_reason: str | None
+    work_tokens: int | None
+    observable_tokens: int
+    control: float
+    ftr: float
+    tau_uncalibrated: bool
+    flood_create_tokens: int
+    flood_repair_tokens: int
+
+
+def _cmd_report(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="patchmud report",
+        description=(
+            "多榜研究 report（報告 §11.2）：只讀多場 run 的落盤封存，"
+            "輸出 YAML/CSV 到 --out 目錄。"
+        ),
+    )
+    parser.add_argument("--runs", required=True, help="run 目錄 glob，如 'runs/*'")
+    parser.add_argument("--out", type=Path, default=Path("report"), help="輸出目錄")
+    parser.add_argument(
+        "--pricing",
+        type=Path,
+        default=None,
+        help="pricing snapshot 檔；只對 run.yaml pin 了相同 content hash 的 run 計價",
+    )
+    parser.add_argument(
+        "--registered",
+        type=Path,
+        default=DEFAULT_REGISTERED_DIR,
+        help="pre-registered 參數目錄（EuTB 預算檔 eutb_budget.yaml，§10.4）",
+    )
+    ns = parser.parse_args(argv)
+
+    try:
+        report = build_report(
+            ns.runs, ns.out, pricing_path=ns.pricing, registered_dir=ns.registered
+        )
+    except (
+        ReportError,
+        DeckError,
+        StoreError,
+        ReplayError,
+        FloodError,
+        EconomyError,
+        EfficiencyError,
+        LedgerError,
+    ) as exc:
+        print(f"report 失敗：{exc}", file=sys.stderr)
+        return 2
+
+    print(f"report 輸出：{ns.out / 'report.yaml'}")
+    print(
+        f"runs_included={report['runs_included']} "
+        f"runs_skipped={len(report['runs_skipped'])}"
+    )
+    return 0
+
+
+def build_report(
+    runs_glob: str,
+    out_dir: Path,
+    *,
+    pricing_path: Path | None = None,
+    registered_dir: Path = DEFAULT_REGISTERED_DIR,
+) -> dict:
+    """多場 run 封存 → 多榜 report（YAML + 每榜一份 CSV）。
+
+    只讀 run 目錄封存與 deck card、絕不寫回 run 目錄（invariant 4）；
+    聚合鍵為 (model, loadout)。回傳 report dict（同步落盤 report.yaml）。
+    """
+    snapshot = None
+    if pricing_path is not None:
+        snapshot = PricingSnapshot.load(pricing_path)
+
+    runs: list[_ReportRun] = []
+    skipped: list[dict] = []
+    matches = sorted(globmod.glob(str(runs_glob)))
+    if not matches:
+        raise ReportError(f"--runs glob 無任何匹配：{runs_glob!r}")
+    for match in matches:
+        run_dir = Path(match)
+        if not (run_dir / "run.yaml").is_file():
+            # runs root 可能混有封存 tar 等非 run 目錄項目
+            skipped.append({"run_id": run_dir.name, "reason": "非 run 目錄（缺 run.yaml）"})
+            continue
+        try:
+            runs.append(_load_report_run(run_dir, snapshot))
+        except _SkipRun as exc:
+            skipped.append({"run_id": run_dir.name, "reason": str(exc)})
+    if not runs:
+        raise ReportError(f"glob 匹配 {len(matches)} 項但無任何可聚合 run：{runs_glob!r}")
+
+    report = {
+        "schema_version": REPORT_SCHEMA_VERSION,
+        "runs_included": len(runs),
+        "runs_skipped": skipped,
+        "runs": [_run_row(run) for run in runs],
+        "leaderboards": _build_leaderboards(runs, registered_dir),
+    }
+
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "report.yaml").write_text(
+        yaml.safe_dump(report, sort_keys=True, allow_unicode=True),
+        encoding="utf-8",
+    )
+    for name in _BOARD_ORDER:
+        board = report["leaderboards"][name]
+        rows = board.get("rows")
+        if rows:
+            _write_csv(out_dir / f"{name}.csv", rows)
+    return report
+
+
+# ---- run 封存載入（fail-closed） -------------------------------------------
+
+
+def _load_report_run(run_dir: Path, snapshot: PricingSnapshot | None) -> _ReportRun:
+    store = RunStore.open(run_dir)  # fail-closed：run.yaml schema、event seq
+    record = yaml.safe_load((run_dir / "run.yaml").read_text(encoding="utf-8"))
+
+    result_path = run_dir / "result.yaml"
+    if not result_path.is_file():
+        raise _SkipRun("run 未完成（缺 result.yaml）")
+    result = yaml.safe_load(result_path.read_text(encoding="utf-8"))
+    if not isinstance(result, dict):
+        raise ReportError(f"result.yaml 內容必須是 mapping：{run_dir.name}")
+    if result.get("schema_version") != RESULT_SCHEMA_VERSION:
+        raise ReportError(
+            f"result.yaml schema_version 不符（{run_dir.name}）："
+            f"{result.get('schema_version')!r}"
+        )
+    if result.get("mode") != "run":
+        raise _SkipRun(f"mode 非 run（{result.get('mode')!r}），不進 ranked 榜")
+    if result.get("human") is True:
+        raise _SkipRun("human run 不進 ranked 榜（spec §5.4）")
+
+    clear = result.get("clear")
+    if clear not in (0, 1):
+        raise ReportError(f"result.yaml clear 非 0/1（{run_dir.name}）：{clear!r}")
+    power = result.get("power")
+    if not isinstance(power, dict) or not isinstance(
+        power.get("total"), (int, float)
+    ):
+        raise ReportError(f"result.yaml 缺 power.total（{run_dir.name}）")
+
+    entries = load_ledger(run_dir)
+    if not entries:
+        raise ReportError(f"ledger.jsonl 無任何 entry（{run_dir.name}）")
+    cost, cost_reason = _run_cost(record, entries, snapshot)
+
+    card = load_card(Path(str(record["encounter_dir"])) / "card.yaml")
+    flood = flood_metrics(store.load_events(), card, load_flood_coeffs())
+
+    return _ReportRun(
+        run_id=str(record["run_id"]),
+        model=str(record.get("model", _OFFLINE_NA)),
+        loadout=str(result.get("loadout", record.get("loadout", _OFFLINE_NA))),
+        clear=int(clear),
+        power_total=float(power["total"]),
+        cost=cost,
+        cost_reason=cost_reason,
+        work_tokens=_work_tokens_of(result, run_dir),
+        observable_tokens=_observable_tokens(entries, run_dir),
+        control=flood.control,
+        ftr=flood.ftr,
+        tau_uncalibrated=flood.tau_uncalibrated,
+        flood_create_tokens=flood.flood_create_tokens,
+        flood_repair_tokens=flood.flood_repair_tokens,
+    )
+
+
+def _run_cost(
+    record: dict, entries: list[LedgerEntry], snapshot: PricingSnapshot | None
+) -> tuple[Decimal | None, str | None]:
+    """C_run 只以 run.yaml pin 的 snapshot 計價（§10.2）；不可得 → NA＋理由。"""
+    pricing_hash = record.get("pricing_hash")
+    if pricing_hash == _OFFLINE_NA:
+        return None, "run 未 pin pricing snapshot（pricing_hash=NA）"
+    if snapshot is None:
+        return None, "未提供 --pricing snapshot，無法對 pin 的 hash 計價"
+    if snapshot.content_hash != pricing_hash:
+        return None, (
+            "--pricing snapshot content hash 與 run.yaml pin 不符"
+            f"（{snapshot.content_hash[:12]}… != {str(pricing_hash)[:12]}…）"
+        )
+    return compute_run_cost(entries, snapshot).total, None
+
+
+def _work_tokens_of(result: dict, run_dir: Path) -> int | None:
+    ledger = result.get("ledger")
+    if not isinstance(ledger, dict) or "work_tokens" not in ledger:
+        raise ReportError(f"result.yaml 缺 ledger.work_tokens（{run_dir.name}）")
+    work = ledger["work_tokens"]
+    if work == _OFFLINE_NA:
+        return None
+    if isinstance(work, bool) or not isinstance(work, int):
+        raise ReportError(
+            f"result.yaml ledger.work_tokens 非整數或 NA（{run_dir.name}）：{work!r}"
+        )
+    return work
+
+
+def _observable_tokens(entries: list[LedgerEntry], run_dir: Path) -> int:
+    """common-observable = input + output_visible（§10.1；永遠可得）。"""
+    total = 0
+    for entry in entries:
+        if entry.output_visible is None:
+            raise ReportError(
+                f"ledger entry 缺 output_visible，observable 欄無法計算"
+                f"（{run_dir.name} turn={entry.turn}）"
+            )
+        total += entry.billed_input_total + entry.output_visible
+    return total
+
+
+# ---- 榜組裝（純資料轉換） ---------------------------------------------------
+
+
+def _build_leaderboards(runs: list[_ReportRun], registered_dir: Path) -> dict:
+    groups: dict[tuple[str, str], list[_ReportRun]] = {}
+    for run in runs:
+        groups.setdefault((run.model, run.loadout), []).append(run)
+    samples = {key: [_sample_of(run) for run in members] for key, members in groups.items()}
+
+    boards = {
+        "clear_rate": _clear_rate_board(groups),
+        "cost_per_clear": _cost_board(groups, samples),
+        "tokens_per_clear": _efficiency_board(samples, tokens_per_clear, higher_is_better=False),
+        "qaty": _efficiency_board(samples, qaty, higher_is_better=True),
+        "eutb": _eutb_board(samples, registered_dir),
+        "power": _mean_board(groups, lambda run: run.power_total, reverse=True),
+        "control": _control_board(groups),
+        "ftr": _ftr_board(groups),
+    }
+    return boards
+
+
+def _sample_of(run: _ReportRun) -> RunSample:
+    return RunSample(
+        clear=run.clear,
+        power=run.power_total,
+        cost=run.cost,
+        work_tokens=run.work_tokens,
+        observable_tokens=run.observable_tokens,
+    )
+
+
+def _group_fields(key: tuple[str, str]) -> dict:
+    return {"model": key[0], "loadout": key[1]}
+
+
+def _clear_rate_board(groups: dict[tuple[str, str], list[_ReportRun]]) -> dict:
+    rows = []
+    for key, members in groups.items():
+        clears = sum(run.clear for run in members)
+        rows.append(
+            {
+                **_group_fields(key),
+                "runs": len(members),
+                "clears": clears,
+                "value": clears / len(members),
+            }
+        )
+    rows.sort(key=lambda row: (-row["value"], row["model"], row["loadout"]))
+    return {"status": "ok", "rows": rows}
+
+
+def _cost_board(
+    groups: dict[tuple[str, str], list[_ReportRun]],
+    samples: dict[tuple[str, str], list[RunSample]],
+) -> dict:
+    """CostPerClear 榜：cost 缺漏（未 pin／snapshot 不可得）→ NA，不假 0。"""
+    ranked_rows: list[tuple[Decimal, dict]] = []
+    na_rows: list[dict] = []
+    for key, members in groups.items():
+        missing = [run for run in members if run.cost is None]
+        if missing:
+            na_rows.append(
+                {
+                    **_group_fields(key),
+                    "value": _OFFLINE_NA,
+                    "ranked": False,
+                    "reason": missing[0].cost_reason or "run 缺 C_run",
+                }
+            )
+            continue
+        value = cost_per_clear(samples[key])
+        ranked_rows.append(
+            (
+                value,
+                {
+                    **_group_fields(key),
+                    "value": "inf" if not value.is_finite() else str(value),
+                    "ranked": True,
+                    "reason": "",
+                },
+            )
+        )
+    ranked_rows.sort(key=lambda item: (item[0], item[1]["model"], item[1]["loadout"]))
+    na_rows.sort(key=lambda row: (row["model"], row["loadout"]))
+    return {"status": "ok", "rows": [row for _, row in ranked_rows] + na_rows}
+
+
+def _efficiency_board(
+    samples: dict[tuple[str, str], list[RunSample]],
+    metric_fn,
+    *,
+    higher_is_better: bool,
+) -> dict:
+    results = {key: metric_fn(samples[key]) for key in samples}
+    return _efficiency_rows(results, higher_is_better=higher_is_better)
+
+
+def _eutb_board(
+    samples: dict[tuple[str, str], list[RunSample]], registered_dir: Path
+) -> dict:
+    """EuTB 榜：registered 預算檔缺失 → skipped 而非假值（§19.9 fail-closed）。"""
+    try:
+        budget = load_eutb_budget(Path(registered_dir) / _EUTB_BUDGET_FILE)
+    except NotRegisteredError as exc:
+        return {"status": "skipped", "reason": str(exc)}
+    results = {key: eutb(samples[key], budget) for key in samples}
+    return _efficiency_rows(results, higher_is_better=True)
+
+
+def _efficiency_rows(
+    results: dict[tuple[str, str], EfficiencyResult], *, higher_is_better: bool
+) -> dict:
+    """EfficiencyResult → 榜列（雙欄＋cohort，F17）。
+
+    群組間 cohort 不一致時整榜標 ``non_ranking``（跨 cohort 只發布
+    common-observable 描述性欄位），列序退為群組名稱字典序。
+    """
+    cohorts = {result.disclosure_cohort for result in results.values()}
+    non_ranking = len(cohorts) > 1
+    rows = []
+    for key, result in results.items():
+        rows.append(
+            {
+                **_group_fields(key),
+                "value": _num(result.value),
+                "observable": _num(result.observable),
+                "disclosure_cohort": result.disclosure_cohort,
+            }
+        )
+    if non_ranking:
+        rows.sort(key=lambda row: (row["model"], row["loadout"]))
+        note = str(
+            CohortMismatchError(
+                f"跨 disclosure cohort（F17）：{sorted(cohorts)}；"
+                "observable 欄僅供描述、不構成排名"
+            )
+        )
+        return {"status": "ok", "non_ranking": True, "note": note, "rows": rows}
+
+    def _rank_key(key: tuple[str, str]) -> tuple:
+        result = results[key]
+        value = result.value if result.value is not None else result.observable
+        return (-value if higher_is_better else value, key[0], key[1])
+
+    ordered = sorted(results, key=_rank_key)
+    index = {key: i for i, key in enumerate(ordered)}
+    rows.sort(key=lambda row: index[(row["model"], row["loadout"])])
+    return {"status": "ok", "non_ranking": False, "rows": rows}
+
+
+def _mean_board(
+    groups: dict[tuple[str, str], list[_ReportRun]], value_of, *, reverse: bool
+) -> dict:
+    rows = []
+    for key, members in groups.items():
+        rows.append(
+            {
+                **_group_fields(key),
+                "runs": len(members),
+                "value": statistics.fmean(value_of(run) for run in members),
+            }
+        )
+    rows.sort(
+        key=lambda row: (-row["value"] if reverse else row["value"], row["model"], row["loadout"])
+    )
+    return {"status": "ok", "rows": rows}
+
+
+def _control_board(groups: dict[tuple[str, str], list[_ReportRun]]) -> dict:
+    board = _mean_board(groups, lambda run: run.control, reverse=True)
+    for row in board["rows"]:
+        members = groups[(row["model"], row["loadout"])]
+        # τ 未經 §10.4 estimator 校準的 Control 必須明示，不得偽裝正式值
+        row["tau_uncalibrated"] = any(run.tau_uncalibrated for run in members)
+    return board
+
+
+def _ftr_board(groups: dict[tuple[str, str], list[_ReportRun]]) -> dict:
+    board = _mean_board(groups, lambda run: run.ftr, reverse=False)
+    for row in board["rows"]:
+        members = groups[(row["model"], row["loadout"])]
+        row["flood_create_tokens"] = sum(run.flood_create_tokens for run in members)
+        row["flood_repair_tokens"] = sum(run.flood_repair_tokens for run in members)
+    return board
+
+
+# ---- 序列化 helpers ----------------------------------------------------------
+
+
+def _num(value: float | None) -> float | str:
+    """榜值序列化：NA → "NA"、無限大 → "inf"（artifact 格式英文）。"""
+    if value is None:
+        return _OFFLINE_NA
+    if math.isinf(value):
+        return "inf"
+    return value
+
+
+def _run_row(run: _ReportRun) -> dict:
+    return {
+        "run_id": run.run_id,
+        "model": run.model,
+        "loadout": run.loadout,
+        "clear": run.clear,
+        "power_total": run.power_total,
+        "cost": _OFFLINE_NA if run.cost is None else str(run.cost),
+        "work_tokens": _OFFLINE_NA if run.work_tokens is None else run.work_tokens,
+        "observable_tokens": run.observable_tokens,
+        "control": run.control,
+        "ftr": run.ftr,
+        "tau_uncalibrated": run.tau_uncalibrated,
+    }
+
+
+def _write_csv(path: Path, rows: list[dict]) -> None:
+    with path.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 # ---------------------------------------------------------------------------

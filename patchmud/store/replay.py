@@ -56,6 +56,7 @@ __all__ = [
     "ReplayDiff",
     "ReplayError",
     "ReplayReport",
+    "load_ledger",
     "replay_l1",
     "replay_l2",
 ]
@@ -410,7 +411,7 @@ def _recompute_flood(events: Sequence[Mapping], card: IssueCard) -> FloodMetrics
 
 
 def _ledger_diffs(run_dir: Path, archived: Mapping) -> list[ReplayDiff]:
-    entries = _load_ledger(run_dir)
+    entries = load_ledger(run_dir)
     work = aggregate_work_tokens(entries)
     recomputed = {
         "entries": len(entries),
@@ -425,7 +426,8 @@ def _ledger_diffs(run_dir: Path, archived: Mapping) -> list[ReplayDiff]:
     return diffs
 
 
-def _load_ledger(run_dir: Path) -> list[LedgerEntry]:
+def load_ledger(run_dir: Path) -> list[LedgerEntry]:
+    """讀入 run 目錄封存的 ``ledger.jsonl``（fail-closed；replay 與 report 共用）。"""
     path = run_dir / _LEDGER_FILE
     if not path.is_file():
         raise ReplayError(f"ledger.jsonl 不存在：{path}")

@@ -387,9 +387,9 @@
 - Modify: `patchmud/cli.py`（`patchmud report --runs <glob>`：輸出 §11.2 對應的多榜 YAML/CSV）
 - Test: `tests/test_report_e2e.py`
 
-- [ ] **Step 1: RED** — 兩場 scripted run（1 clear、1 fail）→ report 含 clear rate、cost/tokens per clear（inf 案例）、Power、Control、FTR、（EuTB 缺 registered → 標記 skipped 而非假值）。
-- [ ] **Step 2–3:** 實作 → PASS。Run: `python3 -m pytest -q && python3 -m policy_check --repo .`。
-- [ ] **Step 4:** Commit: `feat(cli): multi-leaderboard research report (milestone C)`。
+- [x] **Step 1: RED** — 兩場 scripted run（1 clear、1 fail）→ report 含 clear rate、cost/tokens per clear（inf 案例）、Power、Control、FTR、（EuTB 缺 registered → 標記 skipped 而非假值）。
+- [x] **Step 2–3:** 實作 → PASS。Run: `python3 -m pytest -q && python3 -m policy_check --repo .`。
+- [x] **Step 4:** Commit: `feat(cli): multi-leaderboard research report (milestone C)`。
 
 ---
 
