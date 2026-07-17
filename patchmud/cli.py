@@ -3,6 +3,18 @@
 子命令（validate-deck / score-diff / run / play / pilot / replay / report）依
 docs/superpowers/plans/2026-07-16-patchmud-mvp.md 逐 task 落地。
 
+`validate-deck`（Task 20，spec §4.2）：`patchmud validate-deck <deck_dir>`——
+deck CI 驗證閘：對目錄下每個含 `card.yaml` 的 encounter 子目錄逐一驗證
+card schema（`load_card`：必填欄位、`expected_paths ⊆ allowed_paths`、
+public/hidden 路徑不重疊）、card 引用的 probe 檔案存在、`repo/` 可安裝可跑
+（baseline：regression/compat probes 綠、MAIN probes 紅——issue 可重現）、
+套用 `hidden/reference.patch`（production、嚴格模式）後 public probes 全綠、
+hidden evaluator（獨立 checkout，§9.1）critical gate 成立且全部 rubric/
+critical probe 綠，並以量測所得 wall_ms 覆寫 `hidden/reference_timings.yaml`
+（deck CI 產物，僅供 evaluator 使用，永不進 run）。執行 candidate code 的
+唯一 seam 是 `IsolationRunner`；namespace 能力不足一律 fail-closed 拒絕
+執行。
+
 `score-diff`（Task 8，milestone A 收口）：給定 encounter + 手工 diff，離線
 跑完整評分——全部 public probes（§5.2 終局語意）+ hidden evaluator（§9）——
 落盤 `result.yaml`（PowerReport、gates、probe outcomes、Clear、Economy）並
@@ -130,6 +142,7 @@ from patchmud.sandbox.probes import (
     ProbeOutcome,
     ProbeResults,
     ProbeSuite,
+    smoke_probe_id,
 )
 from patchmud.sandbox.workspace import Workspace, WorkspaceError
 from patchmud.store.replay import (
@@ -144,6 +157,9 @@ from patchmud.store.schemas import RESULT_SCHEMA_VERSION, StoreError
 from patchmud.store.watch import WatchError, render_battle_report, render_turn
 
 __all__ = [
+    "DeckValidationError",
+    "DeckValidationReport",
+    "EncounterValidation",
     "ReportError",
     "RunCliError",
     "ScoreDiffError",
@@ -154,6 +170,7 @@ __all__ = [
     "play_cli",
     "run_cli",
     "score_diff",
+    "validate_deck",
 ]
 
 #: 離線評分沒有 harness prompt / pricing / schedule；欄位以 NA 佔位（非 0，§10.1）。
@@ -191,6 +208,8 @@ def main(argv: list[str] | None = None) -> int:
             "report / pilot；其餘見 docs/superpowers/plans/2026-07-16-patchmud-mvp.md"
         )
         return 0
+    if args[0] == "validate-deck":
+        return _cmd_validate_deck(args[1:])
     if args[0] == "score-diff":
         return _cmd_score_diff(args[1:])
     if args[0] == "run":
@@ -209,6 +228,331 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_calibrate(args[1:])
     print(f"patchmud: 子命令尚未實作：{args[0]}", file=sys.stderr)
     return 2
+
+
+# ---------------------------------------------------------------------------
+# validate-deck 子命令（spec §4.2；plan Task 20 acceptance gate）
+# ---------------------------------------------------------------------------
+
+_TIMINGS_SCHEMA_VERSION = 1
+
+
+class DeckValidationError(Exception):
+    """validate-deck 目錄層級操作性失敗（找不到 encounter、隔離能力不足等）。"""
+
+
+@dataclass(frozen=True)
+class EncounterValidation:
+    """單一 encounter 的驗證結果（`checks` 為依序完成的檢查名稱，供除錯）。"""
+
+    encounter_id: str
+    passed: bool
+    checks: tuple[str, ...]
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class DeckValidationReport:
+    deck_dir: Path
+    encounters: tuple[EncounterValidation, ...]
+
+    @property
+    def all_passed(self) -> bool:
+        return bool(self.encounters) and all(e.passed for e in self.encounters)
+
+
+def _cmd_validate_deck(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="patchmud validate-deck",
+        description=(
+            "Deck CI：驗證目錄下每個 encounter 的 card schema、probe 檔案存在、"
+            "hidden probes 在 reference.patch 下全綠，並量測 "
+            "reference_timings.yaml（spec §4.2）。"
+        ),
+    )
+    parser.add_argument("deck_dir", type=Path, help="deck 目錄（含多個 encounter 子目錄）")
+    parser.add_argument(
+        "--no-write-timings",
+        action="store_true",
+        help="不覆寫 reference_timings.yaml（預設量測後覆寫，deck CI 產物語意）",
+    )
+    ns = parser.parse_args(argv)
+
+    try:
+        report = validate_deck(ns.deck_dir, write_timings=not ns.no_write_timings)
+    except (
+        DeckValidationError,
+        DeckError,
+        WorkspaceError,
+        EvaluatorError,
+        ScoreDiffError,
+    ) as exc:
+        print(f"validate-deck 失敗：{exc}", file=sys.stderr)
+        return 2
+
+    passed = sum(1 for e in report.encounters if e.passed)
+    total = len(report.encounters)
+    for e in report.encounters:
+        status = "PASS" if e.passed else "FAIL"
+        print(f"[{status}] {e.encounter_id}")
+        if not e.passed:
+            print(f"    {e.error}")
+    print(f"validate-deck：{passed}/{total} PASS")
+    return 0 if report.all_passed else 1
+
+
+def validate_deck(
+    deck_dir: Path,
+    *,
+    bwrap_path: str = DEFAULT_BWRAP_PATH,
+    write_timings: bool = True,
+) -> DeckValidationReport:
+    """對 deck 目錄下每個 encounter 逐一驗證（spec §4.2）。
+
+    每個 encounter：schema／probe 檔案存在（`load_card` 已涵蓋必填欄位、
+    `expected_paths ⊆ allowed_paths`、public/hidden 不重疊）→ baseline
+    （未套 patch）跑全部 public probes（regression/compat 必須綠、MAIN
+    必須 `failed`——代表 repo 可安裝可跑且 issue 可重現）→ 套用
+    `hidden/reference.patch`（production、嚴格模式）→ 套用後 public probes
+    全綠 → hidden evaluator（獨立 checkout，§9.1）critical gate 成立且
+    全部 rubric/critical probe 綠（"hidden 全綠"）→ 以量測所得 wall_ms
+    覆寫 `reference_timings.yaml`（deck CI 產物，僅供 evaluator 使用，永不
+    進 run）。執行 candidate code 的唯一 seam 是 `IsolationRunner`
+    （plan invariant 3）；namespace 能力不足一律 fail-closed 拒絕執行（§7）。
+    """
+    deck_dir = Path(deck_dir).resolve()
+    if not deck_dir.is_dir():
+        raise DeckValidationError(f"deck 目錄不存在：{deck_dir}")
+
+    encounter_dirs = sorted(
+        p for p in deck_dir.iterdir() if p.is_dir() and (p / "card.yaml").is_file()
+    )
+    if not encounter_dirs:
+        raise DeckValidationError(
+            f"deck 目錄沒有任何 encounter（card.yaml）：{deck_dir}"
+        )
+
+    toolchain = _toolchain_paths()
+    _require_isolation(bwrap_path, toolchain)
+    pytest_argv = _sandbox_pytest_argv()
+    ruff_argv = _ruff_argv(toolchain)
+
+    encounters = tuple(
+        _validate_one_encounter(
+            encounter_dir,
+            bwrap_path=bwrap_path,
+            toolchain=toolchain,
+            pytest_argv=pytest_argv,
+            ruff_argv=ruff_argv,
+            write_timings=write_timings,
+        )
+        for encounter_dir in encounter_dirs
+    )
+    return DeckValidationReport(deck_dir=deck_dir, encounters=encounters)
+
+
+def _validate_one_encounter(
+    encounter_dir: Path,
+    *,
+    bwrap_path: str,
+    toolchain: tuple[Path, ...],
+    pytest_argv: tuple[str, ...],
+    ruff_argv: tuple[str, ...],
+    write_timings: bool,
+) -> EncounterValidation:
+    encounter_id = encounter_dir.name
+    checks: list[str] = []
+    try:
+        card = load_card(encounter_dir / "card.yaml")
+        checks.append("schema")
+
+        _check_provenance_file(encounter_dir)
+        checks.append("provenance")
+
+        _check_probe_files_exist(card, encounter_dir)
+        checks.append("probe_files_exist")
+
+        reference_patch_path = encounter_dir / "hidden" / "reference.patch"
+        if not reference_patch_path.is_file():
+            raise DeckError(f"hidden/reference.patch 不存在：{reference_patch_path}")
+        diff_text = reference_patch_path.read_text(encoding="utf-8")
+
+        with tempfile.TemporaryDirectory(prefix="patchmud-validate-") as tmp:
+            tmp_path = Path(tmp)
+            frozen = materialize_repo(encounter_dir, tmp_path / "worktree")
+            checks.append("materialize")
+
+            workspace = Workspace(
+                frozen=frozen,
+                encounter_dir=encounter_dir,
+                shadow_dir=tmp_path / "shadow",
+            )
+            runner = IsolationRunner(frozen.path, toolchain, bwrap_path=bwrap_path)
+            suite = ProbeSuite.from_card(card, runner, pytest_argv=pytest_argv)
+
+            baseline = suite.run(workspace)
+            _check_baseline_outcomes(card, baseline)
+            checks.append("baseline")
+
+            applied = workspace.apply_patch(diff_text, kind="production")
+            if applied.rejected:
+                raise DeckError(f"reference.patch 無法套用：{applied.reason}")
+            checks.append("reference_patch_applies")
+
+            after = suite.run(workspace)
+            _check_all_public_green(card, after)
+            checks.append("public_probes_green_under_reference")
+
+            final_diff = workspace.cumulative_diff()
+            evaluation = evaluate_final(
+                card,
+                frozen,
+                final_diff,
+                lambda checkout: IsolationRunner(
+                    checkout, toolchain, bwrap_path=bwrap_path
+                ),
+                encounter_dir=encounter_dir,
+                pytest_argv=pytest_argv,
+                ruff_argv=ruff_argv,
+            )
+            _check_hidden_green(evaluation)
+            checks.append("hidden_probes_green_under_reference")
+
+            if write_timings:
+                _write_reference_timings(card, encounter_dir, evaluation)
+                checks.append("reference_timings_measured")
+
+        return EncounterValidation(encounter_id, True, tuple(checks))
+    except (DeckError, WorkspaceError, EvaluatorError) as exc:
+        return EncounterValidation(encounter_id, False, tuple(checks), str(exc))
+
+
+_PROVENANCE_REQUIRED_FIELDS = (
+    "schema_version",
+    "issue_id",
+    "archetype_source",
+    "published_at",
+    "variant_notes",
+    "frozen_at",
+)
+
+
+def _check_provenance_file(encounter_dir: Path) -> None:
+    path = encounter_dir / "provenance.yaml"
+    if not path.is_file():
+        raise DeckError(f"provenance.yaml 不存在：{path}")
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        raise DeckError(f"provenance.yaml 解析失敗：{exc}") from exc
+    if not isinstance(data, dict):
+        raise DeckError("provenance.yaml 頂層必須是 mapping")
+    missing = [k for k in _PROVENANCE_REQUIRED_FIELDS if k not in data]
+    if missing:
+        raise DeckError(f"provenance.yaml 缺欄位：{', '.join(missing)}")
+
+
+def _check_probe_files_exist(card: IssueCard, encounter_dir: Path) -> None:
+    missing: list[str] = []
+    for req in card.public_requirements:
+        if not _probe_target_exists(encounter_dir, req.probe):
+            missing.append(req.probe)
+    for cr in card.critical_requirements:
+        if not _probe_target_exists(encounter_dir, cr.hidden_probe):
+            missing.append(cr.hidden_probe)
+    for rp in card.regression_probes:
+        if rp.path is not None and not _probe_target_exists(encounter_dir, rp.path):
+            missing.append(rp.path)
+    for cp in card.compat_probes:
+        if not _probe_target_exists(encounter_dir, cp.probe):
+            missing.append(cp.probe)
+    rubric = card.power_rubric
+    for path in (
+        tuple(g.probe for g in rubric.functional.groups)
+        + rubric.robustness.probes
+        + rubric.compatibility.probes
+        + rubric.runtime_efficiency.probes
+    ):
+        if not _probe_target_exists(encounter_dir, path):
+            missing.append(path)
+    if missing:
+        raise DeckError(f"probe 檔案不存在：{', '.join(sorted(set(missing)))}")
+
+
+def _probe_target_exists(encounter_dir: Path, path: str) -> bool:
+    target = (
+        encounter_dir / path
+        if path.startswith("hidden/")
+        else encounter_dir / "repo" / path
+    )
+    return target.exists()
+
+
+def _check_baseline_outcomes(card: IssueCard, baseline: ProbeResults) -> None:
+    for req in card.public_requirements:
+        status = baseline[req.probe].status if req.probe in baseline else None
+        if status != "failed":
+            raise DeckError(
+                "baseline（未套 patch）MAIN probe 必須為 failed（issue 可重現）："
+                f"{req.probe} 實際 {status!r}"
+            )
+    for rp in card.regression_probes:
+        probe_id = rp.path if rp.path is not None else smoke_probe_id(rp.smoke)
+        _require_green(baseline, probe_id, "baseline regression probe")
+    for cp in card.compat_probes:
+        _require_green(baseline, cp.probe, "baseline compat probe")
+
+
+def _check_all_public_green(card: IssueCard, results: ProbeResults) -> None:
+    for req in card.public_requirements:
+        _require_green(results, req.probe, "reference patch 下 MAIN probe")
+    for rp in card.regression_probes:
+        probe_id = rp.path if rp.path is not None else smoke_probe_id(rp.smoke)
+        _require_green(results, probe_id, "reference patch 下 regression probe")
+    for cp in card.compat_probes:
+        _require_green(results, cp.probe, "reference patch 下 compat probe")
+
+
+def _require_green(results: ProbeResults, probe_id: str, label: str) -> None:
+    if not _is_green(results, probe_id):
+        status = results[probe_id].status if probe_id in results else "missing"
+        raise DeckError(f"{label} 未綠：{probe_id}（{status}）")
+
+
+def _check_hidden_green(evaluation: FinalEvaluation) -> None:
+    if evaluation.gates.run_invalid:
+        raise DeckError("hidden evaluator 判定 run_invalid（偵測到越界存取）")
+    if not evaluation.gates.critical_pass:
+        raise DeckError("reference patch 下 critical requirements 未全過")
+    for probe_id, outcome in evaluation.probe_outcomes.items():
+        if outcome.status != "passed":
+            raise DeckError(
+                f"reference patch 下 hidden/rubric probe 未綠：{probe_id}"
+                f"（{outcome.status}）"
+            )
+
+
+def _write_reference_timings(
+    card: IssueCard, encounter_dir: Path, evaluation: FinalEvaluation
+) -> None:
+    """`reference_timings.yaml`：deck CI 產物，僅供 evaluator 使用，永不進 run（§4.2）。"""
+    probes = card.power_rubric.runtime_efficiency.probes
+    if not probes:
+        return
+    timings = {
+        probe_id: float(evaluation.probe_outcomes[probe_id].wall_ms)
+        for probe_id in probes
+        if probe_id in evaluation.probe_outcomes
+    }
+    path = encounter_dir / "hidden" / "reference_timings.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {"schema_version": _TIMINGS_SCHEMA_VERSION, "timings_ms": timings},
+            sort_keys=True,
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
 
 
 # ---------------------------------------------------------------------------
