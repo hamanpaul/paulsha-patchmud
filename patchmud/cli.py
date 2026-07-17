@@ -82,7 +82,21 @@ from patchmud.deck.materialize import materialize_repo
 from patchmud.deck.model import DeckError, IssueCard
 from patchmud.engine import render_zh_tw as zh
 from patchmud.engine.loop import RunConfig, build_agent_test_runner, run_encounter
+from patchmud.engine.pilot import (
+    PilotError,
+    PilotReport,
+    PilotRunner,
+    load_models,
+)
 from patchmud.engine.prompts import HARNESS_PROMPT_VERSION
+from patchmud.engine.schedule import (
+    RunMatrix,
+    ScheduleError,
+    ScheduleItem,
+    build_schedule,
+    load_schedule,
+    save_schedule,
+)
 from patchmud.engine.strategy import Loadout
 from patchmud.evaluator.evaluate import EvaluatorError, FinalEvaluation, evaluate_final
 from patchmud.evaluator.gates import compute_clear
@@ -129,6 +143,7 @@ __all__ = [
     "ScoreDiffSummary",
     "build_report",
     "main",
+    "pilot_cli",
     "play_cli",
     "run_cli",
     "score_diff",
@@ -166,7 +181,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args:
         print(
             "patchmud 0.0.0 — 子命令：score-diff / run / play / watch / replay / "
-            "report；其餘見 docs/superpowers/plans/2026-07-16-patchmud-mvp.md"
+            "report / pilot；其餘見 docs/superpowers/plans/2026-07-16-patchmud-mvp.md"
         )
         return 0
     if args[0] == "score-diff":
@@ -181,6 +196,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_replay(args[1:])
     if args[0] == "report":
         return _cmd_report(args[1:])
+    if args[0] == "pilot":
+        return _cmd_pilot(args[1:])
     print(f"patchmud: 子命令尚未實作：{args[0]}", file=sys.stderr)
     return 2
 
@@ -1326,6 +1343,163 @@ def _write_csv(path: Path, rows: list[dict]) -> None:
         writer = csv.DictWriter(fh, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
+
+
+# ---------------------------------------------------------------------------
+# pilot 子命令（spec §11；plan Task 18）
+# ---------------------------------------------------------------------------
+
+
+def _cmd_pilot(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="patchmud pilot",
+        description=(
+            "Forced loadout 實驗矩陣：encounters × 8 loadouts × models 依 "
+            "sealed schedule 逐項執行（spec §11）。"
+        ),
+    )
+    parser.add_argument("--deck", required=True, type=Path, help="deck 目錄")
+    parser.add_argument("--models", required=True, type=Path, help="models.yaml")
+    parser.add_argument("--seed", required=True, type=int, help="排程 seed（F21）")
+    parser.add_argument(
+        "--runs-root",
+        type=Path,
+        default=Path("runs") / "pilot",
+        help="pilot 落盤根目錄（schedule.yaml / registry.jsonl / run 目錄）",
+    )
+    parser.add_argument(
+        "--force",
+        action="append",
+        default=[],
+        metavar="RUN_ID",
+        help="顯式重跑已完成的 run_id（attempt+1；舊 run 目錄與 registry 行保留）",
+    )
+    ns = parser.parse_args(argv)
+
+    try:
+        report = pilot_cli(
+            ns.deck, ns.models, ns.seed, ns.runs_root, force=tuple(ns.force)
+        )
+    except (
+        PilotError,
+        ScheduleError,
+        RunCliError,
+        ScoreDiffError,
+        AdapterError,
+        DeckError,
+        EvaluatorError,
+        StoreError,
+        WorkspaceError,
+        LedgerError,
+        ValueError,
+    ) as exc:
+        print(f"pilot 失敗：{exc}", file=sys.stderr)
+        return 2
+
+    print(
+        f"pilot 完成：schedule={report.schedule_sha256[:12]} "
+        f"executed={len(report.executed)} skipped={len(report.skipped)}"
+    )
+    return 0
+
+
+def pilot_cli(
+    deck_dir: Path,
+    models_path: Path,
+    seed: int,
+    runs_root: Path,
+    *,
+    force: tuple[str, ...] = (),
+    bwrap_path: str = DEFAULT_BWRAP_PATH,
+) -> PilotReport:
+    """`patchmud pilot` 串線：矩陣展開 → schedule 封存（或核驗既有封存）→
+    `PilotRunner`（preflight gates → registry 冪等續跑）（spec §11、F21）。"""
+    deck_dir = Path(deck_dir).resolve()
+    encounters = (
+        tuple(
+            sorted(p.name for p in deck_dir.iterdir() if (p / "card.yaml").is_file())
+        )
+        if deck_dir.is_dir()
+        else ()
+    )
+    if not encounters:
+        raise PilotError(f"deck 目錄沒有任何 encounter（card.yaml）：{deck_dir}")
+    models = load_models(Path(models_path))
+    loadouts = tuple(
+        f"P{p}T{t}R{r}" for p in (0, 1) for t in (0, 1) for r in (0, 1)
+    )
+    matrix = RunMatrix(
+        encounters=encounters,
+        loadouts=loadouts,
+        models=tuple(entry.id for entry in models),
+    )
+
+    runs_root = Path(runs_root)
+    schedule_path = runs_root / "schedule.yaml"
+    built = build_schedule(matrix, seed)
+    if schedule_path.exists():
+        sealed = load_schedule(schedule_path)
+        if sealed.sha256 != built.sha256:
+            raise ScheduleError(
+                "既有封存 schedule 與 --deck/--models/--seed 展開結果不符，"
+                "拒絕執行（F21）"
+            )
+        schedule = sealed
+    else:
+        save_schedule(built, schedule_path)
+        schedule = built
+
+    toolchain = _toolchain_paths()
+    models_by_id = {entry.id: entry for entry in models}
+
+    def execute(item: ScheduleItem, attempt: int) -> dict:
+        encounter_dir = deck_dir / item.encounter
+        card = load_card(encounter_dir / "card.yaml")
+        entry = models_by_id[item.model]
+        adapter = _build_adapter(entry.adapter)
+        effective_run_id = (
+            item.run_id if attempt == 1 else f"{item.run_id}--attempt{attempt}"
+        )
+        result = _wire_and_run_encounter(
+            card,
+            encounter_dir,
+            adapter,
+            Loadout.from_string(item.loadout),
+            runs_root,
+            effective_run_id,
+            bwrap_path=bwrap_path,
+            record_extra={
+                "model": entry.adapter,
+                "model_id": entry.id,
+                "schedule_ref": schedule.sha256,
+            },
+        )
+        return {
+            "run_dir": str(runs_root / effective_run_id),
+            "end_reason": result.end_reason,
+            "clear": result.clear,
+        }
+
+    runner = PilotRunner(
+        registry_path=runs_root / "registry.jsonl",
+        execute=execute,
+        models=models,
+        capabilities=lambda: IsolationRunner(
+            Path("/tmp"), toolchain, bwrap_path=bwrap_path
+        ).capabilities(),
+        repo_root=_git_repo_root(),
+    )
+    return runner.run(schedule_path, force=force)
+
+
+def _git_repo_root() -> Path:
+    """estimators gate（F4）以 cwd 所在 git repo 為準；查無 repo fail-closed。"""
+    res = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True
+    )
+    if res.returncode != 0 or not res.stdout.strip():
+        raise PilotError("找不到 git repo root（F4 estimators gate 需要），拒絕啟動")
+    return Path(res.stdout.strip())
 
 
 # ---------------------------------------------------------------------------

@@ -403,10 +403,10 @@
 **Interfaces:**
 - Produces: `build_schedule(matrix, seed) -> Schedule`（全域單一隨機排列，序列化含 hash，F21）；`PilotRunner.run(schedule, ...)`：逐項執行、run registry JSONL 冪等續跑、`--force` 語意；啟動前 gates：`estimators.yaml` 已 commit（F4）、全部模型 sandbox capabilities 齊備（§7）、地端模型有 `cost_scenarios`（F18）——任一不滿足即拒絕啟動。
 
-- [ ] **Step 1: RED** — 同 seed 兩次 build → 相同 schedule hash；不同 seed → 不同排列且三軸皆被打散（統計性檢查：任一 loadout 的 runs 不連續成塊）；schedule 檔不存在或 hash 不符 → runner 拒跑；中斷後重啟跳過已完成 run；三個 fail-closed gate 各一測試。
+- [x] **Step 1: RED** — 同 seed 兩次 build → 相同 schedule hash；不同 seed → 不同排列且三軸皆被打散（統計性檢查：任一 loadout 的 runs 不連續成塊）；schedule 檔不存在或 hash 不符 → runner 拒跑；中斷後重啟跳過已完成 run；三個 fail-closed gate 各一測試。
   Run: `python3 -m pytest -q tests/engine/test_pilot.py`；Expected: FAIL。
-- [ ] **Step 2–3:** 實作 → PASS。
-- [ ] **Step 4:** Commit: `feat(pilot): sealed global schedule, idempotent registry, preflight gates`。
+- [x] **Step 2–3:** 實作 → PASS。
+- [x] **Step 4:** Commit: `feat(pilot): sealed global schedule, idempotent registry, preflight gates`。
 
 ---
 
