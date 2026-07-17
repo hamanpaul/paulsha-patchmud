@@ -28,16 +28,12 @@ jobs:
             echo "No test suite yet; skipping pytest."
           fi
 
-      - name: Install and verify bubblewrap (namespace 隔離 acceptance 依賴，F7)
+      - name: Install bubblewrap (namespace 隔離 acceptance 依賴，F7)
         if: steps.detect.outputs.has_tests == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y bubblewrap
-          # 驗證 user+mount+net+pid namespace 可用；不可用則 CI 直接失敗，
-          # 避免 milestone D acceptance 因能力不足而靜默 skip 成綠。
-          bwrap --unshare-user --unshare-mount --unshare-net --unshare-pid \
-            --ro-bind /usr /usr --ro-bind /bin /bin --ro-bind /lib /lib \
-            --proc /proc --dev /dev -- /bin/true
+          bwrap --version
 
       - name: Setup Python
         if: steps.detect.outputs.has_tests == 'true'
@@ -51,6 +47,11 @@ jobs:
           python -m pip install --upgrade pip pytest
           if [ -f pyproject.toml ]; then python -m pip install -e ".[test]" || python -m pip install -e . || true; fi
           if [ -f requirements.txt ]; then python -m pip install -r requirements.txt; fi
+
+      - name: Verify namespace capabilities (F7：不足即失敗，acceptance 不得靜默 skip)
+        if: steps.detect.outputs.has_tests == 'true'
+        run: |
+          python -c "from pathlib import Path; from patchmud.sandbox.isolate import IsolationRunner; c = IsolationRunner(Path('/tmp')).capabilities(); print('capabilities:', c); assert c.mount_ns and c.net_ns and c.pid_ns, f'namespace 能力不足：{c}'"
 
       - name: Run test suite
         if: steps.detect.outputs.has_tests == 'true'
