@@ -12,12 +12,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 
 from patchmud.engine import render_zh_tw as zh
 from patchmud.engine.render import flood_state_key
 
-__all__ = ["WatchError", "render_battle_report", "render_turn"]
+__all__ = ["LiveSpectator", "WatchError", "render_battle_report", "render_turn"]
 
 _BASELINE = "baseline"
 _TURN = "turn"
@@ -26,6 +26,30 @@ _FINAL = "final"
 
 class WatchError(Exception):
     """watch 操作性失敗（事件缺漏、回合不存在、非回合制 run），fail-closed。"""
+
+
+class LiveSpectator:
+    """邊玩邊看：run loop 每 append 一個 event 就即時渲染成 zh-TW 戰報段落。
+
+    與離線 `watch` 同源渲染，但由 loop 於執行中逐事件推送——真模型對局時每回合
+    之間的 API 延遲即成為自然節奏，觀眾看到「這回合 agent 做了什麼、queue 怎麼
+    變、洪水壓力升降」as it happens。純視圖：不改變任何評分資料流。
+    """
+
+    def __init__(self, out: Callable[[str], None] = print) -> None:
+        self._out = out
+        self._prev_queue: dict | None = None
+
+    def feed(self, event: dict) -> None:
+        etype = _field(event, "type")
+        if etype == _BASELINE:
+            self._out(_render_baseline(event))
+            self._prev_queue = _field(event, "queue")
+        elif etype == _TURN:
+            self._out(_render_turn_event(event, self._prev_queue))
+            self._prev_queue = _field(event, "queue")
+        elif etype == _FINAL:
+            self._out(_render_final(event))
 
 
 def render_battle_report(events: Sequence[dict], result: dict) -> str:
