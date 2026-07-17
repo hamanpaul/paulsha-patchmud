@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 
@@ -196,6 +197,20 @@ def tamper(run_dir: Path, mutate) -> None:
     )
 
 
+def tamper_events(run_dir: Path, mutate) -> None:
+    """手動竄改封存 events.jsonl（保序）。"""
+    path = run_dir / "events.jsonl"
+    events = [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    mutate(events)
+    path.write_text(
+        "".join(json.dumps(e, sort_keys=True) + "\n" for e in events), encoding="utf-8"
+    )
+
+
 def make_perf_encounter(tmp_path: Path) -> Path:
     """mini_encounter 變體：runtime_efficiency rubric 只綁 perf-only probe。"""
     enc = tmp_path / "encounter"
@@ -251,6 +266,41 @@ class TestReplayL1:
         report = replay_l1(run_dir)
         assert report.identical is True
         assert report.diffs == ()
+
+    def test_tampered_queue_item_type_probe_mismatch_detected(self, tmp_path) -> None:
+        """F2 codex exploit：open item 的 type 與其 probe 之 card 分類矛盾，
+        且不動 b_t／m_t 計數（既有自洽檢查抓不到）。把 MAIN item 的 probe 換成
+        regression probe（type 仍 MAIN）→ 只有 type↔probe 分類檢查抓得到。"""
+        run_dir = make_run(tmp_path)
+
+        def mutate(events: list[dict]) -> None:
+            hit = False
+            for ev in events:
+                queue = ev.get("queue")
+                if not isinstance(queue, dict):
+                    continue
+                for item in queue.get("open_items", []):
+                    if item.get("type") == "MAIN":
+                        # MAIN 的 probe 應屬 public_requirements；謊報成 regression probe
+                        item["probe"] = "tests/starter/test_inventory_basics.py"
+                        hit = True
+            assert hit, "測試前提：run 需有 open MAIN item 可竄改"
+
+        tamper_events(run_dir, mutate)
+        report = replay_l1(run_dir)
+        assert report.identical is False
+        assert any("queue" in d.field for d in report.diffs)
+
+    def test_tampered_strategy_violation_detected(self, tmp_path) -> None:
+        """F2：strategy_violation 與 (loadout.tdd ∧ ¬tdd_compliant) 不變式矛盾 → 偵測。"""
+        run_dir = make_run(tmp_path)
+        tamper(
+            run_dir,
+            lambda d: d["strategy"].__setitem__("strategy_violation", not d["strategy"]["strategy_violation"]),
+        )
+        report = replay_l1(run_dir)
+        assert report.identical is False
+        assert any("strategy" in d.field for d in report.diffs)
 
     def test_tampered_power_score_detected(self, tmp_path) -> None:
         run_dir = make_run(tmp_path)

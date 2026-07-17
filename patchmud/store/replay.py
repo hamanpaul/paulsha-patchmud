@@ -208,6 +208,8 @@ def replay_l1(run_dir: Path) -> ReplayReport:
         _compare(diffs, "end_reason", result.get("end_reason"), end_reason)
         _compare(diffs, "turns", result.get("turns"), final_event.get("turns"))
         diffs.extend(_queue_trajectory_diffs(events))
+        diffs.extend(_queue_semantic_diffs(events, card))
+        diffs.extend(_strategy_invariant_diffs(result))
         # human 標記不可信任封存值：由 ledger billed totals 重算驗證
         # （human ⟺ 全 NA，spec §5.4/§10.1）。封存 human: true 會讓 report
         # 把該 run 剔出 ranked（cli._load_report_run）——model run 竄改標成
@@ -421,6 +423,71 @@ def _queue_trajectory_diffs(events: Sequence[Mapping]) -> list[ReplayDiff]:
             diffs.append(ReplayDiff(f"{context}.b_t", queue.get("b_t"), b_t))
         if queue.get("m_t") != m_t:
             diffs.append(ReplayDiff(f"{context}.m_t", queue.get("m_t"), m_t))
+    return diffs
+
+
+#: probe 驅動 item 的 type ⟺ card probe 分類；不符即偽造（F2）。
+_MAIN_TYPES = frozenset({"MAIN", "REOPENED"})
+_REGRESSION_TYPES = frozenset({"REGRESSION"})
+
+
+def _queue_semantic_diffs(events: Sequence[Mapping], card: IssueCard) -> list[ReplayDiff]:
+    """queue 語意重驗（F2）：每個 probe 驅動的 open item，其 type 必須與該 probe
+    的 card 分類一致——MAIN/REOPENED 綁 `public_requirements`，REGRESSION 綁
+    `regression_probes`/`compat_probes`。這抓得到 codex exploit：把 REOPENED
+    改成 REGRESSION（或反向）而 b_t／m_t 計數不變的型別竄改。"""
+    main_probes = {req.probe for req in card.public_requirements}
+    regression_probes = {
+        p.path for p in card.regression_probes if p.path is not None
+    } | {p.probe for p in card.compat_probes}
+
+    diffs: list[ReplayDiff] = []
+    for event in events:
+        queue = event.get("queue")
+        if not isinstance(queue, Mapping):
+            continue
+        open_items = queue.get("open_items")
+        if not isinstance(open_items, list):
+            continue
+        ctx = f"events[{event.get('seq')}].queue"
+        for item in open_items:
+            if not isinstance(item, Mapping):
+                continue
+            itype = item.get("type")
+            probe = item.get("probe")
+            if probe is None:
+                continue  # 非 probe 驅動（SCOPE/CHURN/DUPLICATE）
+            if itype in _MAIN_TYPES and probe not in main_probes:
+                diffs.append(
+                    ReplayDiff(
+                        f"{ctx}.item[{item.get('item_id')}].type",
+                        f"{itype}↔probe={probe}",
+                        "probe 非 public_requirement，type 不應為 MAIN/REOPENED",
+                    )
+                )
+            elif itype in _REGRESSION_TYPES and probe not in regression_probes:
+                diffs.append(
+                    ReplayDiff(
+                        f"{ctx}.item[{item.get('item_id')}].type",
+                        f"{itype}↔probe={probe}",
+                        "probe 非 regression/compat，type 不應為 REGRESSION",
+                    )
+                )
+    return diffs
+
+
+def _strategy_invariant_diffs(result: Mapping) -> list[ReplayDiff]:
+    """strategy_violation 不變式（F2）：T1 loadout 且終局 non-compliant ⟺ violation
+    （spec §6.1.6）。封存值與不變式矛盾即偵測。"""
+    strategy = result.get("strategy")
+    if not isinstance(strategy, Mapping):
+        return []
+    loadout = str(result.get("loadout", ""))
+    tdd_forced = "T1" in loadout
+    expected = bool(tdd_forced and not strategy.get("tdd_compliant", True))
+    archived = bool(strategy.get("strategy_violation", False))
+    diffs: list[ReplayDiff] = []
+    _compare(diffs, "strategy.strategy_violation", archived, expected)
     return diffs
 
 
