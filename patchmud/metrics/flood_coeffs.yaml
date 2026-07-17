@@ -1,0 +1,10 @@
+# Flood Index 係數（deck 級常數，版本化；spec §8.2、報告 §7.4）。
+# review_debt 權重固定 0：reviewer findings 不進 queue / Control（§6.2），
+# loader 對非 0 值 fail-closed。
+schema_version: 1
+weights:
+  regression: 2.0
+  reopen: 1.5
+  review_debt: 0.0
+  duplicate: 0.5
+  reverted_loc: 0.02

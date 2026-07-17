@@ -390,3 +390,14 @@ class TestSnapshot:
         q.update(results(main="failed", reg="failed"), NO_DIFF, Patch())
         snap3 = q.snapshot()
         assert snap3["b_t"] == 2 and snap3["m_t"] == 0
+
+    def test_snapshot_counters_expose_cumulative_reverted_loc(self) -> None:
+        # 報告 §7.4 Flood Index 的 0.02·LOC_reverted 項：flood 計量（Task 14）
+        # 只讀 events 的 queue snapshot，累計 reverted_loc 必須入 counters。
+        q = queue_with_main_red()
+        assert q.snapshot()["counters"]["reverted_loc"] == 0
+        q.update(
+            results(main="failed"), DiffGeometry((), reverted_loc=12), Patch()
+        )
+        assert q.counters.reverted_loc == 12
+        assert q.snapshot()["counters"]["reverted_loc"] == 12

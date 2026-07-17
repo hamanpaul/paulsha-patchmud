@@ -105,6 +105,8 @@ class QueueCounters:
     scope_hard_open: int = 0
     #: 目前 cumulative diff 中 allowed 內、expected 外的 production LOC（F12）。
     s_scope_loc: int = 0
+    #: workspace 累計自我撤銷行數（報告 §7.4 的 LOC_reverted；flood 計量用）。
+    reverted_loc: int = 0
 
 
 @dataclass
@@ -231,6 +233,7 @@ class IssueQueue:
             failed_claims=self._failed_claims,
             scope_hard_open=scope_hard_open,
             s_scope_loc=self._s_scope_loc,
+            reverted_loc=self._last_reverted_loc,
         )
 
     def snapshot(self) -> dict:
@@ -253,6 +256,7 @@ class IssueQueue:
                 "failed_claims": counters.failed_claims,
                 "scope_hard_open": counters.scope_hard_open,
                 "s_scope_loc": counters.s_scope_loc,
+                "reverted_loc": counters.reverted_loc,
             },
         }
 

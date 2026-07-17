@@ -326,7 +326,7 @@
 - Consumes: store 的 events（queue snapshots：B_t、M_t、per-turn ΔT）。
 - Produces: `flood_metrics(events, card, coeffs) -> FloodMetrics(area_total, area_excess, flood_index, control, ftr, flood_create_tokens, flood_repair_tokens)`；係數檔 `patchmud/metrics/flood_coeffs.yaml`（版本化，review-debt 權重 0）。
 
-- [ ] **Step 1: RED（F13/F14 情境直接入測）** —
+- [x] **Step 1: RED（F13/F14 情境直接入測）** —
   ```python
   def test_perfect_tdd_run_has_zero_excess_area():
       ev = events(B=[1,1,1,0], M=[1,1,1,0])   # WRITE_TEST→red→PATCH→綠
@@ -341,8 +341,8 @@
   ```
   另鎖定：Control = `100·exp(−F/τ)`；τ 未校準時使用 1.0 並標記 `uncalibrated`。
   Run: `python3 -m pytest -q tests/metrics/test_flood.py`；Expected: FAIL。
-- [ ] **Step 2–3:** 實作 → PASS。
-- [ ] **Step 4:** Commit: `feat(metrics): dual flood area, start-of-turn FTR, control score`。
+- [x] **Step 2–3:** 實作 → PASS。
+- [x] **Step 4:** Commit: `feat(metrics): dual flood area, start-of-turn FTR, control score`。
 
 ---
 
