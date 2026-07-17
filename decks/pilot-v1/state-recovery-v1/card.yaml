@@ -13,7 +13,7 @@ expected_paths:
   - "src/snapshot.py"
 public_requirements:
   - id: MAIN-1
-    text: transient scan failure must not emit removal（暫時性掃描失敗不得誤判為刪除）
+    text: 暫時性掃描失敗不得產生移除事件
     probe: tests/public/test_transient_scan_failure.py
 critical_requirements:
   - id: CR-1

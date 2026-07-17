@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import fnmatch
 from decimal import Decimal
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import yaml
 
@@ -82,6 +82,7 @@ def load_card(path: Path) -> IssueCard:
     except (TypeError, KeyError, AttributeError, ValueError) as exc:
         raise DeckError(f"card.yaml 欄位形態錯誤：{exc}") from exc
 
+    _validate_deck_paths(card)
     _validate_expected_within_allowed(card)
     _validate_public_hidden_disjoint(card)
     return card
@@ -193,6 +194,46 @@ def _validate_expected_within_allowed(card: IssueCard) -> None:
         )
         if not covered:
             raise DeckError(f"expected_paths 超出 allowed_paths：{expected}")
+
+
+def _require_clean_relpath(path: str, field: str) -> None:
+    """deck path 必須是 normalized POSIX 相對路徑：拒絕絕對路徑、`.`/`..` 與空段。
+
+    F4：`startswith("hidden/")` 這類 prefix 判定會被 `hidden/../repo/...` 繞過，
+    讓 public test 偽裝成 critical hidden probe。所有 deck path 先過此關。
+    """
+    if not path or path != path.strip():
+        raise DeckError(f"{field} 路徑非法（空白／前後空格）：{path!r}")
+    pure = PurePosixPath(path)
+    if pure.is_absolute():
+        raise DeckError(f"{field} 不得為絕對路徑：{path!r}")
+    if any(part in ("", ".", "..") for part in pure.parts):
+        raise DeckError(f"{field} 不得含 `.`／`..`／空段（路徑穿越風險）：{path!r}")
+    if "\\" in path:
+        raise DeckError(f"{field} 不得含反斜線：{path!r}")
+
+
+def _validate_deck_paths(card: IssueCard) -> None:
+    """對所有 deck 宣告的 probe／glob 做路徑正規化（F4）。"""
+    for req in card.public_requirements:
+        _require_clean_relpath(req.probe, f"public_requirements[{req.id}].probe")
+    for req in card.critical_requirements:
+        _require_clean_relpath(req.hidden_probe, f"critical_requirements[{req.id}].hidden_probe")
+    for probe in card.compat_probes:
+        _require_clean_relpath(probe.probe, "compat_probes[].probe")
+    for probe in card.regression_probes:
+        if probe.path is not None:
+            _require_clean_relpath(probe.path, "regression_probes[].path")
+    rubric = card.power_rubric
+    for group in rubric.functional.groups:
+        _require_clean_relpath(group.probe, f"power_rubric.functional[{group.id}].probe")
+    for name, section in (
+        ("robustness", rubric.robustness),
+        ("compatibility", rubric.compatibility),
+        ("runtime_efficiency", rubric.runtime_efficiency),
+    ):
+        for probe in section.probes:
+            _require_clean_relpath(probe, f"power_rubric.{name}.probes[]")
 
 
 def _validate_public_hidden_disjoint(card: IssueCard) -> None:

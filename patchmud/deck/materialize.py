@@ -44,7 +44,10 @@ def materialize_repo(encounter_dir: Path, dest: Path) -> FrozenRepo:
     if dest.exists() and any(dest.iterdir()):
         raise DeckError(f"物化目的地必須是不存在或空目錄：{dest}")
 
-    shutil.copytree(src, dest, ignore=_COPY_IGNORE, dirs_exist_ok=True)
+    # F3：拒絕 symlink／特殊檔。預設 copytree 會解參照，
+    # `repo/x -> ../hidden/ref.patch` 會把 hidden bytes 複製進 candidate 可讀 worktree。
+    _assert_regular_tree(src)
+    shutil.copytree(src, dest, ignore=_COPY_IGNORE, symlinks=True, dirs_exist_ok=True)
 
     env = _deterministic_git_env()
     _git(dest, env, "init", "--quiet")
@@ -52,6 +55,15 @@ def materialize_repo(encounter_dir: Path, dest: Path) -> FrozenRepo:
     _git(dest, env, "commit", "--quiet", "--no-verify", "-m", _COMMIT_MESSAGE)
     sha = _git(dest, env, "rev-parse", "HEAD")
     return FrozenRepo(path=dest, sha=sha)
+
+
+def _assert_regular_tree(root: Path) -> None:
+    """repo/ 底下只允許一般檔案與目錄；任何 symlink／特殊檔一律拒絕（F3）。"""
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink():
+            raise DeckError(f"repo/ 不得含 symlink（hidden 資產逃逸風險）：{path.relative_to(root)}")
+        if not (path.is_file() or path.is_dir()):
+            raise DeckError(f"repo/ 不得含特殊檔（fifo/device/socket）：{path.relative_to(root)}")
 
 
 def _deterministic_git_env() -> dict[str, str]:
