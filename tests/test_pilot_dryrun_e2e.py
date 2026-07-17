@@ -25,6 +25,7 @@ git 狀態。
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -113,15 +114,41 @@ def _patch_reply(reference_diff: str) -> str:
     )
 
 
+def _mirror_test_diff(encounter_dir: Path, card: IssueCard) -> str:
+    """把 encounter 的 public MAIN 測試內容鏡射成 agent test（F6）。
+
+    該內容在 buggy repo 為 red（bug 未修）、套 reference patch 後 green，且
+    紅→綠期間測試檔 hash 不變 → T1 valid red 後真的閉環（tdd_compliant=true），
+    取代原本永久 `assert False` 的假 red。"""
+    probe_rel = card.public_requirements[0].probe
+    content = (encounter_dir / "repo" / probe_rel).read_text(encoding="utf-8")
+    lines = content.splitlines()
+    body = "".join(f"+{line}\n" for line in lines)
+    path = "tests/agent/test_main_mirror.py"
+    return (
+        f"diff --git a/{path} b/{path}\n"
+        "new file mode 100644\n"
+        "index 0000000..1111111\n"
+        "--- /dev/null\n"
+        f"+++ b/{path}\n"
+        f"@@ -0,0 +1,{len(lines)} @@\n"
+        + body
+    )
+
+
 def build_fixer_script(
-    card: IssueCard, reference_diff: str, loadout: Loadout
+    card: IssueCard, reference_diff: str, loadout: Loadout, encounter_dir: Path
 ) -> list[str]:
-    """「會修」劇本：依 loadout 動態插入 PLAN／WRITE_TEST／SUMMON，恆合法。"""
+    """「會修」劇本：依 loadout 動態插入 PLAN／WRITE_TEST／SUMMON，恆合法。
+
+    T1 的 WRITE_TEST 鏡射 public MAIN 測試（真 red→green，F6），不再用假 red。"""
     replies: list[str] = []
     if loadout.plan:
         replies.append(_plan_reply(card))
     if loadout.tdd:
-        replies.append(_WRITE_TEST_REPLY)
+        replies.append(
+            "ACTION: WRITE_TEST\nPATCH:\n" + _mirror_test_diff(encounter_dir, card)
+        )
     replies.append(_patch_reply(reference_diff))
     if loadout.reviewer:
         replies.append(_SUMMON_REPLY)
@@ -180,10 +207,18 @@ class Interrupted(Exception):
 
 @pytest.fixture()
 def real_capabilities():
+    # F7：milestone D acceptance gate 不得因 namespace 不足而靜默 skip 成綠。
+    # 允許以 PATCHMUD_ALLOW_DEGRADED_ACCEPTANCE=1 於本機無 bwrap 時降級 skip；
+    # CI（見 .github/workflows/tests.yml 安裝並驗證 bwrap）不設此旗標 → 必 fail。
     probe = IsolationRunner(Path("/tmp"), bwrap_path=DEFAULT_BWRAP_PATH)
     caps = probe.capabilities()
     if not (caps.mount_ns and caps.net_ns and caps.pid_ns):
-        pytest.skip("namespace 能力不足（degraded）")
+        if os.environ.get("PATCHMUD_ALLOW_DEGRADED_ACCEPTANCE") == "1":
+            pytest.skip("namespace 能力不足（本機降級，已明示放行）")
+        pytest.fail(
+            "namespace 能力不足：milestone D acceptance 需真 bwrap 隔離；"
+            "CI 必須安裝 bwrap，本機測試可設 PATCHMUD_ALLOW_DEGRADED_ACCEPTANCE=1 降級"
+        )
 
 
 def _final_run_dirs(registry_path: Path) -> dict[str, str]:
@@ -247,7 +282,10 @@ class TestPilotMatrixDryRun:
                 loadout = Loadout.from_string(item.loadout)
                 if item.model == "fixer":
                     replies = build_fixer_script(
-                        card, _reference_diff(item.encounter), loadout
+                        card,
+                        _reference_diff(item.encounter),
+                        loadout,
+                        DECK_DIR / item.encounter,
                     )
                 else:
                     replies = build_flooder_script(card)
@@ -336,6 +374,13 @@ class TestPilotMatrixDryRun:
             if item.model == "fixer":
                 fixer_clears += result["clear"]
                 assert result["clear"] == 1, (item.run_id, result["end_reason"])
+                # F6：T1 fixer 必須真 TDD-compliant（鏡射 MAIN 測試 red→green），
+                # 不得以永久假 red 通關；strategy_violation 必為 False。
+                loadout = Loadout.from_string(item.loadout)
+                if loadout.tdd:
+                    strat = result["strategy"]
+                    assert strat["tdd_compliant"] is True, (item.run_id, strat)
+                    assert strat["strategy_violation"] is False, (item.run_id, strat)
             else:
                 flooder_clears += result["clear"]
                 assert result["clear"] == 0, (item.run_id, result["end_reason"])
