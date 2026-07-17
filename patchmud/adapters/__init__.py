@@ -9,6 +9,7 @@ from patchmud.adapters.base import (
     ScriptedRepliesExhausted,
     Transport,
 )
+from patchmud.adapters.human import HumanAdapter
 from patchmud.adapters.openai_compat import OpenAICompatAdapter
 from patchmud.adapters.scripted import ScriptedAdapter
 
@@ -17,6 +18,7 @@ __all__ = [
     "AdapterResponse",
     "AnthropicAdapter",
     "HttpRequest",
+    "HumanAdapter",
     "ModelAdapter",
     "OpenAICompatAdapter",
     "ScriptedAdapter",

@@ -62,7 +62,12 @@ from patchmud.engine.strategy import EnforcementState, Loadout, StrategyEnforcer
 from patchmud.evaluator.evaluate import FinalEvaluation
 from patchmud.evaluator.gates import compute_clear
 from patchmud.evaluator.power import FileChange, PowerReport
-from patchmud.ledger.tokens import LedgerEntry, aggregate_work_tokens, map_usage
+from patchmud.ledger.tokens import (
+    LedgerEntry,
+    aggregate_billed_totals,
+    aggregate_work_tokens,
+    map_usage,
+)
 from patchmud.sandbox.isolate import Execution
 from patchmud.sandbox.probes import (
     DEFAULT_PYTEST_ARGV,
@@ -164,9 +169,16 @@ def run_encounter(
     loadout: Loadout,
     config: RunConfig,
     store: RunStore,
+    *,
+    human: bool = False,
 ) -> RunResult:
-    """打完一場 encounter：turn 0 baseline → author turns → 終局評分落盤。"""
-    session = _Session(card, adapter, loadout, config, store)
+    """打完一場 encounter：turn 0 baseline → author turns → 終局評分落盤。
+
+    ``human=True``（``patchmud play``，spec §5.4）：引擎、probe、queue、
+    評分完全同構，僅 result.yaml 標記 ``human: true``——human run 永不進
+    ranked 資料與任何聚合指標（metrics 層 ``HumanRunExcluded``）。
+    """
+    session = _Session(card, adapter, loadout, config, store, human=human)
     session.setup()
     while session.next_turn():
         pass
@@ -183,12 +195,15 @@ class _Session:
         loadout: Loadout,
         config: RunConfig,
         store: RunStore,
+        *,
+        human: bool = False,
     ) -> None:
         self.card = card
         self.adapter = adapter
         self.loadout = loadout
         self.config = config
         self.store = store
+        self.human = human
         self.workspace = config.workspace
         self.enforcer = StrategyEnforcer(loadout)
         self.max_turns = config.max_turns or card.max_turns
@@ -587,9 +602,12 @@ class _Session:
     ) -> dict:
         tdd_state = self.enforcer.tdd_state
         work_tokens = aggregate_work_tokens(self.ledger)
+        billed_input, billed_output = aggregate_billed_totals(self.ledger)
         return {
             "run_id": self.store.run_dir.name,
             "mode": "run",
+            # human run（patchmud play）永不進 ranked 資料（spec §5.4）
+            "human": self.human,
             "loadout": self.loadout.name,
             "clear": clear,
             "end_reason": self.end_reason,
@@ -616,11 +634,10 @@ class _Session:
             },
             "ledger": {
                 "entries": len(self.ledger),
-                "billed_input_total": sum(
-                    e.billed_input_total for e in self.ledger
-                ),
-                "billed_output_total": sum(
-                    e.billed_output_total for e in self.ledger
+                # billed totals：human run 全 NA（NA 傳染；不記 0，§10.1）
+                "billed_input_total": billed_input if billed_input is not None else _NA,
+                "billed_output_total": (
+                    billed_output if billed_output is not None else _NA
                 ),
                 "work_tokens": work_tokens if work_tokens is not None else _NA,
                 "reviewer_calls": sum(
@@ -647,7 +664,8 @@ class _Session:
             0, int(self.card.wall_clock_seconds - self._elapsed())
         )
         tokens_spent = sum(
-            e.billed_input_total + e.billed_output_total for e in self.ledger
+            (e.billed_input_total or 0) + (e.billed_output_total or 0)
+            for e in self.ledger
         )
         return render_state(
             RunState(

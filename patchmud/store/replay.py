@@ -38,7 +38,12 @@ from patchmud.evaluator.power import (
     score_functional,
     score_robustness,
 )
-from patchmud.ledger.tokens import LedgerEntry, LedgerError, aggregate_work_tokens
+from patchmud.ledger.tokens import (
+    LedgerEntry,
+    LedgerError,
+    aggregate_billed_totals,
+    aggregate_work_tokens,
+)
 from patchmud.metrics.flood import (
     FloodError,
     FloodMetrics,
@@ -203,7 +208,13 @@ def replay_l1(run_dir: Path) -> ReplayReport:
         _compare(diffs, "end_reason", result.get("end_reason"), end_reason)
         _compare(diffs, "turns", result.get("turns"), final_event.get("turns"))
         diffs.extend(_queue_trajectory_diffs(events))
-        flood = _recompute_flood(events, card)
+        if result.get("human") is True:
+            # human run（patchmud play，spec §5.4）：ledger 全 token 欄位 NA，
+            # ΔT 不存在 → flood 計量不適用（NA 不記 0，§10.1）；human run
+            # 本就永不進 ranked 資料與任何聚合指標。
+            flood = None
+        else:
+            flood = _recompute_flood(events, card)
         diffs.extend(
             _ledger_diffs(run_dir, _require_mapping(result, "ledger", context="result.yaml"))
         )
@@ -413,10 +424,12 @@ def _recompute_flood(events: Sequence[Mapping], card: IssueCard) -> FloodMetrics
 def _ledger_diffs(run_dir: Path, archived: Mapping) -> list[ReplayDiff]:
     entries = load_ledger(run_dir)
     work = aggregate_work_tokens(entries)
+    # billed totals 與 loop 共用同一 NA 傳染聚合（human run 全 NA，§5.4/§10.1）
+    billed_input, billed_output = aggregate_billed_totals(entries)
     recomputed = {
         "entries": len(entries),
-        "billed_input_total": sum(e.billed_input_total for e in entries),
-        "billed_output_total": sum(e.billed_output_total for e in entries),
+        "billed_input_total": _NA if billed_input is None else billed_input,
+        "billed_output_total": _NA if billed_output is None else billed_output,
         "work_tokens": _NA if work is None else work,
         "reviewer_calls": sum(1 for e in entries if e.role == "reviewer"),
     }

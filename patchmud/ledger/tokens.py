@@ -7,6 +7,9 @@
   永遠照抄；計費一律以 billed totals 計算（F17）。
 - 拆不動的殘差（如 cache 寫入 tokens）進 ``unallocated``；殘差為負代表
   provider 資料不一致，fail-closed。
+- ``human`` provider（``patchmud play``，spec §5.4）：無任何 token 量測
+  事實——互斥欄位**與 billed totals** 全記 ``None``（NA 不記 0，§10.1）；
+  usage_raw 必須是空 dict，NA entry 進計價一律 fail-closed。
 """
 
 from __future__ import annotations
@@ -30,8 +33,9 @@ class LedgerEntry:
     input_cached: int | None
     output_visible: int | None
     reasoning: int | None
-    billed_input_total: int
-    billed_output_total: int
+    #: billed totals：model provider 必為 int；human run 無計費事實 → None（NA）。
+    billed_input_total: int | None
+    billed_output_total: int | None
     unallocated: int
     api_calls: int = 1
     tool_calls: int = 0
@@ -43,13 +47,13 @@ class LedgerEntry:
     def __post_init__(self) -> None:
         if self.role not in VALID_ROLES:
             raise LedgerError(f"role 非法：{self.role!r}")
-        for name in ("billed_input_total", "billed_output_total", "unallocated",
-                     "api_calls", "tool_calls", "wall_clock_ms",
+        for name in ("unallocated", "api_calls", "tool_calls", "wall_clock_ms",
                      "prompt_bytes", "generated_bytes", "turn"):
             value = getattr(self, name)
             if not isinstance(value, int) or isinstance(value, bool) or value < 0:
                 raise LedgerError(f"{name} 必須是非負整數：{value!r}")
-        for name in ("input_uncached", "input_cached", "output_visible", "reasoning"):
+        for name in ("input_uncached", "input_cached", "output_visible", "reasoning",
+                     "billed_input_total", "billed_output_total"):
             value = getattr(self, name)
             if value is None:
                 continue
@@ -142,9 +146,31 @@ def _map_openai(usage: dict) -> dict:
     )
 
 
+def _map_human(usage: dict) -> dict:
+    """human adapter（``patchmud play``，spec §5.4）：全欄位 NA。
+
+    人類對局沒有任何 token 量測事實；usage_raw 帶值代表佈線錯誤，
+    fail-closed（NA 不記 0，§10.1）。
+    """
+    if usage:
+        raise LedgerError(
+            f"human adapter 的 usage_raw 必須是空 dict（全欄位 NA）：{sorted(usage)}"
+        )
+    return dict(
+        input_uncached=None,
+        input_cached=None,
+        output_visible=None,
+        reasoning=None,
+        billed_input_total=None,
+        billed_output_total=None,
+        unallocated=0,
+    )
+
+
 _PROVIDER_MAPPERS = {
     "anthropic": _map_anthropic,
     "openai": _map_openai,
+    "human": _map_human,
 }
 
 
@@ -188,3 +214,30 @@ def aggregate_work_tokens(entries: list[LedgerEntry]) -> int | None:
             return None
         total += work
     return total
+
+
+def aggregate_billed_totals(
+    entries: list[LedgerEntry],
+) -> tuple[int | None, int | None]:
+    """run 級 billed totals 聚合：``(Σ input, Σ output)``。
+
+    任一 entry 的 billed 欄位為 NA（human run）→ 該欄整體 NA（NA 傳染，
+    §10.1）。loop（result.yaml）與 replay L1 重算共用此單一實作，保證
+    位元一致。
+    """
+    total_input: int | None = 0
+    total_output: int | None = 0
+    for entry in entries:
+        if total_input is not None:
+            total_input = (
+                None
+                if entry.billed_input_total is None
+                else total_input + entry.billed_input_total
+            )
+        if total_output is not None:
+            total_output = (
+                None
+                if entry.billed_output_total is None
+                else total_output + entry.billed_output_total
+            )
+    return total_input, total_output

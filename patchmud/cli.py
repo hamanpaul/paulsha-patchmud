@@ -1,6 +1,6 @@
 """patchmud CLI 進入點。
 
-子命令（validate-deck / score-diff / run / pilot / replay / report）依
+子命令（validate-deck / score-diff / run / play / pilot / replay / report）依
 docs/superpowers/plans/2026-07-16-patchmud-mvp.md 逐 task 落地。
 
 `score-diff`（Task 8，milestone A 收口）：給定 encounter + 手工 diff，離線
@@ -16,6 +16,12 @@ queue → checkpoint → event）→ 終局四觸發全套評分 → result.yaml
 `scripted:<file>`（回覆以 `-----` 行分隔；dry-run 用）、
 `anthropic:<model>`（env `ANTHROPIC_API_KEY`）、
 `openai:<model>[@<base_url>]`（env `OPENAI_API_KEY`，涵蓋地端 vllm/ollama）。
+
+`play`（Task 22，spec §5.4）：`patchmud play --encounter <dir> --loadout
+P0T0R0`——`HumanAdapter`（stdin/stdout）取代模型 adapter，人類以同一命令
+協定親自打一場 encounter；引擎、probe、queue、評分完全同構。ledger 全
+token 欄位 `NA`、成本 `NA`；run 標記 `human: true`，永不進 ranked 資料與
+任何聚合指標。回覆以空行結束；Ctrl-D（EOF）視同 COMMIT 收尾。
 
 `replay`（Task 16，spec §12.2）：`patchmud replay <run_dir> [--l2]`——L1 位元
 一致重算（不執行任何 probe；runtime_efficiency 引用封存 outcome），與封存
@@ -62,11 +68,13 @@ import yaml
 
 from patchmud.adapters.anthropic import AnthropicAdapter
 from patchmud.adapters.base import AdapterError, ModelAdapter
+from patchmud.adapters.human import HumanAdapter
 from patchmud.adapters.openai_compat import OpenAICompatAdapter
 from patchmud.adapters.scripted import ScriptedAdapter
 from patchmud.deck.loader import load_card
 from patchmud.deck.materialize import materialize_repo
 from patchmud.deck.model import DeckError, IssueCard
+from patchmud.engine import render_zh_tw as zh
 from patchmud.engine.loop import RunConfig, build_agent_test_runner, run_encounter
 from patchmud.engine.prompts import HARNESS_PROMPT_VERSION
 from patchmud.engine.strategy import Loadout
@@ -114,6 +122,8 @@ __all__ = [
     "ScoreDiffSummary",
     "build_report",
     "main",
+    "play_cli",
+    "run_cli",
     "score_diff",
 ]
 
@@ -148,14 +158,16 @@ def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
     if not args:
         print(
-            "patchmud 0.0.0 — 子命令：score-diff / run / replay / report；其餘見 "
-            "docs/superpowers/plans/2026-07-16-patchmud-mvp.md"
+            "patchmud 0.0.0 — 子命令：score-diff / run / play / replay / report；"
+            "其餘見 docs/superpowers/plans/2026-07-16-patchmud-mvp.md"
         )
         return 0
     if args[0] == "score-diff":
         return _cmd_score_diff(args[1:])
     if args[0] == "run":
         return _cmd_run(args[1:])
+    if args[0] == "play":
+        return _cmd_play(args[1:])
     if args[0] == "replay":
         return _cmd_replay(args[1:])
     if args[0] == "report":
@@ -372,13 +384,82 @@ def run_cli(
     loadout = Loadout.from_string(loadout_spec)
     adapter = _build_adapter(model_spec)
 
+    if run_id is None:
+        run_id = f"run-{card.issue_id}-{time.strftime('%Y%m%d%H%M%S')}"
+    return _wire_and_run_encounter(
+        card,
+        encounter_dir,
+        adapter,
+        loadout,
+        runs_root,
+        run_id,
+        bwrap_path=bwrap_path,
+        record_extra={"model": model_spec},
+    )
+
+
+def play_cli(
+    encounter_dir: Path,
+    loadout_spec: str,
+    runs_root: Path,
+    *,
+    run_id: str | None = None,
+    bwrap_path: str = DEFAULT_BWRAP_PATH,
+    input_fn=None,
+    output_fn=print,
+):
+    """`patchmud play` 串線：`HumanAdapter`（stdin/stdout）取代模型 adapter，
+    人類以同一命令協定親自打一場 encounter（spec §5.4；plan Task 22）。
+
+    引擎、probe、queue、評分與 `run` 完全同構；差異只有：
+    - ledger 全 token 欄位 NA、成本 NA（``usage_raw = {}``）；
+    - run.yaml 與 result.yaml 標記 ``human: true``——human run 永不進
+      ranked 資料與任何聚合指標（metrics 層 ``HumanRunExcluded``）。
+    ``input_fn`` / ``output_fn`` 可注入（測試用 scripted input_fn）；預設
+    stdin 多行讀取（空行結束一則回覆；Ctrl-D 視同 COMMIT 收尾）。
+    """
+    encounter_dir = Path(encounter_dir).resolve()
+    card = load_card(encounter_dir / "card.yaml")
+    loadout = Loadout.from_string(loadout_spec)
+    adapter = HumanAdapter(
+        input_fn=input_fn if input_fn is not None else _stdin_reply,
+        output_fn=output_fn,
+    )
+
+    if run_id is None:
+        run_id = f"play-{card.issue_id}-{time.strftime('%Y%m%d%H%M%S')}"
+    output_fn(zh.text("play.banner"))
+    return _wire_and_run_encounter(
+        card,
+        encounter_dir,
+        adapter,
+        loadout,
+        runs_root,
+        run_id,
+        bwrap_path=bwrap_path,
+        record_extra={"model": "human", "human": True},
+        human=True,
+    )
+
+
+def _wire_and_run_encounter(
+    card: IssueCard,
+    encounter_dir: Path,
+    adapter: ModelAdapter,
+    loadout,
+    runs_root: Path,
+    run_id: str,
+    *,
+    bwrap_path: str,
+    record_extra: dict,
+    human: bool = False,
+):
+    """run／play 共用真佈線：materialize → store → workspace →
+    IsolationRunner/ProbeSuite/evaluator → `run_encounter`。"""
     toolchain = _toolchain_paths()
     pytest_argv = _sandbox_pytest_argv()
     ruff_argv = _ruff_argv(toolchain)
     _require_isolation(bwrap_path, toolchain)
-
-    if run_id is None:
-        run_id = f"run-{card.issue_id}-{time.strftime('%Y%m%d%H%M%S')}"
 
     runs_root = Path(runs_root)
     with tempfile.TemporaryDirectory(prefix="patchmud-run-") as tmp:
@@ -394,7 +475,7 @@ def run_cli(
                 "schedule_ref": _OFFLINE_NA,
                 "encounter_dir": str(encounter_dir),
                 "loadout": loadout.name,
-                "model": model_spec,
+                **record_extra,
             },
             runs_root,
         )
@@ -422,7 +503,72 @@ def run_cli(
             ),
             run_agent_tests=build_agent_test_runner(runner, pytest_argv=pytest_argv),
         )
-        return run_encounter(card, adapter, loadout, config, store)
+        return run_encounter(card, adapter, loadout, config, store, human=human)
+
+
+def _stdin_reply() -> str:
+    """人類回覆讀取器：讀 stdin 多行直到空行（一則回覆可含 PATCH diff）。
+
+    起頭空行忽略；已有內容後的**真空行**（``""``）結束本則回覆——只含
+    空白的行是 unified diff 的合法內容（空 context 行為單一空格），必須
+    原樣保留；EOF（Ctrl-D）於無內容時上拋（`HumanAdapter` 視同 COMMIT
+    收尾）、有內容時視同回覆結束。
+    """
+    lines: list[str] = []
+    while True:
+        try:
+            line = input()
+        except EOFError:
+            if not lines:
+                raise
+            break
+        if line == "":
+            if lines:
+                break
+            continue
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _cmd_play(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="patchmud play",
+        description=(
+            "人類親自對局：HumanAdapter（stdin/stdout）取代模型 adapter，"
+            "以同一命令協定打完一場 encounter（spec §5.4）。"
+            "回覆以空行結束；Ctrl-D 視同 COMMIT。run 標記 human: true，"
+            "永不進 ranked 資料。"
+        ),
+    )
+    parser.add_argument("--encounter", required=True, type=Path, help="encounter 目錄")
+    parser.add_argument(
+        "--loadout", default="P0T0R0", help="forced loadout（預設 P0T0R0 = SOLO）"
+    )
+    parser.add_argument("--runs-root", type=Path, default=Path("runs"), help="run 目錄根")
+    parser.add_argument("--run-id", default=None, help="run 識別字串（預設自動產生）")
+    ns = parser.parse_args(argv)
+
+    try:
+        result = play_cli(ns.encounter, ns.loadout, ns.runs_root, run_id=ns.run_id)
+    except (
+        RunCliError,
+        ScoreDiffError,
+        AdapterError,
+        DeckError,
+        EvaluatorError,
+        StoreError,
+        WorkspaceError,
+        LedgerError,
+        ValueError,
+    ) as exc:
+        print(f"play 失敗：{exc}", file=sys.stderr)
+        return 2
+
+    print(
+        f"end_reason={result.end_reason} clear={result.clear} "
+        f"turns={result.turns_used} power_total={result.evaluation.power.total}"
+    )
+    return 0
 
 
 _SCRIPT_DELIMITER = "-----"

@@ -467,12 +467,12 @@
 - Consumes: `ModelAdapter` 介面（Task 9）、`run_encounter`（Task 13）。
 - Produces: `HumanAdapter(input_fn=input, output_fn=print)`——`complete(messages)` 先 `output_fn` 最新狀態 render，再讀 `input_fn()` 為回覆；`usage_raw = {}`（ledger 全欄位 `NA`）；`run_encounter` 收到 `human=True` 時在 run.yaml 標記 `human: true`。
 
-- [ ] **Step 1: RED** — 以 scripted `input_fn` 餵完整命令序列打完 `mini_encounter`：run 完成且 result.yaml 有 `human: true`；ledger 全 token 欄位 `NA`、成本 `NA`；`metrics` 聚合函數（Task 15）對含 human run 的集合 raise `HumanRunExcluded`；互動順序正確（先看到 render 再要求輸入）。
+- [x] **Step 1: RED** — 以 scripted `input_fn` 餵完整命令序列打完 `mini_encounter`：run 完成且 result.yaml 有 `human: true`；ledger 全 token 欄位 `NA`、成本 `NA`；`metrics` 聚合函數（Task 15）對含 human run 的集合 raise `HumanRunExcluded`；互動順序正確（先看到 render 再要求輸入）。
   Run: `python3 -m pytest -q tests/adapters/test_human.py tests/test_play_e2e.py`；Expected: FAIL。
-- [ ] **Step 2:** 實作 `HumanAdapter` 與 `play` 子命令（含 Ctrl-D → 視同 `COMMIT` 的收尾語意）。
-- [ ] **Step 3:** Run 同上；Expected: PASS。
-- [ ] **Step 4:** 手動驗收：真人打一場 `mini_encounter`（這同時是引擎 demo）。
-- [ ] **Step 5:** Commit: `feat(play): human adapter and interactive zh-TW encounter`。
+- [x] **Step 2:** 實作 `HumanAdapter` 與 `play` 子命令（含 Ctrl-D → 視同 `COMMIT` 的收尾語意）。
+- [x] **Step 3:** Run 同上；Expected: PASS。
+- [x] **Step 4:** 手動驗收：真人打一場 `mini_encounter`（這同時是引擎 demo；本次以 piped-stdin 劇本走真 CLI `patchmud play` 驗收——並修掉 `_stdin_reply` 把 diff 空 context 行誤判為回覆結束的 playability bug）。
+- [x] **Step 5:** Commit: `feat(play): human adapter and interactive zh-TW encounter`。
 
 ---
 

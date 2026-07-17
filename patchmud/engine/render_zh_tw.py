@@ -26,7 +26,8 @@ RENDER_LANGUAGE = "zh-TW"
 #: 文案表版本；文案任何改動必須 bump（golden 測試與 harness_prompt_version 鎖定）。
 #: 1.1.0：新增 strategy enforcer verdict 與 plan schema 錯誤文案（Task 12）。
 #: 1.2.0：新增 turn loop 執行結果與 reviewer subcall 文案（Task 13）。
-RENDER_PACK_VERSION = "1.2.0"
+#: 1.3.0：新增 `patchmud play` 人類對局文案（Task 22；既有文案不變）。
+RENDER_PACK_VERSION = "1.3.0"
 
 
 class RenderError(Exception):
@@ -162,6 +163,15 @@ MESSAGES: dict[str, str] = {
     ),
     "loop.probe_header": "【probe 結果】",
     "loop.probe_line": "- {probe_id}：{status}",
+    # ---- human 對局（patchmud play，spec §5.4；Task 22） -------------------
+    "play.banner": (
+        "【human 對局】你將以同一命令協定親自打完這場 encounter：引擎、"
+        "probe、queue、評分與模型對局完全同構。回覆以空行結束；"
+        "Ctrl-D（EOF）視同 COMMIT 收尾。本場 run 標記 human，"
+        "永不進 ranked 資料與任何聚合指標。"
+    ),
+    "play.input_prompt": "請輸入你的動作（回覆以空行結束；Ctrl-D 視同 COMMIT）：",
+    "play.eof_commit": "偵測到輸入結束（EOF），視同 COMMIT 收尾。",
     # ---- reviewer subcall（spec §6.2；findings advisory，F10） -------------
     "reviewer.system_rules": (
         "你是 PatchMUD 對局中的 fresh-context 審查者：只依據下方提供的任務卡"

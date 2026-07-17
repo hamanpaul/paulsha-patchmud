@@ -35,6 +35,11 @@ class RunCost:
 
 def entry_cost(entry: LedgerEntry, snapshot: PricingSnapshot) -> Decimal:
     """單筆呼叫成本（billed totals 計費；每次呼叫套最低消費下限）。"""
+    if entry.billed_input_total is None or entry.billed_output_total is None:
+        # human run（spec §5.4）無計費事實：billed totals NA → 不可計價
+        raise LedgerError(
+            f"billed totals 為 NA（human run），不可計價：turn={entry.turn}"
+        )
     if entry.input_cached is None:
         input_cost = Decimal(entry.billed_input_total) * \
             snapshot.input_uncached_per_mtok / _MTOK
