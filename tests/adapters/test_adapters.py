@@ -155,6 +155,28 @@ class TestAnthropicAdapter:
         assert request.payload["model"] == "claude-test-1"
         assert request.payload["max_tokens"] == 1024
 
+    def test_oauth_bearer_headers(self):
+        # auth_token → Authorization: Bearer + oauth beta header，且不送 x-api-key
+        transport = FakeTransport(ANTHROPIC_RESPONSE)
+        AnthropicAdapter(
+            model="claude-test-1", auth_token="oat-xyz", transport=transport
+        ).complete(MESSAGES)
+        headers = transport.requests[0].headers
+        assert headers["authorization"] == "Bearer oat-xyz"
+        assert headers["anthropic-beta"] == "oauth-2025-04-20"
+        assert "x-api-key" not in headers
+
+    def test_api_key_path_has_no_bearer(self):
+        transport = FakeTransport(ANTHROPIC_RESPONSE)
+        _anthropic(transport).complete(MESSAGES)
+        headers = transport.requests[0].headers
+        assert headers["x-api-key"] == "sk-ant-test"
+        assert "authorization" not in headers
+
+    def test_requires_some_credential(self):
+        with pytest.raises(AdapterError):
+            AnthropicAdapter(model="claude-test-1")
+
     def test_system_message_extracted_to_top_level(self):
         # anthropic Messages API 的 system 是 top-level 參數，不進 messages。
         transport = FakeTransport(ANTHROPIC_RESPONSE)

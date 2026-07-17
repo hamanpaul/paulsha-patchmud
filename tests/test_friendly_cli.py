@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from patchmud.cli import RunCliError, resolve_encounter
+from patchmud.cli import RunCliError, normalize_model_spec, resolve_encounter
 from patchmud.store.watch import LiveSpectator
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -44,6 +44,22 @@ _TURN_EVENT = {
     "probes": {},
     "queue": {"b_t": 0, "m_t": 0, "open_items": []},
 }
+
+
+class TestModelAlias:
+    def test_bare_alias_expands_to_anthropic(self):
+        assert normalize_model_spec("sonnet") == "anthropic:claude-sonnet-5"
+        assert normalize_model_spec("haiku") == "anthropic:claude-haiku-4-5"
+        assert normalize_model_spec("opus") == "anthropic:claude-opus-4-8"
+        assert normalize_model_spec("fable") == "anthropic:claude-fable-5"
+
+    def test_anthropic_prefixed_alias_expands(self):
+        assert normalize_model_spec("anthropic:sonnet") == "anthropic:claude-sonnet-5"
+
+    def test_full_spec_untouched(self):
+        assert normalize_model_spec("anthropic:claude-sonnet-5") == "anthropic:claude-sonnet-5"
+        assert normalize_model_spec("scripted:/tmp/x") == "scripted:/tmp/x"
+        assert normalize_model_spec("openai:gpt-x@http://h/v1") == "openai:gpt-x@http://h/v1"
 
 
 class TestLiveDelay:
