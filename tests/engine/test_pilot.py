@@ -16,6 +16,7 @@ unit tests 全 fake execute，不啟真 namespace、不打真模型 API（plan i
 
 from __future__ import annotations
 
+import json
 import subprocess
 from decimal import Decimal
 from pathlib import Path
@@ -40,6 +41,7 @@ from patchmud.engine.schedule import (
     save_schedule,
 )
 from patchmud.sandbox.isolate import Capabilities
+from patchmud.store.run_store import RunStore
 
 CAPS_OK = Capabilities(mount_ns=True, net_ns=True, pid_ns=True)
 CAPS_DEGRADED = Capabilities(mount_ns=True, net_ns=False, pid_ns=True)
@@ -75,6 +77,48 @@ class FakeExecute:
             raise Interrupted(f"中斷於第 {len(self.calls) + 1} 個 run")
         self.calls.append((item.run_id, attempt))
         return {"run_dir": f"runs/{item.run_id}"}
+
+
+class StoreBackedExecute:
+    """鏡射 `pilot_cli` execute 閉包的落盤語意（真 `RunStore.create`）。
+
+    attempt → effective_run_id（attempt 1 = run_id、否則 ``--attempt<N>``）→
+    `RunStore.create` 建 run 目錄並寫 run.yaml；``interrupt_on`` 指定的 run
+    在 run 目錄建立**之後**注入中斷（模擬 kill／provider AdapterError 上拋：
+    partial run 目錄已存在、registry 未寫 done）。
+    """
+
+    def __init__(
+        self,
+        runs_root: Path,
+        encounter_dir: Path,
+        *,
+        interrupt_on: str | None = None,
+    ) -> None:
+        self.runs_root = runs_root
+        self.encounter_dir = encounter_dir
+        self.calls: list[tuple[str, int]] = []
+        self._interrupt_on = interrupt_on
+
+    def __call__(self, item: ScheduleItem, attempt: int) -> dict:
+        effective_run_id = (
+            item.run_id if attempt == 1 else f"{item.run_id}--attempt{attempt}"
+        )
+        RunStore.create(
+            {
+                "run_id": effective_run_id,
+                "frozen_sha": "f" * 40,
+                "pricing_hash": "sha256:pin",
+                "harness_prompt_version": "v1",
+                "schedule_ref": "sealed",
+                "encounter_dir": str(self.encounter_dir),
+            },
+            self.runs_root,
+        )
+        if item.run_id == self._interrupt_on:
+            raise Interrupted(f"{item.run_id} 於 run 目錄建立後中斷")
+        self.calls.append((item.run_id, attempt))
+        return {"run_dir": str(self.runs_root / effective_run_id)}
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -232,9 +276,10 @@ def test_interrupted_run_resumes_skipping_completed(tmp_path: Path) -> None:
         make_runner(tmp_path, repo, first).run(path)
     assert [rid for rid, _ in first.calls] == run_ids[:2]
 
+    # 續跑：已完成跳過；被中斷的 run（started 而無 done）以新 attempt 續跑
     resume = FakeExecute()
     report = make_runner(tmp_path, repo, resume).run(path)
-    assert [rid for rid, _ in resume.calls] == run_ids[2:]
+    assert resume.calls == [(run_ids[2], 2), (run_ids[3], 1)]
     assert report.executed == tuple(run_ids[2:])
     assert report.skipped == tuple(run_ids[:2])
 
@@ -258,20 +303,95 @@ def test_force_reruns_completed_run_with_new_attempt(tmp_path: Path) -> None:
     assert report.executed == (target,)
 
     # 舊 registry 行保留：target 的 attempt 1 與 2 並存
-    lines = (tmp_path / "registry.jsonl").read_text(encoding="utf-8").splitlines()
-    assert len(lines) == len(run_ids) + 1
-    import json
-
-    attempts = [
-        json.loads(line)["attempt"]
-        for line in lines
-        if json.loads(line)["run_id"] == target
+    # （write-ahead 協定：每場 run 一行 started ＋ 一行 done）
+    records = [
+        json.loads(line)
+        for line in (tmp_path / "registry.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
     ]
-    assert sorted(attempts) == [1, 2]
+    assert len(records) == 2 * (len(run_ids) + 1)
+    done_attempts = [
+        record["attempt"]
+        for record in records
+        if record["run_id"] == target and record["status"] == "done"
+    ]
+    assert sorted(done_attempts) == [1, 2]
 
     # force 的 run_id 不在 schedule 內 → 拒絕
     with pytest.raises(PilotError):
         make_runner(tmp_path, repo, FakeExecute()).run(path, force=("no-such-run",))
+
+
+def test_interrupt_after_run_dir_created_resumes_without_manual_cleanup(
+    tmp_path: Path,
+) -> None:
+    """Review finding（wedge）：run 中途中斷（kill／provider 錯誤上拋）時
+    `RunStore.create` 已建立 partial run 目錄、registry 未及寫 done——plain
+    resume 不得撞目錄卡死；不需手動刪目錄、不需 --force。"""
+    repo = git_repo(tmp_path / "repo")
+    path, run_ids = sealed_small_schedule(tmp_path)
+    runs_root = tmp_path / "runs"
+    encounter_dir = tmp_path / "encounter"
+    encounter_dir.mkdir()
+
+    victim = run_ids[2]
+    first = StoreBackedExecute(runs_root, encounter_dir, interrupt_on=victim)
+    with pytest.raises(Interrupted):
+        make_runner(tmp_path, repo, first).run(path)
+    # 中斷當下：victim 的 partial run 目錄已存在（run.yaml 已寫）
+    partial = runs_root / victim / "run.yaml"
+    assert partial.is_file()
+    partial_bytes = partial.read_bytes()
+
+    # plain resume（無 --force、無手動清理）：跳過已完成、補完殘餘
+    resume = StoreBackedExecute(runs_root, encounter_dir)
+    report = make_runner(tmp_path, repo, resume).run(path)
+    assert [rid for rid, _ in resume.calls] == run_ids[2:]
+    assert report.executed == tuple(run_ids[2:])
+    assert report.skipped == tuple(run_ids[:2])
+
+    # partial run 目錄一律保留（不覆寫、不刪除）；續跑落在新 attempt 目錄
+    assert partial.read_bytes() == partial_bytes
+    victim_attempt = dict(resume.calls)[victim]
+    assert victim_attempt > 1
+    assert (
+        runs_root / f"{victim}--attempt{victim_attempt}" / "run.yaml"
+    ).is_file()
+
+    # 完成後再跑一次 → 冪等全 skipped、零執行
+    again = StoreBackedExecute(runs_root, encounter_dir)
+    report2 = make_runner(tmp_path, repo, again).run(path)
+    assert again.calls == []
+    assert sorted(report2.skipped) == sorted(run_ids)
+
+    # force 重跑 victim → attempt 再遞增、不與任何既有 run 目錄相撞
+    forced = StoreBackedExecute(runs_root, encounter_dir)
+    report3 = make_runner(tmp_path, repo, forced).run(path, force=(victim,))
+    assert forced.calls == [(victim, victim_attempt + 1)]
+    assert report3.executed == (victim,)
+
+
+def test_registry_unknown_status_refused(tmp_path: Path) -> None:
+    """registry 續跑狀態機 fail-closed：status 非 started/done 一律拒絕。"""
+    repo = git_repo(tmp_path / "repo")
+    path, run_ids = sealed_small_schedule(tmp_path)
+    make_runner(tmp_path, repo, FakeExecute()).run(path)
+
+    schedule = load_schedule(path)
+    bogus = {
+        "schema_version": 1,
+        "run_id": run_ids[0],
+        "attempt": 2,
+        "schedule_sha256": schedule.sha256,
+        "status": "running",
+    }
+    with (tmp_path / "registry.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(bogus, sort_keys=True) + "\n")
+    execute = FakeExecute()
+    with pytest.raises(PilotError):
+        make_runner(tmp_path, repo, execute).run(path)
+    assert execute.calls == []
 
 
 def test_registry_of_other_schedule_refused(tmp_path: Path) -> None:

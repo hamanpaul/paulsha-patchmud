@@ -1413,7 +1413,10 @@ def pilot_cli(
     bwrap_path: str = DEFAULT_BWRAP_PATH,
 ) -> PilotReport:
     """`patchmud pilot` 串線：矩陣展開 → schedule 封存（或核驗既有封存）→
-    `PilotRunner`（preflight gates → registry 冪等續跑）（spec §11、F21）。"""
+    `PilotRunner`（preflight gates → registry write-ahead 冪等續跑）（spec
+    §11、F21）。run 中途中斷（kill／provider 錯誤上拋）留下的 partial run
+    目錄一律保留；重啟時 runner 依 registry 殘留的 started 行遞增 attempt，
+    續跑落在新目錄（`<run_id>--attempt<N>`），不需手動清理、不需 --force。"""
     deck_dir = Path(deck_dir).resolve()
     encounters = (
         tuple(

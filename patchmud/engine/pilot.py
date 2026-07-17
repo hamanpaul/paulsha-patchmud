@@ -11,10 +11,15 @@
 - **schedule fail-closed**：runner 只吃已封存的 ``schedule.yaml``（Task 18
   schedule 模組）；檔案不存在或 hash 不符即拒跑，並依序執行、不得改變順序
   （F21）。
-- **run registry（JSONL，append-only）**：每完成一場 run 追加一行；重啟時
-  已完成 run_id 冪等跳過，只補殘餘。重跑已完成 run_id 必須顯式 ``force``
-  （attempt+1；舊 registry 行與舊 run 目錄一律保留）。registry 綁定 schedule
-  hash，跨 schedule 混用即拒絕。
+- **run registry（JSONL，append-only，write-ahead）**：每場 run 執行**前**
+  先追加 ``status: "started"`` 行、execute 成功返回後追加 ``status: "done"``
+  行。重啟時已 done 的 run_id 冪等跳過，只補殘餘；started 而無 done 的
+  attempt 視為中斷殘留（kill／provider 錯誤上拋時 run 目錄可能已建立）——
+  續跑取「已見最大 attempt + 1」為新 attempt，使 cli 端以 attempt 導出的
+  run 目錄（``<run_id>--attempt<N>``）絕不與 partial run 目錄相撞：partial
+  目錄一律保留、不需手動清理、不需 ``force``。重跑已完成 run_id 必須顯式
+  ``force``（同樣取新 attempt；舊 registry 行與舊 run 目錄一律保留）。
+  registry 綁定 schedule hash，跨 schedule 混用即拒絕。
 - 執行面走注入 seam（``execute(item, attempt)``）：unit tests 全 fake，不啟
   真 namespace、不打真模型 API（plan invariant 3）；真佈線在 cli
   （`patchmud pilot`）。
@@ -258,9 +263,12 @@ class PilotRunner:
     def run(
         self, schedule_path: Path, *, force: Collection[str] = ()
     ) -> PilotReport:
-        """gates → 載入 sealed schedule → 依序執行（完成即追加 registry）。
+        """gates → 載入 sealed schedule → 依序執行（write-ahead registry）。
 
-        中斷（execute 例外）直接上拋；已追加的 registry 行使重啟自然續跑。
+        每場 run 先追加 ``started`` 行再呼叫 execute、成功返回後追加
+        ``done`` 行；中斷（execute 例外）直接上拋——重啟時 done 行使已完成
+        run 自然跳過，殘留的 ``started`` 行使續跑改用新 attempt（中斷留下
+        的 partial run 目錄一律保留、絕不相撞）。
         """
         check_gates(
             repo_root=self.repo_root,
@@ -275,19 +283,20 @@ class PilotRunner:
             raise PilotError(
                 f"force 指定的 run_id 不在 schedule 內：{sorted(unknown)}"
             )
-        attempts = self._load_registry(schedule)
+        done_attempts, started_attempts = self._load_registry(schedule)
 
         executed: list[str] = []
         skipped: list[str] = []
         for item in schedule.items:
-            prior = attempts.get(item.run_id, 0)
-            if prior > 0 and item.run_id not in force_set:
+            done = done_attempts.get(item.run_id, 0)
+            if done > 0 and item.run_id not in force_set:
                 skipped.append(item.run_id)
                 continue
-            attempt = prior + 1
+            attempt = max(done, started_attempts.get(item.run_id, 0)) + 1
+            self._append_registry(item, attempt, schedule.sha256, "started", {})
             extra = dict(self.execute(item, attempt))
-            self._append_registry(item, attempt, schedule.sha256, extra)
-            attempts[item.run_id] = attempt
+            self._append_registry(item, attempt, schedule.sha256, "done", extra)
+            done_attempts[item.run_id] = attempt
             executed.append(item.run_id)
         return PilotReport(
             schedule_sha256=schedule.sha256,
@@ -295,13 +304,20 @@ class PilotRunner:
             skipped=tuple(skipped),
         )
 
-    def _load_registry(self, schedule: Schedule) -> dict[str, int]:
-        """讀 registry JSONL → run_id → 最大 attempt；損毀／錯配 fail-closed。"""
+    def _load_registry(
+        self, schedule: Schedule
+    ) -> tuple[dict[str, int], dict[str, int]]:
+        """讀 registry JSONL → (done, started) 各自的 run_id → 最大 attempt。
+
+        done 決定冪等跳過；started（write-ahead 行）決定續跑新 attempt 的
+        下限——started 而無對應 done 即中斷殘留。損毀／錯配 fail-closed。
+        """
         path = Path(self.registry_path)
+        done_attempts: dict[str, int] = {}
+        started_attempts: dict[str, int] = {}
         if not path.exists():
-            return {}
+            return done_attempts, started_attempts
         known = {item.run_id for item in schedule.items}
-        attempts: dict[str, int] = {}
         for lineno, line in enumerate(
             path.read_text(encoding="utf-8").splitlines(), start=1
         ):
@@ -317,9 +333,10 @@ class PilotRunner:
                 raise PilotError(
                     f"registry schema_version 不符：{record.get('schema_version')!r}"
                 )
-            if record.get("status") != "done":
+            status = record.get("status")
+            if status not in ("started", "done"):
                 raise PilotError(
-                    f"registry 第 {lineno} 行 status 非 done：{record.get('status')!r}"
+                    f"registry 第 {lineno} 行 status 非 started/done：{status!r}"
                 )
             if record.get("schedule_sha256") != schedule.sha256:
                 raise PilotError(
@@ -335,14 +352,16 @@ class PilotRunner:
                 raise PilotError(
                     f"registry 第 {lineno} 行 attempt 必須是正整數：{attempt!r}"
                 )
-            attempts[run_id] = max(attempts.get(run_id, 0), attempt)
-        return attempts
+            target = done_attempts if status == "done" else started_attempts
+            target[run_id] = max(target.get(run_id, 0), attempt)
+        return done_attempts, started_attempts
 
     def _append_registry(
         self,
         item: ScheduleItem,
         attempt: int,
         schedule_sha256: str,
+        status: str,
         extra: dict[str, object],
     ) -> None:
         collisions = set(extra) & _REGISTRY_RESERVED_KEYS
@@ -355,7 +374,7 @@ class PilotRunner:
             "run_id": item.run_id,
             "attempt": attempt,
             "schedule_sha256": schedule_sha256,
-            "status": "done",
+            "status": status,
             **extra,
         }
         try:
