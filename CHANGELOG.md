@@ -15,6 +15,7 @@
 - **pytest 移入 runtime dependencies**：引擎在沙箱內執行 probe 需要 pytest；先前只列在 `[test]` extras 導致 pipx 安裝的 CLI `score-diff` fail-closed（找不到 pytest）。e2e 驗證：reference patch → clear=1 power=97、空 diff → clear=0。
 
 ### Added
+- **修正 CI Tests detect 假綠**：template 骨架的 `ls tests/test_*.py tests/*_test.py` 在其中一個 glob 無匹配時整體回非零，導致 `has_tests=false` → 整個測試 job 靜默 skip 成綠（CI-detect 層的 codex F7 同類問題）。改用 `find` 遞迴偵測（涵蓋子目錄），確保 CI 真的執行 578 個測試。
   - **codex 對抗審查修正批次 1（F3/F4/F10）**：`materialize_repo` 拒絕 repo/ 內 symlink 與特殊檔（F3，杜絕 `repo/x -> ../hidden/ref.patch` 洩漏 hidden bytes）；deck loader 對全部 probe 路徑做 POSIX 正規化，拒絕絕對路徑／`.`／`..`／空段（F4，杜絕 `hidden/../repo/tests/public/x.py` 偽裝 critical hidden probe）；`state-recovery-v1` 需求文字改純 zh-TW（F10）。
   - Task 19 校準 estimators（spec §10.4、F4）——`CalibrationRun` fail-closed 契約、C_ref（成功成本中位數，Decimal）、difficulty_scale（clamp median LOC/40）、τ（F>0 中位數＋敏感度）、EuTB 預算（P95 nearest-rank 向上取整 10k、256 網格）、`freeze_calibration` 凍結語意（sha256、寫回 card、已凍結拒絕覆寫、全有全無）、`patchmud calibrate` CLI（缺 pre-registered estimators.yaml 拒絕產出）。
 - **MVP milestone C/D/E（Flooding 與 metrics、pilot、中文可玩性）**：

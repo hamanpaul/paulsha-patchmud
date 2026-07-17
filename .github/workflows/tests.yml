@@ -21,7 +21,12 @@ jobs:
       - name: Detect test suite
         id: detect
         run: |
-          if [ -d tests ] && ls tests/test_*.py tests/*_test.py >/dev/null 2>&1; then
+          # 以 find 遞迴偵測（涵蓋子目錄）；template 骨架用的
+          # `ls a b` 在其中一個 glob 無匹配時整體回非零 → 誤判 has_tests=false
+          # 而靜默 skip 成綠（正是 codex F7 警告的 CI-detect 層假綠）。
+          count=$(find tests -type f \( -name 'test_*.py' -o -name '*_test.py' \) 2>/dev/null | wc -l)
+          if [ -d tests ] && [ "$count" -gt 0 ]; then
+            echo "Detected $count test files."
             echo "has_tests=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_tests=false" >> "$GITHUB_OUTPUT"
