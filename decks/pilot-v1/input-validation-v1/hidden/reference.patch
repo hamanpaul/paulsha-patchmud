@@ -1,0 +1,11 @@
+diff --git a/src/discount.py b/src/discount.py
+index 0000000..0000000 100644
+--- a/src/discount.py
++++ b/src/discount.py
+@@ -13,4 +13,6 @@
+         return False
+     if not code[0].isalpha():
+         return False
++    if not (6 <= len(code) <= 10):
++        return False
+     return code.isalnum()

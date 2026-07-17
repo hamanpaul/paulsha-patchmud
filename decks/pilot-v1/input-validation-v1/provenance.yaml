@@ -1,0 +1,6 @@
+schema_version: 1
+issue_id: input-validation-v1
+archetype_source: "原創 micro-issue（依報告 §12.2「輸入驗證與錯誤契約」類型自製，非公開題庫改編）"
+published_at: null
+variant_notes: "母題：折扣碼驗證缺長度邊界檢查（正規化後應為 6-10 個英數字元），任意長度皆誤判為有效"
+frozen_at: "2026-07-17"

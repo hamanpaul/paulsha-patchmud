@@ -1,0 +1,11 @@
+diff --git a/src/bincode.py b/src/bincode.py
+index 0000000..0000000 100644
+--- a/src/bincode.py
++++ b/src/bincode.py
+@@ -13,4 +13,6 @@
+         return False
+     if not code[:1].isalpha():
+         return False
++    if not code[-1:].isdigit():
++        return False
+     return code.isalnum()
