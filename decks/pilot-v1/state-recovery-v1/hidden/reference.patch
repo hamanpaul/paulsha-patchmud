@@ -1,0 +1,15 @@
+diff --git a/src/snapshot.py b/src/snapshot.py
+index 0000000..0000000 100644
+--- a/src/snapshot.py
++++ b/src/snapshot.py
+@@ -15,8 +15,9 @@
+     `scan_errors`：本次掃描失敗（暫時性錯誤）的項目名稱集合——這些項目
+     即使不在 `current` 裡，也絕不能被判定為刪除。
+     """
++    scan_errors = set(scan_errors)
+     removed = []
+     for name in previous:
+-        if name not in current:
++        if name not in current and name not in scan_errors:
+             removed.append(name)
+     return sorted(removed)

@@ -1,0 +1,46 @@
+schema_version: 1
+issue_id: state-recovery-v2
+archetype: state-recovery
+difficulty: medium
+difficulty_scale: 1.0
+expected_patch_loc: [2, 20]
+wall_clock_seconds: 600
+max_turns: 8
+allowed_paths:
+  - "src/**"
+  - "tests/agent/**"
+expected_paths:
+  - "src/roster.py"
+public_requirements:
+  - id: MAIN-1
+    text: 暫時連不上（UNREACHABLE）的裝置不得被判定為已移除
+    probe: tests/public/test_unreachable_not_removed.py
+critical_requirements:
+  - id: CR-1
+    hidden_probe: hidden/test_cr1_unreachable_excluded.py
+  - id: CR-2
+    hidden_probe: hidden/test_cr2_real_removal.py
+regression_probes:
+  - tests/starter/
+  - smoke: ["python3", "-B", "-c", "import sys; sys.path.insert(0, 'src'); import roster"]
+compat_probes:
+  - probe: tests/starter/test_roster_basics.py
+power_rubric:
+  functional:
+    points: 60
+    groups:
+      - {id: CR-1, points: 40, probe: hidden/test_cr1_unreachable_excluded.py}
+      - {id: CR-2, points: 20, probe: hidden/test_cr2_real_removal.py}
+  robustness:
+    points: 15
+    probes: [hidden/test_cr1_unreachable_excluded.py, hidden/test_cr2_real_removal.py]
+  compatibility:
+    points: 10
+    probes: [tests/starter/test_roster_basics.py]
+  maintainability:
+    points: 10
+  runtime_efficiency:
+    points: 5
+    probes: [hidden/test_cr1_unreachable_excluded.py]
+    timeout_factor: 3.0
+reference_cost: null
