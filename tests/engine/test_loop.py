@@ -19,9 +19,11 @@ from pathlib import Path
 import yaml
 
 from patchmud.adapters.base import AdapterResponse, ModelAdapter
+from patchmud.adapters.human import HumanAdapter
 from patchmud.adapters.scripted import ScriptedAdapter
 from patchmud.deck.loader import load_card
 from patchmud.deck.materialize import materialize_repo
+from patchmud.engine import render_zh_tw as zh
 from patchmud.engine.loop import RunConfig, run_encounter
 from patchmud.engine.prompts import HARNESS_PROMPT_VERSION
 from patchmud.engine.strategy import SOLO, Loadout
@@ -323,6 +325,60 @@ class TestReviewerSubcall:
         assert "hidden/" not in joined
         # 白名單成分在：cumulative diff 觸及的檔案
         assert "src/inventory.py" in joined
+
+
+class TestHumanReviewerLoadout:
+    """review finding：R1 人類對局必須看得到 reviewer schema（spec §5.4）。
+
+    play_cli 不設 `reviewer_adapter` → reviewer subcall 重用同一
+    `HumanAdapter`（loop `config.reviewer_adapter or self.adapter`）。
+    `reviewer.system_rules` 是全 codebase 唯一陳述 review YAML schema 之處，
+    必須輸出給人類，人類才可能產出 schema-valid review → R1 gate 滿足 →
+    COMMIT 合法——與模型對局完全同構。
+    """
+
+    def _run_human(self, tmp_path):
+        replies = iter([patch_reply(), SUMMON, FINDINGS_YAML, COMMIT])
+        events: list[tuple[str, ...]] = []
+
+        def input_fn() -> str:
+            events.append(("input",))
+            return next(replies)
+
+        def output_fn(text: object) -> None:
+            events.append(("output", str(text)))
+
+        adapter = HumanAdapter(input_fn=input_fn, output_fn=output_fn)
+        env = Env(tmp_path, suite_results=[BASE, GREEN, GREEN], critical=True)
+        result = env.run(adapter, loadout=Loadout.from_string("P0T0R1"))
+        return env, events, result
+
+    def test_reviewer_system_rules_shown_before_review_input(self, tmp_path) -> None:
+        _env, events, _result = self._run_human(tmp_path)
+        rules = zh.text("reviewer.system_rules")
+        input_indexes = [i for i, e in enumerate(events) if e[0] == "input"]
+        rules_indexes = [
+            i
+            for i, e in enumerate(events)
+            if e[0] == "output" and rules in e[1]
+        ]
+        assert rules_indexes, "reviewer system rules 必須輸出給人類"
+        # 第三次輸入是 review 回覆（PATCH → SUMMON → review → COMMIT）：
+        # schema 說明必須在它之前出現
+        assert rules_indexes[0] < input_indexes[2]
+
+    def test_human_r1_commit_legal(self, tmp_path) -> None:
+        env, _events, result = self._run_human(tmp_path)
+        # 人類在場內產出 schema-valid review → R1 gate 滿足 → COMMIT 合法收場
+        assert result.end_reason == "commit"
+        assert result.clear == 1
+        artifact = env.store.run_dir / "artifacts" / "review_1.yaml"
+        assert yaml.safe_load(artifact.read_text(encoding="utf-8"))["valid"] is True
+        # reviewer subcall 的 ledger entry：role=reviewer、billed totals NA
+        reviewer_entries = [e for e in result.ledger_entries if e.role == "reviewer"]
+        assert len(reviewer_entries) == 1
+        assert reviewer_entries[0].billed_input_total is None
+        assert reviewer_entries[0].billed_output_total is None
 
 
 class TestTurnBookkeeping:

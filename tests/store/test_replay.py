@@ -18,6 +18,7 @@ from pathlib import Path
 
 import yaml
 
+from patchmud.adapters.human import HumanAdapter
 from patchmud.adapters.scripted import ScriptedAdapter
 from patchmud.cli import main
 from patchmud.deck.loader import load_card
@@ -133,6 +134,8 @@ def make_run(
     *,
     evaluator_statuses: dict[str, str] | None = None,
     reference_timings_ms: dict[str, float] | None = None,
+    adapter=None,
+    human: bool = False,
 ) -> Path:
     """scripted「兩回合修好」run（turn 1 PATCH → turn 2 COMMIT）→ run 目錄。"""
     card = load_card(encounter_dir / "card.yaml")
@@ -163,10 +166,24 @@ def make_run(
         evaluate=evaluate,
     )
     result = run_encounter(
-        card, ScriptedAdapter([PATCH_REPLY, COMMIT_REPLY]), SOLO, config, store
+        card,
+        adapter or ScriptedAdapter([PATCH_REPLY, COMMIT_REPLY]),
+        SOLO,
+        config,
+        store,
+        human=human,
     )
     assert result.clear == 1  # 前提：兩回合修好
     return store.run_dir
+
+
+def make_human_run(tmp_path: Path) -> Path:
+    """human 對局版 make_run：`HumanAdapter`＋scripted input_fn（Task 22）。"""
+    replies = iter([PATCH_REPLY, COMMIT_REPLY])
+    adapter = HumanAdapter(
+        input_fn=lambda: next(replies), output_fn=lambda _text: None
+    )
+    return make_run(tmp_path, adapter=adapter, human=True)
 
 
 def tamper(run_dir: Path, mutate) -> None:
@@ -248,6 +265,45 @@ class TestReplayL1:
         report = replay_l1(run_dir)
         assert report.identical is False
         assert any(d.field == "clear" for d in report.diffs)
+
+
+class TestReplayHumanFlag:
+    """human 標記必須重算驗證（review finding：L1 fail-open 修補）。
+
+    `human` 由 ledger billed totals 重算（human ⟺ 全 NA，§5.4/§10.1）——
+    model run 竄改標成 `human: true` 會被 report 靜默剔出 ranked（灌榜），
+    replay 必須偵測（Task 16 稽核契約：竄改 result.yaml → exit 1）。
+    """
+
+    def test_genuine_human_run_replays_identical(self, tmp_path) -> None:
+        run_dir = make_human_run(tmp_path)
+        report = replay_l1(run_dir)
+        assert report.identical is True
+        assert report.diffs == ()
+        # human run：ΔT 不存在 → flood 計量不適用
+        assert report.flood is None
+
+    def test_model_run_tampered_to_human_detected(self, tmp_path) -> None:
+        # 灌榜方向：最差 model run 標成 human → 剔出 ranked 而 replay 仍
+        # 認證位元一致。必須以 ledger billed totals 重算戳破。
+        run_dir = make_run(tmp_path)
+        tamper(run_dir, lambda d: d.__setitem__("human", True))
+        report = replay_l1(run_dir)
+        assert report.identical is False
+        assert any(d.field == "human" for d in report.diffs)
+
+    def test_human_run_tampered_to_model_detected(self, tmp_path) -> None:
+        # 反向竄改：human run 改標 model → 同樣以重算值戳破（fail-closed）
+        run_dir = make_human_run(tmp_path)
+        tamper(run_dir, lambda d: d.__setitem__("human", False))
+        report = replay_l1(run_dir)
+        assert report.identical is False
+        assert any(d.field == "human" for d in report.diffs)
+
+    def test_cli_exit_nonzero_on_human_flag_tampered(self, tmp_path) -> None:
+        run_dir = make_run(tmp_path)
+        tamper(run_dir, lambda d: d.__setitem__("human", True))
+        assert main(["replay", str(run_dir)]) != 0
 
 
 class TestReplayCli:

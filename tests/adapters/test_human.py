@@ -95,6 +95,36 @@ class TestCompleteContract:
         # 第二回合仍先輸出最新 render
         assert any("回合 2" in text for text in outputs)
 
+    def test_system_reshown_when_content_changes(self) -> None:
+        # review finding：R1 loadout 的 reviewer subcall 重用同一 HumanAdapter
+        # （loop `config.reviewer_adapter or self.adapter`；play_cli 不設
+        # reviewer_adapter）。system 內容變更（reviewer.system_rules——全
+        # codebase 唯一陳述 review YAML schema 之處）必須重新輸出給人類，
+        # 否則人類寫不出 schema-valid review（spec §5.4 同構）。
+        reviewer_system = zh.text("reviewer.system_rules")
+        io = SpyIO(["ACTION: LOOK", "findings: []"])
+        adapter = HumanAdapter(input_fn=io.input_fn, output_fn=io.output_fn)
+
+        adapter.complete(MESSAGES_TURN_1)  # author：author system 出一次
+        adapter.complete(
+            [
+                {"role": "system", "content": reviewer_system},
+                {"role": "user", "content": "【審查素材】cumulative diff …"},
+            ]
+        )
+
+        # reviewer system rules 必須輸出，且先於該次 subcall 的輸入要求
+        input_indexes = [
+            index for index, event in enumerate(io.events) if event[0] == "input"
+        ]
+        rules_indexes = [
+            index
+            for index, event in enumerate(io.events)
+            if event[0] == "output" and reviewer_system in event[1]
+        ]
+        assert rules_indexes, "reviewer system rules 必須輸出給人類"
+        assert input_indexes[0] < rules_indexes[0] < input_indexes[1]
+
     def test_wall_ms_from_injected_clock(self) -> None:
         io = SpyIO(["ACTION: LOOK"])
         ticks = iter([2.0, 3.5])

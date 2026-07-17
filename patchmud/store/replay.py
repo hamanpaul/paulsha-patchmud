@@ -208,7 +208,15 @@ def replay_l1(run_dir: Path) -> ReplayReport:
         _compare(diffs, "end_reason", result.get("end_reason"), end_reason)
         _compare(diffs, "turns", result.get("turns"), final_event.get("turns"))
         diffs.extend(_queue_trajectory_diffs(events))
-        if result.get("human") is True:
+        # human 標記不可信任封存值：由 ledger billed totals 重算驗證
+        # （human ⟺ 全 NA，spec §5.4/§10.1）。封存 human: true 會讓 report
+        # 把該 run 剔出 ranked（cli._load_report_run）——model run 竄改標成
+        # human 灌榜必須在此偵測（Task 16 稽核契約：竄改 → exit 1）。
+        ledger_entries = load_ledger(run_dir)
+        billed_input, billed_output = aggregate_billed_totals(ledger_entries)
+        human = billed_input is None and billed_output is None
+        _compare(diffs, "human", result.get("human"), human)
+        if human:
             # human run（patchmud play，spec §5.4）：ledger 全 token 欄位 NA，
             # ΔT 不存在 → flood 計量不適用（NA 不記 0，§10.1）；human run
             # 本就永不進 ranked 資料與任何聚合指標。
@@ -216,7 +224,10 @@ def replay_l1(run_dir: Path) -> ReplayReport:
         else:
             flood = _recompute_flood(events, card)
         diffs.extend(
-            _ledger_diffs(run_dir, _require_mapping(result, "ledger", context="result.yaml"))
+            _ledger_diffs(
+                ledger_entries,
+                _require_mapping(result, "ledger", context="result.yaml"),
+            )
         )
     else:
         # 離線評分不經回合協定（spec §5.2）
@@ -421,8 +432,7 @@ def _recompute_flood(events: Sequence[Mapping], card: IssueCard) -> FloodMetrics
         raise ReplayError(f"flood 重算失敗：{exc}") from exc
 
 
-def _ledger_diffs(run_dir: Path, archived: Mapping) -> list[ReplayDiff]:
-    entries = load_ledger(run_dir)
+def _ledger_diffs(entries: list[LedgerEntry], archived: Mapping) -> list[ReplayDiff]:
     work = aggregate_work_tokens(entries)
     # billed totals 與 loop 共用同一 NA 傳染聚合（human run 全 NA，§5.4/§10.1）
     billed_input, billed_output = aggregate_billed_totals(entries)
