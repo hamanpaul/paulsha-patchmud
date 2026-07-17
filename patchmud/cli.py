@@ -205,6 +205,33 @@ class ScoreDiffSummary:
     power_total: float
 
 
+#: 只打 encounter 名字時的預設 deck 搜尋根（依序）。
+_DEFAULT_DECK_ROOTS = ("decks/pilot-v1", "decks")
+
+
+def resolve_encounter(spec: str | Path) -> Path:
+    """把 encounter spec 解析成目錄：可以是路徑，或只是關卡名字。
+
+    - 是既有含 card.yaml 的目錄 → 直接用。
+    - 否則當名字，依序找 `decks/pilot-v1/<名字>`、`decks/*/<名字>`。
+    - 找不到 → 列出可玩關卡並報錯。
+    """
+    p = Path(spec)
+    if (p / "card.yaml").is_file():
+        return p
+    name = str(spec)
+    candidates = [Path(root) / name for root in _DEFAULT_DECK_ROOTS]
+    candidates += sorted(Path("decks").glob(f"*/{name}")) if Path("decks").is_dir() else []
+    for cand in candidates:
+        if (cand / "card.yaml").is_file():
+            return cand
+    available = sorted(
+        d.name for d in Path("decks/pilot-v1").iterdir() if (d / "card.yaml").is_file()
+    ) if Path("decks/pilot-v1").is_dir() else []
+    hint = ("，可玩關卡：" + "、".join(available)) if available else ""
+    raise RunCliError(f"找不到 encounter「{spec}」（非路徑也非關卡名）{hint}")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
     if not args:
@@ -761,13 +788,17 @@ def _cmd_run(argv: list[str]) -> int:
         prog="patchmud run",
         description="回合制對局：模型（或 scripted 劇本）打完一場 encounter。",
     )
-    parser.add_argument("--encounter", required=True, type=Path, help="encounter 目錄")
+    parser.add_argument(
+        "encounter", help="關卡名字（如 input-validation-v1）或 encounter 目錄路徑"
+    )
     parser.add_argument(
         "--model",
         required=True,
         help="model spec：scripted:<file> / anthropic:<model> / openai:<model>[@<base_url>]",
     )
-    parser.add_argument("--loadout", required=True, help="forced loadout，如 P0T0R0")
+    parser.add_argument(
+        "--loadout", default="P0T0R0", help="forced loadout（預設 P0T0R0 = SOLO）"
+    )
     parser.add_argument("--runs-root", type=Path, default=Path("runs"), help="run 目錄根")
     parser.add_argument("--run-id", default=None, help="run 識別字串（預設自動產生）")
     parser.add_argument(
@@ -775,16 +806,25 @@ def _cmd_run(argv: list[str]) -> int:
         action="store_true",
         help="即時旁觀：每回合一完成就印出 zh-TW 戰報（真模型對局時邊玩邊看）",
     )
+    parser.add_argument(
+        "--delay",
+        type=float,
+        default=0.0,
+        metavar="SECONDS",
+        help="live 每回合之間停頓秒數（給觀眾時間閱讀；預設 0）",
+    )
     ns = parser.parse_args(argv)
 
     try:
+        encounter_dir = resolve_encounter(ns.encounter)
         result = run_cli(
-            ns.encounter,
+            encounter_dir,
             ns.model,
             ns.loadout,
             ns.runs_root,
             run_id=ns.run_id,
             live=ns.live,
+            delay=ns.delay,
         )
     except (
         RunCliError,
@@ -833,19 +873,20 @@ def run_cli(
     run_id: str | None = None,
     bwrap_path: str = DEFAULT_BWRAP_PATH,
     live: bool = False,
+    delay: float = 0.0,
 ):
     """`patchmud run` 串線：真佈線（IsolationRunner／ProbeSuite／evaluator）
     交給 `run_encounter`（spec §5、§6；plan Task 13）。
 
     ``live=True``：掛 `LiveSpectator`，每回合一完成即印 zh-TW 戰報（旁觀者
-    邊玩邊看；純視圖、不影響評分資料流）。
+    邊玩邊看；純視圖、不影響評分資料流）。``delay`` 為回合間停頓秒數。
     """
     encounter_dir = Path(encounter_dir).resolve()
     card = load_card(encounter_dir / "card.yaml")
     loadout = Loadout.from_string(loadout_spec)
     adapter = _build_adapter(model_spec)
 
-    spectator = LiveSpectator().feed if live else None
+    spectator = LiveSpectator(delay=delay).feed if live else None
 
     if run_id is None:
         run_id = f"run-{card.issue_id}-{time.strftime('%Y%m%d%H%M%S')}"
@@ -1006,7 +1047,9 @@ def _cmd_play(argv: list[str]) -> int:
             "永不進 ranked 資料。"
         ),
     )
-    parser.add_argument("--encounter", required=True, type=Path, help="encounter 目錄")
+    parser.add_argument(
+        "encounter", help="關卡名字（如 input-validation-v1）或 encounter 目錄路徑"
+    )
     parser.add_argument(
         "--loadout", default="P0T0R0", help="forced loadout（預設 P0T0R0 = SOLO）"
     )
@@ -1015,7 +1058,8 @@ def _cmd_play(argv: list[str]) -> int:
     ns = parser.parse_args(argv)
 
     try:
-        result = play_cli(ns.encounter, ns.loadout, ns.runs_root, run_id=ns.run_id)
+        encounter_dir = resolve_encounter(ns.encounter)
+        result = play_cli(encounter_dir, ns.loadout, ns.runs_root, run_id=ns.run_id)
     except (
         RunCliError,
         ScoreDiffError,

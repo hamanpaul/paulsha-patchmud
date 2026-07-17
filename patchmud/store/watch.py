@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Iterable, Sequence
 
 from patchmud.engine import render_zh_tw as zh
@@ -28,6 +29,10 @@ class WatchError(Exception):
     """watch 操作性失敗（事件缺漏、回合不存在、非回合制 run），fail-closed。"""
 
 
+def _print_flush(text: str) -> None:
+    print(text, flush=True)
+
+
 class LiveSpectator:
     """邊玩邊看：run loop 每 append 一個 event 就即時渲染成 zh-TW 戰報段落。
 
@@ -36,8 +41,18 @@ class LiveSpectator:
     變、洪水壓力升降」as it happens。純視圖：不改變任何評分資料流。
     """
 
-    def __init__(self, out: Callable[[str], None] = print) -> None:
-        self._out = out
+    def __init__(
+        self,
+        out: Callable[[str], None] | None = None,
+        *,
+        delay: float = 0.0,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
+        # 預設輸出強制 flush：確保每段戰報在終端機當下就浮現（不被 stdout
+        # 區塊緩衝憋到最後），live 才有逐回合節奏。
+        self._out = out if out is not None else _print_flush
+        self._delay = max(0.0, delay)
+        self._sleep = sleep
         self._prev_queue: dict | None = None
 
     def feed(self, event: dict) -> None:
@@ -45,11 +60,17 @@ class LiveSpectator:
         if etype == _BASELINE:
             self._out(_render_baseline(event))
             self._prev_queue = _field(event, "queue")
+            self._pace()
         elif etype == _TURN:
             self._out(_render_turn_event(event, self._prev_queue))
             self._prev_queue = _field(event, "queue")
+            self._pace()
         elif etype == _FINAL:
             self._out(_render_final(event))
+
+    def _pace(self) -> None:
+        if self._delay > 0:
+            self._sleep(self._delay)
 
 
 def render_battle_report(events: Sequence[dict], result: dict) -> str:
