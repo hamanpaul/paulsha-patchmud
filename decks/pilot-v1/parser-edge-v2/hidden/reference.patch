@@ -1,0 +1,13 @@
+diff --git a/src/querystring.py b/src/querystring.py
+index 0000000..0000000 100644
+--- a/src/querystring.py
++++ b/src/querystring.py
+@@ -5,6 +5,8 @@
+     """解析查詢字串 `a=1&b=2` 為 dict；應忽略連續或收尾的 `&` 產生的空 token。"""
+     result = {}
+     for token in qs.split("&"):
++        if not token:
++            continue
+         if "=" in token:
+             key, value = token.split("=", 1)
+         else:
