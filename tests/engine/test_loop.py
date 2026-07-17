@@ -183,6 +183,7 @@ class Env:
         critical: bool = True,
         reviewer: FakeReviewerAdapter | None = None,
         max_turns: int | None = None,
+        spectator=None,
     ) -> None:
         frozen = materialize_repo(FIXTURE, tmp_path / "worktree")
         self.workspace = Workspace(
@@ -208,6 +209,7 @@ class Env:
             evaluate=self.evaluate,
             reviewer_adapter=reviewer,
             max_turns=max_turns,
+            spectator=spectator,
         )
 
     def run(self, adapter, loadout: Loadout = SOLO):
@@ -220,6 +222,32 @@ class Env:
 # ---------------------------------------------------------------------------
 # loop 語意
 # ---------------------------------------------------------------------------
+
+
+class TestLiveSpectator:
+    def test_spectator_called_once_per_event(self, tmp_path) -> None:
+        """spectator（run --live）每 append 一個 event 被推送一次：
+        baseline + 每個 author turn；純視圖不改變評分。"""
+        seen: list[dict] = []
+        env = Env(
+            tmp_path,
+            suite_results=[BASE, GREEN],
+            critical=True,
+            spectator=seen.append,
+        )
+        result = env.run(ScriptedAdapter([LOOK, COMMIT]))
+
+        types = [e["type"] for e in seen]
+        assert types[0] == "baseline"
+        assert types.count("turn") == result.turns_used
+        # 推送的 event 與封存 events 一致（同一資料面、純視圖）
+        stored = [e for e in env.store.load_events() if e["type"] in ("baseline", "turn")]
+        assert [e["type"] for e in seen] == [e["type"] for e in stored]
+
+    def test_no_spectator_is_noop(self, tmp_path) -> None:
+        env = Env(tmp_path, suite_results=[BASE, GREEN], critical=True)  # spectator=None
+        result = env.run(ScriptedAdapter([LOOK, COMMIT]))
+        assert result.end_reason == "commit"
 
 
 class TestProtocolFailure:

@@ -154,7 +154,12 @@ from patchmud.store.replay import (
 )
 from patchmud.store.run_store import RunStore
 from patchmud.store.schemas import RESULT_SCHEMA_VERSION, StoreError
-from patchmud.store.watch import WatchError, render_battle_report, render_turn
+from patchmud.store.watch import (
+    LiveSpectator,
+    WatchError,
+    render_battle_report,
+    render_turn,
+)
 
 __all__ = [
     "DeckValidationError",
@@ -765,11 +770,21 @@ def _cmd_run(argv: list[str]) -> int:
     parser.add_argument("--loadout", required=True, help="forced loadout，如 P0T0R0")
     parser.add_argument("--runs-root", type=Path, default=Path("runs"), help="run 目錄根")
     parser.add_argument("--run-id", default=None, help="run 識別字串（預設自動產生）")
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="即時旁觀：每回合一完成就印出 zh-TW 戰報（真模型對局時邊玩邊看）",
+    )
     ns = parser.parse_args(argv)
 
     try:
         result = run_cli(
-            ns.encounter, ns.model, ns.loadout, ns.runs_root, run_id=ns.run_id
+            ns.encounter,
+            ns.model,
+            ns.loadout,
+            ns.runs_root,
+            run_id=ns.run_id,
+            live=ns.live,
         )
     except (
         RunCliError,
@@ -785,11 +800,28 @@ def _cmd_run(argv: list[str]) -> int:
         print(f"run 失敗：{exc}", file=sys.stderr)
         return 2
 
+    if ns.live:
+        # live 終局結算（Power / Economy / Control 摘要，與逐回合戰報同一視圖面）
+        print(_render_live_settlement(result))
     print(
         f"end_reason={result.end_reason} clear={result.clear} "
         f"turns={result.turns_used} power_total={result.evaluation.power.total}"
     )
     return 0
+
+
+def _render_live_settlement(result) -> str:
+    """live 收尾：終局結算摘要（純視圖，資料取自 RunResult）。"""
+    ev = result.evaluation
+    gates = ev.gates
+    return zh.text(
+        "run.live_settlement",
+        clear_label=zh.text("run.clear_yes") if result.clear else zh.text("run.clear_no"),
+        end_reason=result.end_reason,
+        power=ev.power.total,
+        functional=ev.power.functional,
+        critical_pass=zh.text("yes") if gates.critical_pass else zh.text("no"),
+    )
 
 
 def run_cli(
@@ -800,13 +832,20 @@ def run_cli(
     *,
     run_id: str | None = None,
     bwrap_path: str = DEFAULT_BWRAP_PATH,
+    live: bool = False,
 ):
     """`patchmud run` 串線：真佈線（IsolationRunner／ProbeSuite／evaluator）
-    交給 `run_encounter`（spec §5、§6；plan Task 13）。"""
+    交給 `run_encounter`（spec §5、§6；plan Task 13）。
+
+    ``live=True``：掛 `LiveSpectator`，每回合一完成即印 zh-TW 戰報（旁觀者
+    邊玩邊看；純視圖、不影響評分資料流）。
+    """
     encounter_dir = Path(encounter_dir).resolve()
     card = load_card(encounter_dir / "card.yaml")
     loadout = Loadout.from_string(loadout_spec)
     adapter = _build_adapter(model_spec)
+
+    spectator = LiveSpectator().feed if live else None
 
     if run_id is None:
         run_id = f"run-{card.issue_id}-{time.strftime('%Y%m%d%H%M%S')}"
@@ -819,6 +858,7 @@ def run_cli(
         run_id,
         bwrap_path=bwrap_path,
         record_extra={"model": model_spec},
+        spectator=spectator,
     )
 
 
@@ -877,6 +917,7 @@ def _wire_and_run_encounter(
     bwrap_path: str,
     record_extra: dict,
     human: bool = False,
+    spectator=None,
 ):
     """run／play 共用真佈線：materialize → store → workspace →
     IsolationRunner/ProbeSuite/evaluator → `run_encounter`。"""
@@ -926,6 +967,7 @@ def _wire_and_run_encounter(
                 ruff_argv=ruff_argv,
             ),
             run_agent_tests=build_agent_test_runner(runner, pytest_argv=pytest_argv),
+            spectator=spectator,
         )
         return run_encounter(card, adapter, loadout, config, store, human=human)
 

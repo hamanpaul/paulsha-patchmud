@@ -304,6 +304,30 @@ def _literal_strings(module) -> list[str]:
     ]
 
 
+class TestLiveSpectator:
+    def test_feeds_baseline_then_turns_zh_tw(self, run_dir: Path) -> None:
+        from patchmud.store.watch import LiveSpectator
+
+        out: list[str] = []
+        spec = LiveSpectator(out=out.append)
+        for event in _events(run_dir):
+            spec.feed(event)
+
+        assert len(out) >= 2
+        assert "基線" in out[0]  # 開場基線段
+        joined = "\n".join(out)
+        assert "回合 1" in joined
+        # queue delta：PATCH 解決 MAIN → 「解決」敘事（相鄰 snapshot 差集推導）
+        assert "解決" in joined
+
+    def test_unknown_event_ignored(self) -> None:
+        from patchmud.store.watch import LiveSpectator
+
+        out: list[str] = []
+        LiveSpectator(out=out.append).feed({"type": "note", "x": 1})
+        assert out == []
+
+
 class TestRenderPackSingleSource:
     def test_no_hardcoded_chinese_in_watch_module(self) -> None:
         offenders = [s for s in _literal_strings(watch_module) if _has_cjk(s)]

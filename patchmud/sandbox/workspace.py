@@ -89,8 +89,11 @@ class Workspace:
     _last_tree: str | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
-        self.encounter_dir = Path(self.encounter_dir)
-        self.shadow_dir = Path(self.shadow_dir)
+        # shadow_dir 必須絕對：checkpoint() 以 cwd=worktree（frozen tempdir）執行
+        # git，若 GIT_DIR 為相對路徑（如 `--runs-root runs`）會相對 cwd 解析而
+        # 找不到 shadow repo。encounter_dir 同理 resolve，避免 cwd 改變時讀錯 deck。
+        self.encounter_dir = Path(self.encounter_dir).resolve()
+        self.shadow_dir = Path(self.shadow_dir).resolve()
         if not self.shadow_dir.exists():
             self.shadow_dir.mkdir(parents=True)
             self._run(["git", "init", "--quiet", "--bare", str(self.shadow_dir)], env=self._base_env())

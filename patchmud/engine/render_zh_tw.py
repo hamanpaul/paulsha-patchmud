@@ -44,6 +44,16 @@ _COMMAND_MENU = (
 MESSAGES: dict[str, str] = {
     # ---- 通用 ------------------------------------------------------------
     "na": "NA",
+    "yes": "是",
+    "no": "否",
+    # ---- run --live 終局結算 --------------------------------------------
+    "run.clear_yes": "CLEAR 通關",
+    "run.clear_no": "未通關",
+    "run.live_settlement": (
+        "=== 終局結算 ===\n"
+        "結果：{clear_label}（{end_reason}）｜Power {power}／100"
+        "（功能 {functional}／60｜critical gate {critical_pass}）"
+    ),
     # ---- parse 錯誤提示（spec §5.2：結構化 parse error 附格式提示） ------
     "parse.missing_action": (
         "無法解析回覆：找不到「ACTION: <命令>」行。請以 ACTION: 開頭宣告本回合"

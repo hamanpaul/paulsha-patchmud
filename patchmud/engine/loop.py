@@ -143,6 +143,9 @@ class RunConfig:
     max_turns: int | None = None
     #: 連續 invalid / illegal 幾次觸發 failed:protocol（spec §5.2 = 3）。
     max_consecutive_invalid: int = 3
+    #: 旁觀者 callback（`patchmud run --live`）；每 append 一個 event 即推送，
+    #: 純視圖、不影響評分。None → 不推送。
+    spectator: Callable[[dict], None] | None = None
 
 
 @dataclass(frozen=True)
@@ -234,7 +237,7 @@ class _Session:
         self.last_public = baseline
         self.queue = IssueQueue.from_card(self.card, baseline)
         checkpoint = self.workspace.checkpoint()
-        self.store.append_event(
+        self._emit(
             {
                 "type": "baseline",
                 "probes": _statuses(baseline),
@@ -308,7 +311,7 @@ class _Session:
         }
         if outcome.inspect_denied is not None:
             event["inspect_denied"] = outcome.inspect_denied
-        self.store.append_event(event)
+        self._emit(event)
 
         if outcome.kind in ("parse_error", "illegal"):
             self.invalid_streak += 1
@@ -650,6 +653,12 @@ class _Session:
         }
 
     # ---- 內部 helpers --------------------------------------------------------
+
+    def _emit(self, event: dict) -> None:
+        """append event 並推送給 spectator（live 觀戰）；spectator 純視圖。"""
+        self.store.append_event(event)
+        if self.config.spectator is not None:
+            self.config.spectator(event)
 
     def _elapsed(self) -> float:
         return self.config.clock() - self.started
