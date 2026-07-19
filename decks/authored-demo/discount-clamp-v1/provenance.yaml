@@ -1,0 +1,7 @@
+schema_version: 1
+issue_id: discount-clamp-v1
+archetype_source: 'closed bug: 內部工單（折扣結帳負價）— 已於修補 commit 解決'
+published_at: null
+variant_notes: 折扣價沒把 percent_off 夾在 0..100，折扣 150% 會算出負價、負折扣會超過原價
+frozen_at: '2026-07-19'
+content_sha256: 4b7cbc5f37bf1df0341292cf81b170150ea8367bd4fe6db7ae98a004ad71e5c0

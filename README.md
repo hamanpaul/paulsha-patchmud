@@ -33,6 +33,7 @@ patchmud run <關卡> --model sonnet --live        # 看模型即時玩（--dela
 patchmud versus <關卡> --models sonnet,haiku     # 多模型並排對戰 + 記分板
 patchmud watch <run_dir> [--turn N]            # 離線觀戰：逐回合 zh-TW 戰報
 patchmud validate-deck decks/pilot-v1          # deck 契約與 fixture 驗證
+patchmud author-encounter <source.yaml> --into <deck_dir>   # 出題：closed bug → 凍結關卡（含品質閘）
 patchmud score-diff --encounter <dir> --diff <file>   # 離線評分（milestone A）
 patchmud pilot --deck pilot-v1 --models models.yaml --seed 42   # forced loadout 矩陣（跑 benchmark）
 patchmud replay <run_dir> [--l2]               # 兩級重播驗證
@@ -42,6 +43,7 @@ patchmud report --runs "runs/*"                # 多榜研究報告（模型比�
 - 關卡可只打名字（自動找 `decks/pilot-v1/<名字>`），`--loadout` 預設 `P0T0R0`（SOLO）。最短：`patchmud play input-validation-v1`。
 - 模型別名：`sonnet` / `haiku` / `opus` / `fable`（展開為對應的 `anthropic:claude-*`）。
 - 認證兩選一：`export ANTHROPIC_API_KEY=…`，**或** 用 Claude 帳號 OAuth——`ant auth login` 後 `set -a; eval "$(ant auth print-credentials --env)"; set +a`（設定 `ANTHROPIC_AUTH_TOKEN`，不必管 API key）。
+- 出題（把已解決的 closed bug 結構化凍結成新關卡、含 bug/fix 品質閘）見 [`docs/authoring/README.md`](docs/authoring/README.md)。
 
 ## Version
 

@@ -1,0 +1,51 @@
+schema_version: 1
+issue_id: discount-clamp-v1
+briefing: 折扣價沒把 percent_off 夾在 0..100，折扣 150% 會算出負價、負折扣會超過原價
+archetype: input-validation
+difficulty: easy
+difficulty_scale: 1.0
+expected_patch_loc:
+- 1
+- 200
+wall_clock_seconds: 300
+max_turns: 6
+allowed_paths:
+- src/**
+- tests/agent/**
+expected_paths:
+- src/discount_price.py
+public_requirements:
+- id: MAIN-1
+  text: percent_off 必須夾在 0..100，超出範圍以邊界值計價
+  probe: tests/public/test_clamp_public.py
+critical_requirements:
+- id: CR-1
+  hidden_probe: hidden/test_cr1_clamp.py
+regression_probes:
+- smoke:
+  - python3
+  - -B
+  - -c
+  - import sys; sys.path.insert(0, 'src'); import discount_price
+compat_probes: []
+power_rubric:
+  functional:
+    points: 60
+    groups:
+    - id: CR-1
+      points: 60
+      probe: hidden/test_cr1_clamp.py
+  robustness:
+    points: 15
+    probes:
+    - hidden/test_cr1_clamp.py
+  compatibility:
+    points: 10
+    probes: []
+  maintainability:
+    points: 10
+  runtime_efficiency:
+    points: 5
+    probes:
+    - hidden/test_cr1_clamp.py
+    timeout_factor: 3.0
