@@ -1,0 +1,33 @@
+schema_version: 1
+issue_id: discount-clamp-v1
+archetype: input-validation
+difficulty: easy
+summary: 折扣價沒把 percent_off 夾在 0..100，折扣 150% 會算出負價、負折扣會超過原價
+origin:
+  source: 'closed bug: 內部工單（折扣結帳負價）— 已於修補 commit 解決'
+  fixed_at: '2026-05-02'
+allowed_paths:
+- src/**
+- tests/agent/**
+expected_paths:
+- src/discount_price.py
+buggy_repo:
+  src/discount_price.py: "def final_price(price, percent_off):\n    \"\"\"折扣後價格：percent_off\
+    \ 應限制在 0..100，超出範圍必須夾住。\"\"\"\n    return price * (100 - percent_off) / 100\n"
+reference_patch: "diff --git a/src/discount_price.py b/src/discount_price.py\n---\
+  \ a/src/discount_price.py\n+++ b/src/discount_price.py\n@@ -1,3 +1,4 @@\n def final_price(price,\
+  \ percent_off):\n     \"\"\"折扣後價格：percent_off 應限制在 0..100，超出範圍必須夾住。\"\"\"\n+   \
+  \ percent_off = max(0, min(100, percent_off))\n     return price * (100 - percent_off)\
+  \ / 100\n"
+public_tests:
+  tests/public/test_clamp_public.py: "from discount_price import final_price\n\n\n\
+    def test_over_100_clamped():\n    assert final_price(100, 150) == 0.0\n"
+hidden_tests:
+  test_cr1_clamp.py: "import pytest\n\nfrom discount_price import final_price\n\n\n\
+    @pytest.mark.parametrize(\n    \"price,pct,expected\",\n    [\n        (100, 0,\
+    \ 100.0),\n        (100, 100, 0.0),\n        (100, 150, 0.0),\n        (100, -10,\
+    \ 100.0),\n        (200, 50, 100.0),\n    ],\n)\ndef test_clamp_cases(price, pct,\
+    \ expected):\n    assert final_price(price, pct) == expected\n"
+requirements:
+- id: MAIN-1
+  text: percent_off 必須夾在 0..100，超出範圍以邊界值計價

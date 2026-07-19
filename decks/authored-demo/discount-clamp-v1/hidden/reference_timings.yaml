@@ -1,0 +1,3 @@
+schema_version: 1
+timings_ms:
+  hidden/test_cr1_clamp.py: 166.0
