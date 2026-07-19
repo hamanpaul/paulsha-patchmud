@@ -115,3 +115,5 @@ class IssueCard:
     compat_probes: tuple[CompatProbe, ...]
     power_rubric: PowerRubric
     reference_cost: Decimal | None = None
+    #: 選填的一句話 bug 說明（白話戰報用；缺省 None 時退回第一條 public 需求）。
+    briefing: str | None = None
