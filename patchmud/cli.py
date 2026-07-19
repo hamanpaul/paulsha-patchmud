@@ -89,6 +89,7 @@ from patchmud.adapters.base import AdapterError, ModelAdapter
 from patchmud.adapters.human import HumanAdapter
 from patchmud.adapters.openai_compat import OpenAICompatAdapter
 from patchmud.adapters.scripted import ScriptedAdapter
+from patchmud.authoring import AuthoringError, build_encounter, load_source
 from patchmud.deck.loader import load_card
 from patchmud.deck.materialize import materialize_repo
 from patchmud.deck.model import DeckError, IssueCard
@@ -238,12 +239,15 @@ def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
     if not args:
         print(
-            "patchmud 0.0.0 — 子命令：score-diff / run / play / watch / replay / "
-            "report / pilot；其餘見 docs/superpowers/plans/2026-07-16-patchmud-mvp.md"
+            "patchmud 0.0.0 — 子命令：validate-deck / author-encounter / score-diff / "
+            "run / versus / play / watch / replay / report / pilot；其餘見 "
+            "docs/superpowers/plans/2026-07-16-patchmud-mvp.md"
         )
         return 0
     if args[0] == "validate-deck":
         return _cmd_validate_deck(args[1:])
+    if args[0] == "author-encounter":
+        return _cmd_author_encounter(args[1:])
     if args[0] == "score-diff":
         return _cmd_score_diff(args[1:])
     if args[0] == "run":
@@ -335,6 +339,80 @@ def _cmd_validate_deck(argv: list[str]) -> int:
             print(f"    {e.error}")
     print(f"validate-deck：{passed}/{total} PASS")
     return 0 if report.all_passed else 1
+
+
+# ---------------------------------------------------------------------------
+# author-encounter 子命令（Part B：結構化出題）
+# ---------------------------------------------------------------------------
+
+
+def _authoring_validate(encounter_dir: Path) -> None:
+    """出題品質閘：把單一新關 symlink 進 temp deck，跑真 validate_deck。
+
+    重用 pilot 題同一套 CI——baseline 未套 patch 時 MAIN 紅（bug 可重現）、
+    regression 綠；套 reference.patch 後 public 與 hidden 全綠。任一關 FAIL
+    一律 raise AuthoringError（呼叫端 fail-closed）。
+    """
+    encounter_dir = Path(encounter_dir).resolve()
+    with tempfile.TemporaryDirectory(prefix="patchmud-author-") as tmp:
+        deck = Path(tmp) / "deck"
+        deck.mkdir()
+        (deck / encounter_dir.name).symlink_to(
+            encounter_dir, target_is_directory=True
+        )
+        report = validate_deck(deck, write_timings=True)
+    if not report.all_passed:
+        detail = "；".join(
+            f"{e.encounter_id}: {e.error}"
+            for e in report.encounters
+            if not e.passed
+        )
+        raise AuthoringError(detail)
+
+
+def _cmd_author_encounter(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="patchmud author-encounter",
+        description=(
+            "把一個已解決（closed）的 bug 以結構化 source.yaml 凍結成 deck 關卡："
+            "寫出 repo/hidden/card/provenance，並經品質閘（bug 可重現 + fix 為真）"
+            "驗證後凍結。品質閘走與 validate-deck 相同的隔離 CI。"
+        ),
+    )
+    parser.add_argument("source", type=Path, help="source.yaml（出題輸入）")
+    parser.add_argument(
+        "--into",
+        type=Path,
+        required=True,
+        help="deck 目錄根（新關寫入 <into>/<issue_id>）",
+    )
+    ns = parser.parse_args(argv)
+
+    try:
+        spec = load_source(ns.source)
+        encounter_dir = build_encounter(
+            spec,
+            ns.into,
+            validate=_authoring_validate,
+            now=time.strftime("%Y-%m-%d"),
+        )
+    except (
+        AuthoringError,
+        DeckValidationError,
+        DeckError,
+        WorkspaceError,
+        EvaluatorError,
+        ScoreDiffError,
+    ) as exc:
+        print(f"author-encounter 失敗：{exc}", file=sys.stderr)
+        return 2
+
+    print(f"[OK] 新關已凍結：{encounter_dir}")
+    print(
+        "     品質閘通過：bug 可重現（baseline MAIN 紅）、fix 為真"
+        "（reference.patch 下 public/hidden 全綠）。"
+    )
+    return 0
 
 
 def validate_deck(
