@@ -28,7 +28,7 @@ python -m pip install -e ".[test]"
 MVP CLI（依實作計劃逐步落地）：
 
 ```bash
-patchmud play <關卡>                            # 人類親自玩（關卡可只打名字，如 input-validation-v1）
+patchmud play <關卡>                            # 人類親自玩（開場有白話規則；見 docs/how-to-play.md）
 patchmud run <關卡> --model sonnet --live        # 看模型即時玩（--delay N 放慢節奏）
 patchmud versus <關卡> --models sonnet,haiku     # 多模型並排對戰 + 記分板
 patchmud watch <run_dir> [--turn N]            # 離線觀戰：逐回合 zh-TW 戰報
