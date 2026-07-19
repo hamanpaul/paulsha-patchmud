@@ -131,6 +131,9 @@ def _build_card(data: dict) -> IssueCard:
         ),
         power_rubric=_power_rubric(data["power_rubric"]),
         reference_cost=reference_cost,
+        briefing=(
+            str(data["briefing"]) if data.get("briefing") is not None else None
+        ),
     )
 
 

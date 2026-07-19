@@ -146,3 +146,17 @@ def test_frozen_card_rejects_mutation():
     card = load_card(FIXTURE / "card.yaml")
     with pytest.raises(dataclasses.FrozenInstanceError):
         card.issue_id = "mutated"
+
+
+def test_briefing_optional_present(tmp_path):
+    data = _card_dict()
+    data["briefing"] = "值裡含 = 會被切爛"
+    card = load_card(_write_card(tmp_path, data))
+    assert card.briefing == "值裡含 = 會被切爛"
+
+
+def test_briefing_defaults_none(tmp_path):
+    data = _card_dict()
+    data.pop("briefing", None)
+    card = load_card(_write_card(tmp_path, data))
+    assert card.briefing is None

@@ -5,4 +5,4 @@ published_at: null
 variant_notes: 母題 input-validation-v1 的變體：換域（折扣碼 → 倉儲儲位代碼）、常數不同 （長度邊界 4-8 而非 6-10）、邊界規則不同（缺的是「必須以數字結尾」的檢查碼
   規則，而非母題的長度規則——長度與開頭字母檢查在此變體中已正確存在）。
 frozen_at: '2026-07-17'
-content_sha256: d058a490aacbc62f28d4eabb85d7fcd312ab5277055f9720149f76d0ce1c4394
+content_sha256: 85b23c2148188d34702a266427e468609589b1c0ad2adf0fb64b84a2c32406dc

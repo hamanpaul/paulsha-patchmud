@@ -92,6 +92,7 @@ from patchmud.adapters.scripted import ScriptedAdapter
 from patchmud.deck.loader import load_card
 from patchmud.deck.materialize import materialize_repo
 from patchmud.deck.model import DeckError, IssueCard
+from patchmud.engine import narration
 from patchmud.engine import render_zh_tw as zh
 from patchmud.engine.loop import RunConfig, build_agent_test_runner, run_encounter
 from patchmud.engine.versus import VersusEntry, render_versus, run_versus
@@ -862,8 +863,9 @@ def _cmd_versus(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         prog="patchmud versus",
         description=(
-            "並排對戰：多個模型各自打同一關（隔離 run），跑完同步並排呈現逐回合"
-            "行動與 backlog，收尾記分板。隔離不可動搖——共用戰場會使 benchmark 失效。"
+            "並排對戰：多個模型各自打同一關（隔離 run），跑完同步並排呈現每回合"
+            "白話戰報，收尾記分板與「誰贏在哪」判詞。隔離不可動搖——共用戰場會使"
+            " benchmark 失效。"
         ),
     )
     parser.add_argument(
@@ -887,6 +889,7 @@ def _cmd_versus(argv: list[str]) -> int:
 
     try:
         encounter_dir = resolve_encounter(ns.encounter)
+        briefing = narration.encounter_briefing(load_card(encounter_dir / "card.yaml"))
 
         def run_one(enc, spec, loadout, runs_root, run_id):
             return run_cli(enc, spec, loadout, runs_root, run_id=run_id)
@@ -908,7 +911,7 @@ def _cmd_versus(argv: list[str]) -> int:
         print(f"versus 失敗：{exc}", file=sys.stderr)
         return 2
 
-    print(render_versus(entries, encounter=encounter_dir.name))
+    print(render_versus(entries, encounter=encounter_dir.name, briefing=briefing))
     return 0
 
 
@@ -920,7 +923,7 @@ def _render_live_settlement(result) -> str:
         "run.live_settlement",
         clear_label=zh.text("run.clear_yes") if result.clear else zh.text("run.clear_no"),
         end_reason=result.end_reason,
-        power=ev.power.total,
+        power=narration.format_power(ev.power.total),
         functional=ev.power.functional,
         critical_pass=zh.text("yes") if gates.critical_pass else zh.text("no"),
     )

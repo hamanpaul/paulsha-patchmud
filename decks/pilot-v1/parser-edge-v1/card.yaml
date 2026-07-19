@@ -1,5 +1,6 @@
 schema_version: 1
 issue_id: parser-edge-v1
+briefing: 'key=value 解析把值裡的 = 一起切掉，含網址（?a=1）的值會損毀'
 archetype: parser-edge
 difficulty: easy
 difficulty_scale: 1.0

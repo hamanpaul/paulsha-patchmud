@@ -1,5 +1,6 @@
 schema_version: 1
 issue_id: legacy-regression-v2
+briefing: '設定合併時，值設成 None 的鍵原意是刪除它，卻被留下來變成 None'
 archetype: legacy-regression
 difficulty: medium
 difficulty_scale: 1.0

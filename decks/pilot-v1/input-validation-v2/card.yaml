@@ -1,5 +1,6 @@
 schema_version: 1
 issue_id: input-validation-v2
+briefing: '儲位代碼驗證漏了結尾檢查碼，結尾不是數字的代碼也會被當成有效'
 archetype: input-validation
 difficulty: easy
 difficulty_scale: 1.0

@@ -6,4 +6,4 @@ variant_notes: 母題 legacy-regression-v1 的變體：換域（版本字串數�
   sentinel 值語意被忽略」）、修法同樣必須保留既有「base 獨有鍵維持原樣、base 內原生 None 值不得被誤刪」的舊行為（regression 保護），杜絕「override
   內有值一律 覆蓋」或「凡 None 一律刪除」兩種過度簡化的危險修法。
 frozen_at: '2026-07-17'
-content_sha256: d78c86be4eb269e185255cb4c85e62489f189382a87bfefa4b21bb24bbce8cc0
+content_sha256: 21aff72dd3b9a470b29a01c1632772b8bbe3100eb4292d21a0fb2b6fef73b1fe

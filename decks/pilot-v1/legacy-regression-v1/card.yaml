@@ -1,5 +1,6 @@
 schema_version: 1
 issue_id: legacy-regression-v1
+briefing: '版本號用字串比大小，"1.9" 會被誤判成大於 "1.10"'
 archetype: legacy-regression
 difficulty: medium
 difficulty_scale: 1.0

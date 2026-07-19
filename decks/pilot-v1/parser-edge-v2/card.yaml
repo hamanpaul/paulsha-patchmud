@@ -1,5 +1,6 @@
 schema_version: 1
 issue_id: parser-edge-v2
+briefing: '查詢字串解析碰到連續或結尾的 &，會生出偽造的空鍵'
 archetype: parser-edge
 difficulty: easy
 difficulty_scale: 1.0
