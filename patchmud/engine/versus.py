@@ -17,6 +17,7 @@ from pathlib import Path
 
 import yaml
 
+from patchmud.engine import narration
 from patchmud.engine import render_zh_tw as zh
 from patchmud.store.run_store import RunStore
 
@@ -41,8 +42,12 @@ class VersusEntry:
 # ---------------------------------------------------------------------------
 
 
-def render_versus(entries: list[VersusEntry], encounter: str | None = None) -> str:
-    """同步並排：逐回合列出每個模型的行動與 backlog，收尾記分板。"""
+def render_versus(
+    entries: list[VersusEntry],
+    encounter: str | None = None,
+    briefing: str | None = None,
+) -> str:
+    """同步並排：開場 bug 說明、逐回合白話敘述、記分板、收尾「誰贏在哪」判詞。"""
     if not entries:
         return zh.text("versus.scoreboard_header")
 
@@ -57,8 +62,10 @@ def render_versus(entries: list[VersusEntry], encounter: str | None = None) -> s
     lines = [
         zh.text("versus.header", encounter=encounter, loadout=loadout),
         zh.text("versus.participants", names=names),
-        "",
     ]
+    if briefing:
+        lines.append(zh.text("versus.briefing", text=briefing))
+    lines.append("")
 
     for r in range(max_round + 1):
         lines.append(
@@ -73,23 +80,19 @@ def render_versus(entries: list[VersusEntry], encounter: str | None = None) -> s
     lines.append(zh.text("versus.scoreboard_header"))
     for entry in entries:
         lines.append(_score_row(entry))
+    lines.append("")
+    lines.append(zh.text("versus.verdict_header"))
+    lines.append(narration.verdict(entries))
     return "\n".join(lines).rstrip()
 
 
 def _model_line(model: str, timeline: list[dict], r: int) -> str:
     if r >= len(timeline):
         return zh.text("versus.model_done", model=_short(model))
-    round_data = timeline[r]
-    resolved = round_data.get("resolved") or []
-    extra = (
-        zh.text("versus.resolved_extra", ids="、".join(resolved)) if resolved else ""
-    )
     return zh.text(
-        "versus.model_line",
+        "versus.model_line_v2",
         model=_short(model),
-        action=round_data["action"],
-        backlog=round_data["backlog"],
-        extra=extra,
+        narration=narration.narrate_round(timeline[r]),
     )
 
 
@@ -97,7 +100,7 @@ def _score_row(entry: VersusEntry) -> str:
     result = entry.result
     clear = result.get("clear")
     label = zh.text("run.clear_yes") if clear == 1 else zh.text("run.clear_no")
-    power = _power_total(result)
+    power = narration.format_power(_power_total(result))
     turns = result.get("turns", zh.text("na"))
     cost = (
         zh.text("versus.cost_na")
@@ -115,9 +118,13 @@ def _score_row(entry: VersusEntry) -> str:
 
 
 def _timeline(events: list[dict]) -> list[dict]:
-    """events → 每回合 {action, backlog, resolved}；round 0 = baseline。"""
+    """events → 每回合 {baseline, action, outcome, resolved, backlog_before/after}。
+
+    round 0 = baseline。欄位供 :func:`narration.narrate_round` 推導白話。
+    """
     rounds: list[dict] = []
     prev_open: set[str] = set()
+    prev_backlog = 0
     for event in events:
         etype = event.get("type")
         if etype not in (_BASELINE, _TURN):
@@ -127,14 +134,28 @@ def _timeline(events: list[dict]) -> list[dict]:
         open_ids = {str(i.get("item_id")) for i in open_items if isinstance(i, dict)}
         backlog = queue.get("b_t", len(open_ids))
         if etype == _BASELINE:
-            action = zh.text("versus.action_baseline")
-            resolved: list[str] = []
+            rounds.append(
+                {
+                    "baseline": True,
+                    "action": None,
+                    "outcome": None,
+                    "resolved": [],
+                    "backlog_before": backlog,
+                    "backlog_after": backlog,
+                }
+            )
         else:
-            act = event.get("action")
-            action = act if act else zh.text("versus.action_none")
-            resolved = sorted(prev_open - open_ids)
-        rounds.append({"action": action, "backlog": backlog, "resolved": resolved})
-        prev_open = open_ids
+            rounds.append(
+                {
+                    "baseline": False,
+                    "action": event.get("action"),
+                    "outcome": event.get("outcome"),
+                    "resolved": sorted(prev_open - open_ids),
+                    "backlog_before": prev_backlog,
+                    "backlog_after": backlog,
+                }
+            )
+        prev_open, prev_backlog = open_ids, backlog
     return rounds
 
 

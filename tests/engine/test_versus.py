@@ -52,12 +52,28 @@ class TestRenderVersus:
         # 逐回合並排
         assert "開場（基線）" in out
         assert "回合 1" in out
-        # solver 在回合 1 解決 MAIN-1；lazy 沒有
-        assert "解決 MAIN-1" in out
+        # solver 在回合 1 修好 MAIN-1（白話）；lazy 沒有
+        assert "修好了 MAIN-1" in out
+        # 不再露黑話 backlog
+        assert "backlog" not in out
         # 記分板：兩個模型各一列，結果對比
         assert "CLEAR 通關" in out
         assert "未通關" in out
         assert "Power 97.0" in out and "Power 29.0" in out
+
+    def test_briefing_and_verdict(self):
+        out = render_versus(
+            [_solver(), _lazy()],
+            encounter="parser-edge-v1",
+            briefing="值裡含 = 會被切爛",
+        )
+        # 開場一句白話 bug 說明
+        assert "【這關的 bug】值裡含 = 會被切爛" in out
+        # 收尾「誰贏在哪」判詞：一勝一負 → split，理由指向公開測試沒過
+        assert "誰贏在哪" in out
+        assert "sonnet 通關" in out and "haiku 沒有" in out
+        # 分數 1 位小數，不得出現長浮點殘留
+        assert "27.714285" not in out
 
     def test_uneven_lengths_show_done(self):
         short = VersusEntry(
