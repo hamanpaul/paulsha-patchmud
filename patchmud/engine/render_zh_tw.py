@@ -28,7 +28,8 @@ RENDER_LANGUAGE = "zh-TW"
 #: 1.2.0：新增 turn loop 執行結果與 reviewer subcall 文案（Task 13）。
 #: 1.3.0：新增 `patchmud play` 人類對局文案（Task 22；既有文案不變）。
 #: 1.4.0：新增 `patchmud watch` 戰報文案（Task 23；既有文案不變）。
-RENDER_PACK_VERSION = "1.4.0"
+#: 1.5.0：新增 versus 白話戰報——briefing／每回合人話敘述／verdict（Part A）。
+RENDER_PACK_VERSION = "1.5.0"
 
 
 class RenderError(Exception):
@@ -70,6 +71,24 @@ MESSAGES: dict[str, str] = {
     ),
     "versus.cost_na": "成本 NA",
     "versus.cost": "成本 {cost}",
+    # ---- versus 白話戰報（Part A：briefing／每回合人話／verdict） -----------
+    "versus.briefing": "【這關的 bug】{text}",
+    "versus.model_line_v2": "  {model}｜{narration}",
+    "versus.round.baseline": "開場：待辦 {after} 件",
+    "versus.round.resolved": "{action}：修好了 {ids}（待辦 {before}→{after}）",
+    "versus.round.patch_noop": "PATCH 套用了，但沒解決任何議題（待辦仍 {after}）",
+    "versus.round.patch_failed": "PATCH 套用失敗，這刀打空了（待辦仍 {after}）",
+    "versus.round.commit": "COMMIT 收場（待辦 {after}）",
+    "versus.round.illegal": "{action} 被判不合法，白費一回合（待辦仍 {after}）",
+    "versus.round.parse_error": "回覆讀不懂，白費一回合（待辦仍 {after}）",
+    "versus.round.observed": "{action}：察看戰場，沒動手（待辦仍 {after}）",
+    "versus.verdict_header": "════ 誰贏在哪 ════",
+    "versus.verdict.split": "{winners} 通關、{losers} 沒有——差別在：{reason}",
+    "versus.verdict.all_clear": "都通關；{fastest} 最省，只花 {turns} 回合",
+    "versus.verdict.none_clear": "這關無人通關",
+    "versus.reason.public_red": "改動沒通過公開測試",
+    "versus.reason.critical_red": "表面看似修好，卻沒通過隱藏的關鍵測試",
+    "versus.reason.other": "未達通關門檻",
     # ---- parse 錯誤提示（spec §5.2：結構化 parse error 附格式提示） ------
     "parse.missing_action": (
         "無法解析回覆：找不到「ACTION: <命令>」行。請以 ACTION: 開頭宣告本回合"
