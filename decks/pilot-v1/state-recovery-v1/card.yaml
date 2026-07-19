@@ -1,5 +1,6 @@
 schema_version: 1
 issue_id: state-recovery-v1
+briefing: '掃描暫時失敗讀不到的項目，被誤判成已刪除，產生假的移除事件'
 archetype: state-recovery
 difficulty: medium
 difficulty_scale: 1.0

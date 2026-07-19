@@ -1,5 +1,6 @@
 schema_version: 1
 issue_id: state-recovery-v2
+briefing: '裝置只是暫時連不上（UNREACHABLE），卻被誤判成已移除'
 archetype: state-recovery
 difficulty: medium
 difficulty_scale: 1.0

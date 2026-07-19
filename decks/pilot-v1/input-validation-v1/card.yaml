@@ -1,5 +1,6 @@
 schema_version: 1
 issue_id: input-validation-v1
+briefing: '折扣碼驗證漏了長度檢查，10 個字以上的爛碼也會被當成有效'
 archetype: input-validation
 difficulty: easy
 difficulty_scale: 1.0

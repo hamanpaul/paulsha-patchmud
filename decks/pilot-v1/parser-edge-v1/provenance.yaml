@@ -4,4 +4,4 @@ archetype_source: 原創 micro-issue（依報告 §12.2「parser edge cases」�
 published_at: null
 variant_notes: 母題：key=value 設定檔逐行解析未限制 split 次數，導致值本身含 '=' 時被截斷遺失
 frozen_at: '2026-07-17'
-content_sha256: d7bbd6b43a5d4ff076549856c2b3bb071004f818321b24b17daa921a276689be
+content_sha256: 7f030b6e652a50a9f0cba90bf52d97d9c338b0b4aa8095e1944ecb51bdec45a3

@@ -5,4 +5,4 @@ archetype_source: 改編自 docs/PatchMUD_research_report_zh-TW_v0.2.md 附錄 A
 published_at: null
 variant_notes: 母題：diff_removed 完全忽略 scan_errors 參數，任何本次掃描讀不到的項目一律誤判為刪除
 frozen_at: '2026-07-17'
-content_sha256: 80586a49d792d8f9ce447c804d4482cb5d1a1673040e4f8718e241802cdb767b
+content_sha256: 41e195406721367a970b4bf2a65d38619f608d7541d0f1c2dbc12eb0abd4afcc
