@@ -29,7 +29,8 @@ RENDER_LANGUAGE = "zh-TW"
 #: 1.3.0：新增 `patchmud play` 人類對局文案（Task 22；既有文案不變）。
 #: 1.4.0：新增 `patchmud watch` 戰報文案（Task 23；既有文案不變）。
 #: 1.5.0：新增 versus 白話戰報——briefing／每回合人話敘述／verdict（Part A）。
-RENDER_PACK_VERSION = "1.5.0"
+#: 1.6.0：play.banner 改寫為無程式背景可懂的白話規則（開場即上手）。
+RENDER_PACK_VERSION = "1.6.0"
 
 
 class RenderError(Exception):
@@ -211,10 +212,27 @@ MESSAGES: dict[str, str] = {
     "loop.probe_line": "- {probe_id}：{status}",
     # ---- human 對局（patchmud play，spec §5.4；Task 22） -------------------
     "play.banner": (
-        "【human 對局】你將以同一命令協定親自打完這場 encounter：引擎、"
-        "probe、queue、評分與模型對局完全同構。回覆以空行結束；"
-        "Ctrl-D（EOF）視同 COMMIT 收尾。本場 run 標記 human，"
-        "永不進 ranked 資料與任何聚合指標。"
+        "════════ 怎麼玩 PatchMUD ════════\n"
+        "這是一款「修東西」的回合制遊戲。這一關給你一台壞掉的小程式，它有個"
+        "毛病；你的任務是找出毛病、把它修好。\n\n"
+        "■ 目標：把畫面上的「待辦」數字降到 0（那是還沒解決的問題數，"
+        "開場通常是 1）。\n\n"
+        "■ 玩法：一回合只做一件事。每回合打一個動作，最後空一行送出"
+        "（想直接收場按 Ctrl-D）。回合數與時間都有上限，別亂逛。\n\n"
+        "■ 你能做的動作（打左邊那個英文關鍵字）：\n"
+        "   LOOK              看這關有哪些檔案\n"
+        "   INSPECT <檔名>    仔細看某個檔的內容\n"
+        "   PATCH             動手修（下一行起用「PATCH:」附上你的修改）\n"
+        "   RUN_TEST          試跑測試看紅綠\n"
+        "   COMMIT            宣布完工，進最終評分\n\n"
+        "■ 怎麼算贏：送出修理後系統會自動測；修對了「待辦」歸 0。你 COMMIT "
+        "後進評分，給你「通關／未通關」和一個分數（最高 100，越乾淨越省回合"
+        "越高）。\n\n"
+        "■ 最刁鑽的一條：有一批考題是藏起來、你看不到的。看得到的測試過了，"
+        "不代表真的修好——要真的搞懂毛病，別只讓表面過關。\n\n"
+        "（這是你親自玩的場次，不列入任何排名。若「PATCH 怎麼寫」讓你卡住——"
+        "那步要編輯程式碼；只想看熱鬧的話，改用 versus 看 AI 對決。）\n"
+        "下面是精確的指令格式，照著打即可 ↓"
     ),
     "play.input_prompt": "請輸入你的動作（回覆以空行結束；Ctrl-D 視同 COMMIT）：",
     "play.eof_commit": "偵測到輸入結束（EOF），視同 COMMIT 收尾。",
