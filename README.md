@@ -14,6 +14,7 @@
 - 研究報告：`docs/PatchMUD_research_report_zh-TW_v0.2.md`
 - Spec（v1.1，經 codex gpt-5.6-sol 對抗審查）：`docs/superpowers/specs/2026-07-16-patchmud-mvp-design.md`
 - 實作計劃（21 tasks）：`docs/superpowers/plans/2026-07-16-patchmud-mvp.md`
+- 玩家與旁觀者指南：[`docs/user-manual.md`](docs/user-manual.md)
 
 ## Install
 

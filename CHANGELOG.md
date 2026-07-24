@@ -7,6 +7,15 @@
 
 ## [Unreleased]
 
+## [0.0.1] - 2026-07-24
+
+### Added
+- **UI/UX 與對局可讀性強化（Junior Engineer & Spectator Manual）**：
+  - **docs/user-manual.md**：新增專門針對 Junior Engineer 玩家與旁觀者（Spectator）的詳細指南（含關卡結構、推薦四大步驟、PATCH 語法範例、watch 戰報與 versus 並排對戰說明、三維計分），並於 `README.md` 建立連結。
+  - **互動式選單 CLI**：直接執行 `patchmud`（或 `patchmud menu` / `--interactive`）可啟動選單，透過編號輕鬆選擇關卡與對戰模型；在缺漏參數時自動進入互動選關／選模型流程。
+  - **Junior Engineer 白話規則與對局指引**：改寫 `play.banner`，提供繁體中文步驟指南與 Unified Diff 實作範例（bump `RENDER_PACK_VERSION` 至 1.7.0）。
+  - **Claude CLI Headless Adapter**：新增 `ClaudeCliAdapter` (`patchmud/adapters/claude_cli.py`)。若系統上已安裝 `claude` CLI 且未在環境變數設定 Anthropic API Key，`patchmud versus` / `run` 會自動無縫走系統 `claude` CLI 非互動 headless 模式（以 `--output-format json` 帶入 Token 使用量與結構化輸出），完全無需手動設定 API Key 或 OAuth Token。
+
 ### Fixed
   - **codex F5（major）frozen deck drift 偵測**：每個 encounter 的 provenance pin `content_sha256`（card + repo/** + hidden/**，排除快取與 reference_timings），`validate-deck` 重算比對，改動 repo/src、hidden 測資或 card 而未同步 pin 一律 fail；pilot-v1 全 8 卡已 pin。codex F8（perf probe 量測品質）、F9（e2e mid-run 保真）列為 spec §14 deferred（非可利用洞）。
   - **codex F6/F7（major）Task 21 假綠路徑**：F6 T1 fixer 的 WRITE_TEST 改為鏡射 encounter public MAIN 測試（真 red→green、同檔案 hash 不變 → tdd_compliant=true），並斷言全部 T1 fixer run strategy_violation=false，取代原本永久 `assert False` 假 red；F7 milestone D acceptance 於 namespace 不足時改 `pytest.fail`（不再靜默 skip 成綠，本機可 PATCHMUD_ALLOW_DEGRADED_ACCEPTANCE=1 降級），CI tests.yml 安裝並驗證 bubblewrap。

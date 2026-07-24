@@ -150,6 +150,10 @@ def _render_turn_event(event: dict, prev_queue: dict | None) -> str:
     if detail:
         lines.append(zh.text("watch.detail", detail=detail))
 
+    claim = event.get("claim")
+    if claim:
+        lines.append(zh.text("watch.claim", claim=claim))
+
     reviewer = event.get("reviewer_subcall")
     if reviewer:
         lines.append(

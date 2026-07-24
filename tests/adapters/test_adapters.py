@@ -278,3 +278,67 @@ class TestOpenAICompatAdapter:
             FakeTransport(OPENAI_RESPONSE), clock=FakeClock([5.0, 5.5])
         )
         assert adapter.complete(MESSAGES).wall_ms == 500
+
+
+class TestClaudeCliAdapter:
+    def test_complete_invokes_runner_with_expected_args(self) -> None:
+        import json
+        from patchmud.adapters.claude_cli import ClaudeCliAdapter
+
+        captured_cmd: list[str] = []
+
+        def fake_runner(cmd: list[str]) -> str:
+            captured_cmd.extend(cmd)
+            return json.dumps({"result": "ACTION: RUN_TEST", "usage": {"input_tokens": 10, "output_tokens": 5}})
+
+        adapter = ClaudeCliAdapter(
+            model="claude-haiku-4-5",
+            claude_binary="claude",
+            clock=FakeClock([10.0, 10.25]),
+            runner=fake_runner,
+        )
+        resp = adapter.complete(MESSAGES)
+        assert resp.text == "ACTION: RUN_TEST"
+        assert resp.wall_ms == 250
+        assert resp.usage_raw["input_tokens"] == 10
+        assert resp.usage_raw["output_tokens"] == 5
+        assert "claude" in captured_cmd
+        assert "--model" in captured_cmd
+        assert "claude-haiku-4-5" in captured_cmd
+        assert "--system-prompt" in captured_cmd
+        assert "你是 PatchMUD 的作者 agent。" in captured_cmd[captured_cmd.index("--system-prompt") + 1]
+
+    def test_complete_parses_json_output_and_maps_usage(self) -> None:
+        import json
+        from patchmud.adapters.claude_cli import ClaudeCliAdapter
+        from patchmud.ledger.tokens import map_usage
+
+        fake_json = json.dumps({
+            "result": "ACTION: COMMIT",
+            "usage": {
+                "input_tokens": 100,
+                "output_tokens": 20,
+                "cache_read_input_tokens": 30,
+                "cache_creation_input_tokens": 10,
+            }
+        })
+        adapter = ClaudeCliAdapter(runner=lambda _cmd: fake_json)
+        resp = adapter.complete(MESSAGES)
+        assert resp.text == "ACTION: COMMIT"
+        entry = map_usage("anthropic", resp.usage_raw, turn=1, role="author")
+        assert entry.input_uncached == 100
+        assert entry.output_visible == 20
+
+    def test_complete_fallback_estimated_usage_when_plain_text(self) -> None:
+        from patchmud.adapters.claude_cli import ClaudeCliAdapter
+        from patchmud.ledger.tokens import map_usage
+
+        adapter = ClaudeCliAdapter(runner=lambda _cmd: "ACTION: LOOK")
+        resp = adapter.complete(MESSAGES)
+        assert resp.text == "ACTION: LOOK"
+        # 即使輸出不是 JSON，也會提供合法的 input/output tokens 避免 ledger 崩潰
+        entry = map_usage("anthropic", resp.usage_raw, turn=1, role="author")
+        assert isinstance(entry.input_uncached, int)
+        assert isinstance(entry.output_visible, int)
+
+

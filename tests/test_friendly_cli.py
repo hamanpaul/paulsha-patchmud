@@ -47,13 +47,15 @@ _TURN_EVENT = {
 
 
 class TestModelAlias:
-    def test_bare_alias_expands_to_anthropic(self):
+    def test_bare_alias_expands_to_anthropic_when_credentials_set(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         assert normalize_model_spec("sonnet") == "anthropic:claude-sonnet-5"
         assert normalize_model_spec("haiku") == "anthropic:claude-haiku-4-5"
         assert normalize_model_spec("opus") == "anthropic:claude-opus-4-8"
         assert normalize_model_spec("fable") == "anthropic:claude-fable-5"
 
-    def test_anthropic_prefixed_alias_expands(self):
+    def test_anthropic_prefixed_alias_expands_when_credentials_set(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         assert normalize_model_spec("anthropic:sonnet") == "anthropic:claude-sonnet-5"
 
     def test_full_spec_untouched(self):
@@ -76,3 +78,54 @@ class TestLiveDelay:
         spec = LiveSpectator(out=lambda _s: None, delay=0.0, sleep=slept.append)
         spec.feed(_BASELINE_EVENT)
         assert slept == []
+
+
+class TestAnthropicCredentialCheck:
+    def test_has_anthropic_credentials_returns_false_when_unset(self, monkeypatch):
+        from patchmud.cli import has_anthropic_credentials
+
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+        assert has_anthropic_credentials() is False
+
+    def test_has_anthropic_credentials_returns_true_when_api_key_set(self, monkeypatch):
+        from patchmud.cli import has_anthropic_credentials
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+        assert has_anthropic_credentials() is True
+
+    def test_has_anthropic_credentials_returns_true_when_auth_token_set(self, monkeypatch):
+        from patchmud.cli import has_anthropic_credentials
+
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "test-token")
+        assert has_anthropic_credentials() is True
+
+    def test_build_adapter_missing_credentials_and_no_claude_cli_errors(self, monkeypatch):
+        from patchmud.cli import _build_adapter
+
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+        monkeypatch.setattr("patchmud.cli.has_claude_cli", lambda: False)
+        with pytest.raises(RunCliError) as exc:
+            _build_adapter("sonnet")
+        err_msg = str(exc.value)
+        assert "未設定 Anthropic 憑證" in err_msg
+        assert "openai:" in err_msg  # 提供地端免 Key 模型指引
+
+    def test_claude_cli_fallback_when_credentials_unset_and_claude_on_path(self, monkeypatch):
+        from patchmud.adapters.claude_cli import ClaudeCliAdapter
+        from patchmud.cli import _build_adapter, normalize_model_spec
+
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+        monkeypatch.setattr("patchmud.cli.has_claude_cli", lambda: True)
+
+        spec = normalize_model_spec("haiku")
+        assert spec == "claude:claude-haiku-4-5"
+
+        adapter = _build_adapter("haiku")
+        assert isinstance(adapter, ClaudeCliAdapter)
+
+
