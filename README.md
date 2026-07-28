@@ -47,10 +47,10 @@ patchmud report --runs "runs/*"                # 多榜研究報告（模型比�
 
 ## Version
 
-版本記錄於 `VERSION`，變更紀錄見 [CHANGELOG.md](CHANGELOG.md)；版號規則遵循 hamanpaul project policy v1.0.14（`<MAJOR>.<MINOR>.<PATCH>[-fix.N]`，flat profile）。
+版本記錄於 `VERSION`，變更紀錄見 [CHANGELOG.md](CHANGELOG.md)；版號規則遵循 hamanpaul project policy v1.0.15（`<MAJOR>.<MINOR>.<PATCH>[-fix.N]`，flat profile）。
 
 ## 開發
 
 - 分支：`feature/<slug>` 或 `wt/<feature>/<subtask>`；禁止直接 commit `main`。
 - 每個 code PR 同步更新 `CHANGELOG.md [Unreleased]`，並通過 `python3 -m policy_check --repo .` 與 `python3 -m pytest -q`。
-- 本 repo 受 hamanpaul project policy v1.0.14 管轄（`tier: shareable`），詳見 `CLAUDE.md`。
+- 本 repo 受 hamanpaul project policy v1.0.15 管轄（`tier: shareable`），詳見 `CLAUDE.md`。
