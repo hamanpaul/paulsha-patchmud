@@ -1,13 +1,14 @@
-policy_version: 1.0.12
+<!-- managed-by: hamanpaul/paulsha-conventions@v1.0.15 -->
+policy_version: 1.0.15
 
 # Agent Policy Checklist
 
-本 repo 受 hamanpaul project policy v1.0.12 管轄。
+本 repo 受 hamanpaul project policy v1.0.15 管轄。
 所有 agent 進入 session 時，必須依下列 checklist 行動。
 
 ## 本 repo 的 profile
-- policy_profile: `flat` （見 `.paul-project.yml`）
-- policy_version: `1.0.12`
+- policy_profile: `flat` （見 `.project-policy.yml`）
+- policy_version: `1.0.15`
 
 ## 本 repo 定位
 - `paulsha-patchmud` 是 PatchMUD 評測引擎：成本優先、純文字回合制的 coding-agent benchmark（量測閉環，不是生產閉環）。
