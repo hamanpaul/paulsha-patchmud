@@ -51,8 +51,27 @@ class TestModelAlias:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         assert normalize_model_spec("sonnet") == "anthropic:claude-sonnet-5"
         assert normalize_model_spec("haiku") == "anthropic:claude-haiku-4-5"
-        assert normalize_model_spec("opus") == "anthropic:claude-opus-4-8"
+        assert normalize_model_spec("opus") == "anthropic:claude-opus-5"
         assert normalize_model_spec("fable") == "anthropic:claude-fable-5"
+
+    def test_codex_aliases_expand_to_codex_specs(self):
+        # codex 走自帶 OAuth（~/.codex/auth.json），與 Anthropic 憑證無關。
+        assert normalize_model_spec("spark") == "codex:gpt-5.3-codex-spark"
+        assert normalize_model_spec("luna") == "codex:gpt-5.6-luna"
+        assert normalize_model_spec("terra") == "codex:gpt-5.6-terra"
+        assert normalize_model_spec("sol") == "codex:gpt-5.6-sol"
+
+    def test_agy_aliases_expand_to_agy_specs(self):
+        assert normalize_model_spec("flash") == "agy:gemini-3.6-flash"
+        assert normalize_model_spec("pro") == "agy:gemini-3.1-pro"
+
+    def test_codex_and_agy_aliases_ignore_anthropic_credential_state(self, monkeypatch):
+        # 別無 Anthropic 憑證時，codex/agy 別名不得被 claude CLI fallback 劫持。
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+        monkeypatch.setattr("patchmud.cli.has_claude_cli", lambda: True)
+        assert normalize_model_spec("sol") == "codex:gpt-5.6-sol"
+        assert normalize_model_spec("flash") == "agy:gemini-3.6-flash"
 
     def test_anthropic_prefixed_alias_expands_when_credentials_set(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
@@ -62,6 +81,8 @@ class TestModelAlias:
         assert normalize_model_spec("anthropic:claude-sonnet-5") == "anthropic:claude-sonnet-5"
         assert normalize_model_spec("scripted:/tmp/x") == "scripted:/tmp/x"
         assert normalize_model_spec("openai:gpt-x@http://h/v1") == "openai:gpt-x@http://h/v1"
+        assert normalize_model_spec("codex:gpt-5.6-sol") == "codex:gpt-5.6-sol"
+        assert normalize_model_spec("agy:gemini-3.1-pro") == "agy:gemini-3.1-pro"
 
 
 class TestLiveDelay:
@@ -127,5 +148,106 @@ class TestAnthropicCredentialCheck:
 
         adapter = _build_adapter("haiku")
         assert isinstance(adapter, ClaudeCliAdapter)
+
+
+class TestCodexAndAgyAdapterBuild:
+    """codex / agy spec → adapter（CLI 不在 PATH 時 fail-closed）。"""
+
+    def test_codex_spec_builds_codex_adapter_with_high_effort(self, monkeypatch):
+        from patchmud.adapters.codex_cli import CodexCliAdapter
+        from patchmud.cli import _build_adapter
+
+        monkeypatch.setattr("patchmud.cli.has_codex_cli", lambda: True)
+        adapter = _build_adapter("sol")
+        assert isinstance(adapter, CodexCliAdapter)
+        assert adapter.effort == "high"
+        assert adapter.model == "gpt-5.6-sol"
+
+    def test_agy_spec_builds_agy_adapter_with_high_effort(self, monkeypatch):
+        from patchmud.adapters.agy_cli import AgyCliAdapter
+        from patchmud.cli import _build_adapter
+
+        monkeypatch.setattr("patchmud.cli.has_agy_cli", lambda: True)
+        adapter = _build_adapter("flash")
+        assert isinstance(adapter, AgyCliAdapter)
+        assert adapter.effort == "high"
+        assert adapter.model == "gemini-3.6-flash"
+
+    def test_codex_missing_binary_is_fail_closed(self, monkeypatch):
+        from patchmud.cli import _build_adapter
+
+        monkeypatch.setattr("patchmud.cli.has_codex_cli", lambda: False)
+        with pytest.raises(RunCliError) as exc:
+            _build_adapter("sol")
+        assert "codex" in str(exc.value)
+
+    def test_agy_missing_binary_is_fail_closed(self, monkeypatch):
+        from patchmud.cli import _build_adapter
+
+        monkeypatch.setattr("patchmud.cli.has_agy_cli", lambda: False)
+        with pytest.raises(RunCliError) as exc:
+            _build_adapter("pro")
+        assert "agy" in str(exc.value)
+
+    def test_codex_spec_without_model_is_fail_closed(self, monkeypatch):
+        from patchmud.cli import _build_adapter
+
+        monkeypatch.setattr("patchmud.cli.has_codex_cli", lambda: True)
+        with pytest.raises(RunCliError):
+            _build_adapter("codex:")
+
+
+class TestRunRecordsExpandedModelSpec:
+    """run.yaml 封存展開後的完整 spec，不是使用者打的別名。
+
+    別名表是會演進的間接層（`opus` 曾指向 claude-opus-4-8、現指向
+    claude-opus-5）。封存若只記 `opus`，事後無從得知當時實際跑的是哪一個
+    模型，違反「可位元重播」的前提。
+    """
+
+    def _capture_record_extra(self, monkeypatch, alias: str) -> dict:
+        import patchmud.cli as cli
+
+        captured: dict = {}
+
+        def fake_wire(*_args, **kwargs):
+            captured.update(kwargs["record_extra"])
+            raise _StopWiring
+
+        monkeypatch.setattr(cli, "_wire_and_run_encounter", fake_wire)
+        monkeypatch.setattr(cli, "_build_adapter", lambda spec: object())
+        monkeypatch.setattr(cli, "load_card", lambda _p: _FakeCard())
+        with pytest.raises(_StopWiring):
+            cli.run_cli(Path("/nonexistent"), alias, "P0T0R0", Path("/tmp"))
+        return captured
+
+    def test_codex_alias_is_expanded_in_run_yaml(self, monkeypatch):
+        assert self._capture_record_extra(monkeypatch, "sol")["model"] == (
+            "codex:gpt-5.6-sol"
+        )
+
+    def test_agy_alias_is_expanded_in_run_yaml(self, monkeypatch):
+        assert self._capture_record_extra(monkeypatch, "pro")["model"] == (
+            "agy:gemini-3.1-pro"
+        )
+
+    def test_anthropic_alias_is_expanded_in_run_yaml(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        assert self._capture_record_extra(monkeypatch, "opus")["model"] == (
+            "anthropic:claude-opus-5"
+        )
+
+    def test_full_spec_is_recorded_unchanged(self, monkeypatch):
+        assert self._capture_record_extra(monkeypatch, "scripted:/tmp/x.txt")[
+            "model"
+        ] == "scripted:/tmp/x.txt"
+
+
+class _StopWiring(Exception):
+    """在真佈線前中止 run_cli，只擷取 record_extra。"""
+
+
+class _FakeCard:
+    issue_id = "fake-encounter-v1"
 
 

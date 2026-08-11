@@ -84,9 +84,11 @@ from pathlib import Path
 
 import yaml
 
+from patchmud.adapters.agy_cli import AgyCliAdapter
 from patchmud.adapters.anthropic import AnthropicAdapter
 from patchmud.adapters.base import AdapterError, ModelAdapter
 from patchmud.adapters.claude_cli import ClaudeCliAdapter
+from patchmud.adapters.codex_cli import CodexCliAdapter
 from patchmud.adapters.human import HumanAdapter
 from patchmud.adapters.openai_compat import OpenAICompatAdapter
 from patchmud.adapters.scripted import ScriptedAdapter
@@ -272,11 +274,14 @@ def _prompt_select_models() -> str:
         ("sonnet,haiku", "Sonnet vs Haiku（經典速度與能力對決）"),
         ("sonnet,opus", "Sonnet vs Opus（旗艦模型對決）"),
         ("haiku,fable", "Haiku vs Fable（輕量與實驗模型對決）"),
+        ("sonnet,sol,flash", "Claude vs GPT vs Gemini（跨家旗艦對決）"),
     ]
     print("\n【請選擇對戰模型組合】")
     if not has_anthropic_credentials():
         print("⚠️ 未偵測到 Anthropic 憑證（ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN）")
-        print("   預設選項 [1]-[3] 需雲端 API Key；若無 Key 請選擇 [4] 並使用地端模型 (openai:...) 或 scripted 劇本。\n")
+        print("   選項 [1]-[3] 需雲端 API Key（或系統已登入的 claude CLI）。")
+        print("   codex 別名（spark/luna/terra/sol）與 agy 別名（flash/pro）走各自 CLI 的登入態，不需 Anthropic Key。")
+        print(f"   若都沒有，請選擇 [{len(presets) + 1}] 使用地端模型 (openai:...) 或 scripted 劇本。\n")
     for idx, (spec, desc) in enumerate(presets, 1):
         print(f"  [{idx}] {spec} — {desc}")
     print(f"  [{len(presets) + 1}] 自訂 / 地端免 Key 模型（如 openai:llama3@http://localhost:11434/v1）")
@@ -328,7 +333,8 @@ def _interactive_menu() -> int:
             return _cmd_versus([enc, "--models", models])
     elif choice == "3":
         enc = _prompt_select_encounter()
-        print("\n請選擇模型（例如 sonnet / haiku / opus）：")
+        print("\n請選擇模型（Anthropic: sonnet / haiku / opus / fable，"
+              "codex: spark / luna / terra / sol，agy: flash / pro）：")
         try:
             m = input("模型名稱 [預設 sonnet]: ").strip() or "sonnet"
         except (KeyboardInterrupt, EOFError):
@@ -1007,7 +1013,12 @@ def _cmd_run(argv: list[str]) -> int:
     parser.add_argument(
         "--model",
         required=True,
-        help="模型：別名 sonnet/haiku/opus/fable，或 anthropic:<model> / openai:<model>[@url] / scripted:<file>",
+        help=(
+            "模型：別名 sonnet/haiku/opus/fable（Anthropic）、"
+            "spark/luna/terra/sol（codex CLI）、flash/pro（agy CLI），或完整 spec "
+            "anthropic:<model> / codex:<model> / agy:<model> / "
+            "openai:<model>[@url] / scripted:<file>"
+        ),
     )
     parser.add_argument(
         "--loadout", default="P0T0R0", help="forced loadout（預設 P0T0R0 = SOLO）"
@@ -1088,7 +1099,7 @@ def _cmd_versus(argv: list[str]) -> int:
     parser.add_argument(
         "--models",
         required=True,
-        help="逗號分隔的模型（可用別名），如 sonnet,haiku,opus",
+        help="逗號分隔的模型（可用別名），如 sonnet,haiku,opus 或跨家 sonnet,sol,flash",
     )
     parser.add_argument(
         "--loadout", default="P0T0R0", help="forced loadout（預設 P0T0R0 = SOLO）"
@@ -1177,7 +1188,10 @@ def run_cli(
         runs_root,
         run_id,
         bwrap_path=bwrap_path,
-        record_extra={"model": model_spec},
+        # 封存展開後的完整 spec，不是使用者打的別名：別名表是會演進的間接層
+        # （`opus` 曾指向 claude-opus-4-8，現指向 claude-opus-5），封存若只記
+        # 別名，事後無從得知當時實際跑的是哪個模型，違反可重播的前提。
+        record_extra={"model": normalize_model_spec(model_spec)},
         spectator=spectator,
     )
 
@@ -1367,13 +1381,29 @@ def _cmd_play(argv: list[str]) -> int:
 _SCRIPT_DELIMITER = "-----"
 
 
-#: 模型別名 → anthropic 完整 model id（指令只打 sonnet/haiku/opus/fable）。
+#: 模型別名 → 完整 model spec（指令只打 sonnet / sol / flash 這類短名）。
+#:
+#: 三家 provider 的短別名共用同一個命名空間，彼此不得重複。codex 與 agy 走
+#: 各自 CLI 的 OAuth 登入態，與 Anthropic 憑證無關（issue #14）。
 _MODEL_ALIASES = {
+    # Anthropic（API key 或 OAuth bearer；缺憑證時 fallback 到 claude CLI）
     "sonnet": "anthropic:claude-sonnet-5",
     "haiku": "anthropic:claude-haiku-4-5",
-    "opus": "anthropic:claude-opus-4-8",
+    "opus": "anthropic:claude-opus-5",
     "fable": "anthropic:claude-fable-5",
+    # OpenAI（codex CLI headless，~/.codex/auth.json）
+    "spark": "codex:gpt-5.3-codex-spark",
+    "luna": "codex:gpt-5.6-luna",
+    "terra": "codex:gpt-5.6-terra",
+    "sol": "codex:gpt-5.6-sol",
+    # Google Gemini（agy CLI headless，~/.antigravitycli）
+    "flash": "agy:gemini-3.6-flash",
+    "pro": "agy:gemini-3.1-pro",
 }
+
+#: CLI-based adapter 的 effort 一律固定 high（issue #14）：ranked run 之間的
+#: 推理預算必須可比，不隨使用者的 CLI 設定漂移。
+CLI_EFFORT = "high"
 
 
 def has_claude_cli() -> bool:
@@ -1381,26 +1411,41 @@ def has_claude_cli() -> bool:
     return shutil.which("claude") is not None
 
 
+def has_codex_cli() -> bool:
+    """檢查系統是否有安裝並可執行的 `codex` CLI。"""
+    return shutil.which("codex") is not None
+
+
+def has_agy_cli() -> bool:
+    """檢查系統是否有安裝並可執行的 `agy` CLI。"""
+    return shutil.which("agy") is not None
+
+
 def normalize_model_spec(spec: str) -> str:
     """把別名展開成完整 model spec：`sonnet` → `anthropic:claude-sonnet-5`；
     （若無 Anthropic API Key 且有系統 claude CLI，無縫自動轉換成 `claude:claude-sonnet-5`）；
-    `anthropic:sonnet` → `anthropic:claude-sonnet-5`。其餘原樣。"""
+    `anthropic:sonnet` → `anthropic:claude-sonnet-5`。其餘原樣。
+
+    `codex:` / `agy:` 別名自帶 CLI 登入態，不受 Anthropic 憑證狀態影響，
+    也不得被 claude CLI fallback 劫持。"""
     if spec == "claude" or spec.startswith("claude:"):
         return spec
     if spec in _MODEL_ALIASES:
-        target = _MODEL_ALIASES[spec]
-        if not has_anthropic_credentials() and has_claude_cli():
-            model_id = target.partition(":")[2]
-            return f"claude:{model_id}"
-        return target
+        return _fallback_to_claude_cli(_MODEL_ALIASES[spec])
     kind, sep, rest = spec.partition(":")
     if kind == "anthropic" and sep and rest in _MODEL_ALIASES:
-        target = _MODEL_ALIASES[rest]
-        if not has_anthropic_credentials() and has_claude_cli():
-            model_id = target.partition(":")[2]
-            return f"claude:{model_id}"
-        return target
+        return _fallback_to_claude_cli(_MODEL_ALIASES[rest])
     return spec
+
+
+def _fallback_to_claude_cli(target: str) -> str:
+    """anthropic spec 在缺憑證且有 claude CLI 時改走 CLI；其餘 provider 原樣。"""
+    kind, _, model_id = target.partition(":")
+    if kind != "anthropic":
+        return target
+    if not has_anthropic_credentials() and has_claude_cli():
+        return f"claude:{model_id}"
+    return target
 
 
 def has_anthropic_credentials() -> bool:
@@ -1425,6 +1470,24 @@ def _build_adapter(spec: str) -> ModelAdapter:
         if not has_claude_cli():
             raise RunCliError("系統未安裝 `claude` CLI（找不到 `claude` 可執行檔）")
         return ClaudeCliAdapter(model=model_id)
+    if kind == "codex":
+        if not rest:
+            raise RunCliError("codex spec 缺 model id：codex:<model>")
+        if not has_codex_cli():
+            raise RunCliError(
+                "系統未安裝 `codex` CLI（找不到 `codex` 可執行檔）。\n"
+                "  安裝後以 `codex login` 建立 OAuth 登入態即可，不需 OPENAI_API_KEY。"
+            )
+        return CodexCliAdapter(model=rest, effort=CLI_EFFORT)
+    if kind == "agy":
+        if not rest:
+            raise RunCliError("agy spec 缺 model id：agy:<model>")
+        if not has_agy_cli():
+            raise RunCliError(
+                "系統未安裝 `agy` CLI（找不到 `agy` 可執行檔）。\n"
+                "  安裝並登入後即可使用，不需 API key。"
+            )
+        return AgyCliAdapter(model=rest, effort=CLI_EFFORT)
     if kind == "anthropic":
         if not rest:
             raise RunCliError("anthropic spec 缺 model id：anthropic:<model>")
@@ -1436,9 +1499,11 @@ def _build_adapter(spec: str) -> ModelAdapter:
             raise RunCliError(
                 "未設定 Anthropic 憑證：\n"
                 "  1. 設 ANTHROPIC_API_KEY，或用 OAuth——`ant auth login` 後 `set -a; eval \"$(ant auth print-credentials --env)\"; set +a`\n"
-                "  2. 若無 Anthropic 金鑰，可用免 Key 地端模型（如 Ollama）：\n"
+                "  2. 改用其他家的 CLI 登入態（同樣不需 API key）：\n"
+                "     patchmud versus <關卡> --models sol,flash   # codex / agy 別名\n"
+                "  3. 若無任何雲端登入，可用免 Key 地端模型（如 Ollama）：\n"
                 "     patchmud versus <關卡> --models openai:llama3@http://localhost:11434/v1,openai:qwen2.5@http://localhost:11434/v1\n"
-                "  3. 或用離線劇本模式：\n"
+                "  4. 或用離線劇本模式：\n"
                 "     patchmud versus <關卡> --models scripted:script1.txt,scripted:script2.txt"
             )
         return AnthropicAdapter(rest, api_key, auth_token=auth_token)

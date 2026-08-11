@@ -10,6 +10,9 @@
 - ``human`` provider（``patchmud play``，spec §5.4）：無任何 token 量測
   事實——互斥欄位**與 billed totals** 全記 ``None``（NA 不記 0，§10.1）；
   usage_raw 必須是空 dict，NA entry 進計價一律 fail-closed。
+- CLI-based provider（``codex`` / ``agy``）欄位名各自成一格，但語意與
+  ``openai`` 相同（cached ⊆ input、reasoning ⊆ output）；差異吸收在
+  mapper 內，adapter 一律原樣透傳。
 """
 
 from __future__ import annotations
@@ -146,6 +149,84 @@ def _map_openai(usage: dict) -> dict:
     )
 
 
+def _split_subset(total: int, part: int | None, *, whole: str, name: str) -> int:
+    """``part ⊆ total`` 的差集；part 超出 total 代表 provider 資料不一致 → 拒收。"""
+    if part is None:
+        return total
+    if part > total:
+        raise LedgerError(f"{name} 超過 {whole}：{part} > {total}")
+    return total - part
+
+
+def _map_codex(usage: dict) -> dict:
+    """codex CLI（``codex exec --json`` 的 ``turn.completed.usage``）。
+
+    欄位名自成一格，但語意與 openai 一致（實測 gpt-5.6-luna：
+    ``output_tokens`` 29 − ``reasoning_output_tokens`` 21 = 8 ≈ 可見回覆量）：
+    ``cached_input_tokens ⊆ input_tokens``、
+    ``reasoning_output_tokens ⊆ output_tokens``。
+    ``cache_write_input_tokens`` 有計價但不屬互斥欄位 → 殘差。
+    """
+    input_tokens = _require_token(usage, "input_tokens")
+    output_tokens = _require_token(usage, "output_tokens")
+    cached = _optional_token(usage, "cached_input_tokens")
+    reasoning = _optional_token(usage, "reasoning_output_tokens")
+    cache_write = _optional_token(usage, "cache_write_input_tokens")
+    return dict(
+        input_uncached=_split_subset(
+            input_tokens, cached, whole="input_tokens", name="cached_input_tokens"
+        ),
+        input_cached=cached,
+        output_visible=_split_subset(
+            output_tokens,
+            reasoning,
+            whole="output_tokens",
+            name="reasoning_output_tokens",
+        ),
+        reasoning=reasoning,
+        billed_input_total=input_tokens,
+        billed_output_total=output_tokens,
+        unallocated=cache_write or 0,
+    )
+
+
+def _map_agy(usage: dict) -> dict:
+    """agy CLI（``agy --print --output-format json`` 的 ``usage``）。
+
+    語意同 openai（實測 gemini-3.6-flash-high：``output_tokens`` 459 −
+    ``thinking_tokens`` 452 = 7 ≈ 可見回覆量）：``cache_read_tokens ⊆
+    input_tokens``、``thinking_tokens ⊆ output_tokens``。
+
+    ``total_tokens`` 是 ``input + output`` 的重述而非獨立計價量，故不進
+    ledger；provider 若給出對不上的值，代表資料不一致 → fail-closed。
+    """
+    input_tokens = _require_token(usage, "input_tokens")
+    output_tokens = _require_token(usage, "output_tokens")
+    cached = _optional_token(usage, "cache_read_tokens")
+    thinking = _optional_token(usage, "thinking_tokens")
+
+    total = _optional_token(usage, "total_tokens")
+    if total is not None and total != input_tokens + output_tokens:
+        raise LedgerError(
+            f"total_tokens 與 input+output 不一致：{total} != "
+            f"{input_tokens} + {output_tokens}"
+        )
+
+    return dict(
+        input_uncached=_split_subset(
+            input_tokens, cached, whole="input_tokens", name="cache_read_tokens"
+        ),
+        input_cached=cached,
+        output_visible=_split_subset(
+            output_tokens, thinking, whole="output_tokens", name="thinking_tokens"
+        ),
+        reasoning=thinking,
+        billed_input_total=input_tokens,
+        billed_output_total=output_tokens,
+        unallocated=0,
+    )
+
+
 def _map_human(usage: dict) -> dict:
     """human adapter（``patchmud play``，spec §5.4）：全欄位 NA。
 
@@ -170,6 +251,8 @@ def _map_human(usage: dict) -> dict:
 _PROVIDER_MAPPERS = {
     "anthropic": _map_anthropic,
     "openai": _map_openai,
+    "codex": _map_codex,
+    "agy": _map_agy,
     "human": _map_human,
 }
 

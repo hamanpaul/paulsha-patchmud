@@ -257,3 +257,156 @@ class TestLedgerEntryContract:
     def test_negative_billed_total_rejected(self):
         with pytest.raises(LedgerError):
             _full_entry(billed_input_total=-1)
+
+
+class TestCodexMapping:
+    """codex CLI（``turn.completed.usage``）：欄位名自成一格，語意同 openai。
+
+    實測基準（`codex exec --json`，gpt-5.6-luna，effort=high）::
+
+        {"input_tokens": 18492, "cached_input_tokens": 8960,
+         "cache_write_input_tokens": 0, "output_tokens": 29,
+         "reasoning_output_tokens": 21}
+
+    回覆文字為 ``1170``（4 bytes），29 − 21 = 8 ≈ visible → 確認
+    ``output_tokens`` 含 ``reasoning_output_tokens``（cached ⊆ input 同理）。
+    """
+
+    def test_exclusive_fields_and_billed_totals(self):
+        entry = map_usage(
+            "codex",
+            {
+                "input_tokens": 18492,
+                "cached_input_tokens": 8960,
+                "cache_write_input_tokens": 0,
+                "output_tokens": 29,
+                "reasoning_output_tokens": 21,
+            },
+            turn=2,
+        )
+        assert entry.input_uncached == 18492 - 8960
+        assert entry.input_cached == 8960
+        assert entry.output_visible == 29 - 21
+        assert entry.reasoning == 21
+        # billed totals 照抄 provider 帳面（F17）。
+        assert entry.billed_input_total == 18492
+        assert entry.billed_output_total == 29
+        assert entry.unallocated == 0
+
+    def test_cache_write_tokens_go_to_unallocated(self):
+        entry = map_usage(
+            "codex",
+            {
+                "input_tokens": 1000,
+                "cached_input_tokens": 0,
+                "cache_write_input_tokens": 250,
+                "output_tokens": 40,
+                "reasoning_output_tokens": 0,
+            },
+        )
+        # cache 寫入有計價但不屬互斥欄位 → 殘差（與 anthropic 同處理）。
+        assert entry.unallocated == 250
+        assert entry.input_uncached == 1000
+
+    def test_undisclosed_optional_fields_are_na_not_zero(self):
+        entry = map_usage("codex", {"input_tokens": 500, "output_tokens": 20})
+        assert entry.input_cached is None
+        assert entry.reasoning is None
+        assert entry.input_uncached == 500
+        assert entry.output_visible == 20
+        assert entry.unallocated == 0
+
+    def test_cached_exceeding_input_is_fail_closed(self):
+        with pytest.raises(LedgerError):
+            map_usage(
+                "codex",
+                {"input_tokens": 100, "cached_input_tokens": 101, "output_tokens": 5},
+            )
+
+    def test_reasoning_exceeding_output_is_fail_closed(self):
+        with pytest.raises(LedgerError):
+            map_usage(
+                "codex",
+                {
+                    "input_tokens": 100,
+                    "output_tokens": 10,
+                    "reasoning_output_tokens": 11,
+                },
+            )
+
+    def test_missing_required_field_is_fail_closed(self):
+        with pytest.raises(LedgerError):
+            map_usage("codex", {"input_tokens": 100})
+
+
+class TestAgyMapping:
+    """agy CLI（``--output-format json`` 的 ``usage``）：語意同 openai。
+
+    實測基準（agy --print，gemini-3.6-flash-high）::
+
+        {"input_tokens": 17874, "output_tokens": 459, "thinking_tokens": 452,
+         "cache_read_tokens": 0, "total_tokens": 18333}
+
+    17874 + 459 = 18333 → ``total_tokens`` 為輸入輸出總和；459 − 452 = 7 ≈
+    回覆 ``1170\\n`` → 確認 ``output_tokens`` 含 ``thinking_tokens``。
+    ``total_tokens`` 可由互斥欄位重算，不進 ledger（不是獨立計價量）。
+    """
+
+    def test_exclusive_fields_and_billed_totals(self):
+        entry = map_usage(
+            "agy",
+            {
+                "input_tokens": 17874,
+                "output_tokens": 459,
+                "thinking_tokens": 452,
+                "cache_read_tokens": 0,
+                "total_tokens": 18333,
+            },
+            turn=4,
+        )
+        assert entry.input_uncached == 17874
+        assert entry.input_cached == 0
+        assert entry.output_visible == 459 - 452
+        assert entry.reasoning == 452
+        assert entry.billed_input_total == 17874
+        assert entry.billed_output_total == 459
+        assert entry.unallocated == 0
+
+    def test_cache_read_is_subset_of_input(self):
+        entry = map_usage(
+            "agy",
+            {
+                "input_tokens": 1000,
+                "output_tokens": 50,
+                "thinking_tokens": 10,
+                "cache_read_tokens": 400,
+            },
+        )
+        assert entry.input_uncached == 600
+        assert entry.input_cached == 400
+        assert entry.billed_input_total == 1000
+
+    def test_undisclosed_optional_fields_are_na_not_zero(self):
+        entry = map_usage("agy", {"input_tokens": 700, "output_tokens": 30})
+        assert entry.input_cached is None
+        assert entry.reasoning is None
+        assert entry.output_visible == 30
+
+    def test_inconsistent_total_tokens_is_fail_closed(self):
+        # total_tokens 與 input+output 對不上 → provider 資料不一致，不得靜默採信。
+        with pytest.raises(LedgerError):
+            map_usage(
+                "agy",
+                {"input_tokens": 100, "output_tokens": 10, "total_tokens": 999},
+            )
+
+    def test_thinking_exceeding_output_is_fail_closed(self):
+        with pytest.raises(LedgerError):
+            map_usage(
+                "agy",
+                {"input_tokens": 100, "output_tokens": 10, "thinking_tokens": 11},
+            )
+
+    def test_missing_required_field_is_fail_closed(self):
+        with pytest.raises(LedgerError):
+            map_usage("agy", {"output_tokens": 10})

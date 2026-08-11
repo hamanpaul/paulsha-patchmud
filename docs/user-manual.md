@@ -74,13 +74,27 @@ PATCH:
 ```bash
 patchmud versus input-validation-v1 --models sonnet,haiku
 ```
+- **可用模型別名**（三家共用同一組短名，可任意混搭對戰）：
+
+  | Provider | 別名 | 認證方式 |
+  |---|---|---|
+  | Anthropic | `sonnet` / `haiku` / `opus` / `fable` | API key 或 OAuth |
+  | OpenAI（codex CLI） | `spark` / `luna` / `terra` / `sol` | `codex login` 的登入態，免 API key |
+  | Google（agy CLI） | `flash` / `pro` | `agy` CLI 登入態，免 API key |
+
+  跨家旗艦對決：
+  ```bash
+  patchmud versus input-validation-v1 --models sonnet,sol,flash
+  ```
 - **認證與 API Key 說明**：
   - 若使用 Anthropic 雲端模型（如 `sonnet`, `haiku`, `opus`），請設定 `export ANTHROPIC_API_KEY=...`，或透過 OAuth 登入：`ant auth login` 後執行 `set -a; eval "$(ant auth print-credentials --env)"; set +a`。
+  - **codex / agy 別名不需要任何 API Key**：只要該 CLI 本身已登入即可，PatchMUD 直接沿用它的登入態。
   - **💡 免 API Key / 地端 Headless 模式**：
-    如果您想在本地 Headless 執行（無須 Anthropic API Key / 無須網路），可搭配本地 Ollama / vLLM / LM Studio 伺服器：
+    如果您想在本地 Headless 執行（無須任何雲端登入 / 無須網路），可搭配本地 Ollama / vLLM / LM Studio 伺服器：
     ```bash
     patchmud versus input-validation-v1 --models openai:llama3@http://localhost:11434/v1,openai:qwen2.5@http://localhost:11434/v1
     ```
+- **關於 CLI 模型的成本讀數**：`claude` / `codex` / `agy` 這類 CLI 自帶 system prompt 與 skill 目錄，每回合都會多算約 1.7 萬～1.8 萬個 input token。這是該工具的固有成本，不是您的關卡造成的——看成本榜時，同一家內部比較最準確，跨家比較請把這層固定開銷考慮進去。
 - **並排看板**：看不同模型在相同的凍結沙盒下，每回合各自做了什麼。
 - **白話戰報**：標示哪個模型「修好了 Bug」、「打空了（Patch 失敗）」或「察看戰場未動手」。
 - **終局記分板與判詞**：顯示哪個模型贏了、贏在哪（例如：更快通關、或花費更少 Token）。
