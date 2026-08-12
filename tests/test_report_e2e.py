@@ -518,3 +518,46 @@ class TestMixedCohortPublication:
             "scripted:quitter",
             "scripted:fixer",
         ]
+
+
+class TestReportRunProvenanceFields:
+    """runs[] 逐列透傳 encounter／end_reason／protocol_failed（issue #24）。
+
+    下游（cortex #452 profile 巷道）要能從 report 層做全覆蓋精確驗證，並把
+    「未通關因協定失敗」與「未通關因修不好」分開——後者才是能力訊號
+    （#21：格式噪音不得被誤讀成能力缺陷）。schema_version 維持 1（純加欄）。
+    """
+
+    def test_runs_rows_carry_encounter_and_end_reason(self, tmp_path) -> None:
+        runs_root = make_fixture_runs(tmp_path)
+        report = run_report(runs_root, tmp_path / "out")
+
+        assert report["schema_version"] == 1  # 加欄不 bump（下游 fail-closed 鎖 1）
+        rows = {row["run_id"]: row for row in report["runs"]}
+        for run_id in ("report-fixer", "report-quitter"):
+            assert rows[run_id]["encounter"] == FIXTURE.name
+            assert rows[run_id]["end_reason"] == "commit"
+            assert rows[run_id]["protocol_failed"] is False
+
+    def test_protocol_failure_distinguishable_from_capability(
+        self, tmp_path
+    ) -> None:
+        """連 3 回合 parse error → failed:protocol 終局；report 列必須可辨。"""
+        runs_root = tmp_path / "runs"
+        make_run(
+            tmp_path,
+            runs_root,
+            run_id="report-jibberish",
+            model="scripted:jibberish",
+            replies=["這不是合法指令", "這不是合法指令", "這不是合法指令"],
+            suite_results=[BASE],
+            evaluator_statuses={HIDDEN: "passed", COMPAT: "passed"},
+            file_changes=(),
+            expected_clear=0,
+        )
+        report = run_report(runs_root, tmp_path / "out")
+
+        (row,) = report["runs"]
+        assert row["clear"] == 0
+        assert row["end_reason"] == "failed:protocol"
+        assert row["protocol_failed"] is True
