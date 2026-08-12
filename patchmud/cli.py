@@ -99,7 +99,15 @@ from patchmud.deck.materialize import materialize_repo
 from patchmud.deck.model import DeckError, IssueCard
 from patchmud.engine import narration
 from patchmud.engine import render_zh_tw as zh
-from patchmud.engine.loop import RunConfig, build_agent_test_runner, run_encounter
+from patchmud.engine.loop import (
+    END_COMMIT,
+    END_MAX_TURNS,
+    END_PROTOCOL,
+    END_WALL_CLOCK,
+    RunConfig,
+    build_agent_test_runner,
+    run_encounter,
+)
 from patchmud.engine.versus import VersusEntry, render_versus, run_versus
 from patchmud.engine.pilot import (
     PilotError,
@@ -1792,6 +1800,9 @@ def _replay_apply(diff: str, worktree: Path) -> None:
 
 REPORT_SCHEMA_VERSION = 1
 
+#: result.yaml end_reason 的合法值域（engine.loop 終局常數；report 透傳前驗證）。
+_END_REASONS = (END_COMMIT, END_MAX_TURNS, END_WALL_CLOCK, END_PROTOCOL)
+
 #: pre-registered EuTB 預算檔的預設位置（§10.4；Task 19 calibrate 產出）。
 DEFAULT_REGISTERED_DIR = Path("analysis/registered")
 _EUTB_BUDGET_FILE = "eutb_budget.yaml"
@@ -1820,7 +1831,10 @@ class _ReportRun:
     run_id: str
     model: str
     loadout: str
+    encounter: str
     clear: int
+    end_reason: str
+    protocol_failed: bool
     power_total: float
     cost: Decimal | None
     cost_reason: str | None
@@ -1964,6 +1978,18 @@ def _load_report_run(run_dir: Path, snapshot: PricingSnapshot | None) -> _Report
     clear = result.get("clear")
     if clear not in (0, 1):
         raise ReportError(f"result.yaml clear 非 0/1（{run_dir.name}）：{clear!r}")
+    end_reason = result.get("end_reason")
+    if end_reason not in _END_REASONS:
+        raise ReportError(
+            f"result.yaml end_reason 非法（{run_dir.name}）：{end_reason!r}"
+            f"（允許 {sorted(_END_REASONS)}）"
+        )
+    protocol_failed = result.get("protocol_failed")
+    if not isinstance(protocol_failed, bool):
+        raise ReportError(
+            f"result.yaml protocol_failed 非 bool（{run_dir.name}）："
+            f"{protocol_failed!r}"
+        )
     power = result.get("power")
     if not isinstance(power, dict) or not isinstance(
         power.get("total"), (int, float)
@@ -1982,7 +2008,10 @@ def _load_report_run(run_dir: Path, snapshot: PricingSnapshot | None) -> _Report
         run_id=str(record["run_id"]),
         model=str(record.get("model", _OFFLINE_NA)),
         loadout=str(result.get("loadout", record.get("loadout", _OFFLINE_NA))),
+        encounter=Path(str(record["encounter_dir"])).name,
         clear=int(clear),
+        end_reason=str(end_reason),
+        protocol_failed=protocol_failed,
         power_total=float(power["total"]),
         cost=cost,
         cost_reason=cost_reason,
@@ -2239,7 +2268,10 @@ def _run_row(run: _ReportRun) -> dict:
         "run_id": run.run_id,
         "model": run.model,
         "loadout": run.loadout,
+        "encounter": run.encounter,
         "clear": run.clear,
+        "end_reason": run.end_reason,
+        "protocol_failed": run.protocol_failed,
         "power_total": run.power_total,
         "cost": _OFFLINE_NA if run.cost is None else str(run.cost),
         "work_tokens": _OFFLINE_NA if run.work_tokens is None else run.work_tokens,

@@ -8,6 +8,7 @@
 ## [Unreleased]
 
 ### Added
+- **report `runs[]` 逐列增列 `encounter`／`end_reason`／`protocol_failed`**（issue #24）——三者皆為封存既有事實（`run.yaml` 的 `encounter_dir`、`result.yaml` 的終局欄位）的透傳，report 層 fail-closed 驗證值域後照錄。動機：下游（paulsha-cortex #452 的 model profile 巷道）需要在 report 層做 deck 全覆蓋的精確驗證（原本只能用 `runs >= encounter_count` 的必要非充分判準），並把「未通關因協定失敗」與「未通關因修不好」分開——#21 的盤點顯示 cost-smoke3 的 4 場失敗全是 unified diff 解析失敗，這種格式噪音不得被下游誤讀成能力缺陷。`schema_version` 維持 1：純加欄，既有欄位與八榜結構不動（下游對 `schema_version != 1` 是 fail-closed 拒絕，bump 反而把相容加欄變成破壞性變更）。
 - **跨 provider adapter：codex（OpenAI）與 agy（Google Gemini）headless 純補全**（issue #14）——新增 `CodexCliAdapter`（`patchmud/adapters/codex_cli.py`）與 `AgyCliAdapter`（`patchmud/adapters/agy_cli.py`），兩者共用新的 `patchmud/adapters/cli_base.py` 骨架（prompt 攤平、注入式 runner、計時）。認證一律走各 CLI 自帶的 OAuth 登入態（`~/.codex/auth.json`、`~/.antigravitycli`），不需 `OPENAI_API_KEY` 或任何 Gemini key。
   - **純補全模式是硬性約束（spec §2）**：codex 以 `--sandbox read-only --ephemeral --skip-git-repo-check --ignore-user-config --disable plugins|memories|goals|hooks --cd <臨時空目錄>` 執行，agy 以 `--sandbox --disable-slash-commands` 執行——工具寫入能力全關，執行 candidate code 的唯一 seam 仍是 `IsolationRunner`。若讓 agent CLI 直接在 encounter workspace 讀寫，等於繞過隔離層、`hidden/` 失去防洩漏保證，且與 `anthropic:*` run 的評分基礎不同而失去可比性。
   - **effort 固定 `high`**（`CLI_EFFORT`）：codex 走 `-c model_reasoning_effort=high`，agy 走 `--effort high`（改用 base model id + 顯式旗標，別名表不必為每個 effort 檔位各列一條）。ranked run 之間的推理預算必須可比，不隨使用者的 CLI 設定漂移；`--ignore-user-config` 一併阻斷 `~/.codex/config.toml` 的 personality／預設 effort／hooks 污染。
