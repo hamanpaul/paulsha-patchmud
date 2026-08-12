@@ -70,6 +70,7 @@ import csv
 import glob as globmod
 import hashlib
 import importlib.util
+import json
 import math
 from importlib import metadata
 import os
@@ -1942,6 +1943,14 @@ def build_report(
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "report.yaml").write_text(
         yaml.safe_dump(report, sort_keys=True, allow_unicode=True),
+        encoding="utf-8",
+    )
+    # 機器契約（issue #26）：同 dict 落 JSON——YAML 供人讀，程式讀 JSON。
+    # PyYAML 的 indentless sequence 與長 scalar 折行對非 PyYAML 極簡 parser
+    # 不友善；allow_nan=False 斷言原始 inf/nan 不得進 report（_num() 已字串化）。
+    (out_dir / "report.json").write_text(
+        json.dumps(report, ensure_ascii=False, sort_keys=True, allow_nan=False)
+        + "\n",
         encoding="utf-8",
     )
     for name in _BOARD_ORDER:

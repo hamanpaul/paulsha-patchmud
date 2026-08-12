@@ -520,6 +520,27 @@ class TestMixedCohortPublication:
         ]
 
 
+class TestReportJsonContract:
+    """report.json 機器契約（issue #26）：同 dict、JSON 落盤，與 YAML 同源。
+
+    動機：PyYAML 的 indentless sequence 與長 scalar 折行，對下游的非 PyYAML
+    極簡 parser（cortex 零依賴 subset parser）不可解——機器讀取走 JSON。
+    """
+
+    def test_report_json_written_and_equals_yaml_dict(self, tmp_path) -> None:
+        import json as jsonmod
+
+        runs_root = make_fixture_runs(tmp_path)
+        out = tmp_path / "out"
+        report = run_report(runs_root, out)
+
+        json_payload = jsonmod.loads(
+            (out / "report.json").read_text(encoding="utf-8")
+        )
+        assert json_payload == report  # 與 report.yaml 同一個 dict，無另設 schema
+        assert json_payload["schema_version"] == 1
+
+
 class TestReportRunProvenanceFields:
     """runs[] 逐列透傳 encounter／end_reason／protocol_failed（issue #24）。
 
