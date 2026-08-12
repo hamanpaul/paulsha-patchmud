@@ -1947,12 +1947,15 @@ def build_report(
     )
     # 機器契約（issue #26）：同 dict 落 JSON——YAML 供人讀，程式讀 JSON。
     # PyYAML 的 indentless sequence 與長 scalar 折行對非 PyYAML 極簡 parser
-    # 不友善；allow_nan=False 斷言原始 inf/nan 不得進 report（_num() 已字串化）。
-    (out_dir / "report.json").write_text(
-        json.dumps(report, ensure_ascii=False, sort_keys=True, allow_nan=False)
-        + "\n",
-        encoding="utf-8",
-    )
+    # 不友善；allow_nan=False 讓原始 inf/nan 在落盤時 fail-loud（inf 由
+    # _num() 字串化，nan 無合法來源——出現即上游資料錯誤，不得靜默放行）。
+    try:
+        report_json = json.dumps(
+            report, ensure_ascii=False, sort_keys=True, allow_nan=False
+        )
+    except (TypeError, ValueError) as exc:
+        raise ReportError(f"report 無法序列化為 JSON：{exc}") from exc
+    (out_dir / "report.json").write_text(report_json + "\n", encoding="utf-8")
     for name in _BOARD_ORDER:
         board = report["leaderboards"][name]
         rows = board.get("rows")
