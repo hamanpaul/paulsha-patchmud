@@ -484,6 +484,46 @@ class TestCodexCliAdapter:
         with pytest.raises(AdapterError):
             adapter.complete(MESSAGES)
 
+    def test_implicit_workdir_is_removed_after_each_call(self) -> None:
+        """對局是多回合的：臨時目錄只建不刪會逐回合累積，長 pilot 吃光 inode。"""
+        import os
+
+        from patchmud.adapters.codex_cli import CodexCliAdapter
+
+        seen: list[str] = []
+
+        def fake_runner(cmd: list[str]) -> str:
+            workdir = cmd[cmd.index("--cd") + 1]
+            seen.append(workdir)
+            # 呼叫進行中，目錄必須存在（codex 要 cd 進去）。
+            assert os.path.isdir(workdir), f"workdir 不存在：{workdir}"
+            return _codex_jsonl("ACTION: LOOK", {"input_tokens": 1, "output_tokens": 1})
+
+        adapter = CodexCliAdapter(runner=fake_runner)
+        for _ in range(3):
+            adapter.complete(MESSAGES)
+
+        assert len(set(seen)) == 3, "每回合應配一個獨立的臨時目錄"
+        for workdir in seen:
+            assert not os.path.exists(workdir), f"臨時目錄未清理：{workdir}"
+
+    def test_explicit_workdir_is_not_removed(self) -> None:
+        """顯式指定的 workdir 由呼叫端擁有，adapter 不得刪除。"""
+        import os
+        import tempfile
+
+        from patchmud.adapters.codex_cli import CodexCliAdapter
+
+        with tempfile.TemporaryDirectory() as owned:
+            adapter = CodexCliAdapter(
+                workdir=owned,
+                runner=lambda _cmd: _codex_jsonl(
+                    "ACTION: LOOK", {"input_tokens": 1, "output_tokens": 1}
+                ),
+            )
+            adapter.complete(MESSAGES)
+            assert os.path.isdir(owned)
+
 
 class TestAgyCliAdapter:
     """agy CLI headless（純補全模式；effort 以 --effort 顯式傳遞）。"""
