@@ -41,8 +41,12 @@ jobs:
           # 測試框架已列在 pyproject 的 runtime 依賴（引擎在沙箱內執行 probe
           # 需要它），不在此重複安裝——多餘之外，也會讓 R-19 的解析器把這個
           # 安裝 step 誤判成測試執行點。
+          #
+          # 不吞安裝失敗（原本結尾有 `|| true`）：測試 gate 現在是無條件的，
+          # 安裝一旦失敗卻靜默放行，後續會以難解的 import error 收場，或更糟
+          # ——測到的是上一次殘留的環境。packaging 壞掉就該當場失敗。
           python -m pip install --upgrade pip
-          if [ -f pyproject.toml ]; then python -m pip install -e ".[test]" || python -m pip install -e . || true; fi
+          python -m pip install -e ".[test]"
           if [ -f requirements.txt ]; then python -m pip install -r requirements.txt; fi
 
       - name: Verify namespace capabilities (F7：不足即失敗，acceptance 不得靜默 skip)
