@@ -1,14 +1,18 @@
 """Claude CLI headless adapter（使用系統上已認證的 `claude` CLI 執行對局）。
 
 - 無需在環境變數設定 `ANTHROPIC_API_KEY` 或 `ANTHROPIC_AUTH_TOKEN`。
-- 以子流程呼叫 `claude --tools "" -p <prompt>` 非互動式極速輸出。
-- usage_raw 填入空字典，使得沒有 API Token 費率時退回通用工作量計量。
+- 以子流程呼叫 `claude --tools "" -p <prompt>` 非互動式極速輸出；`--tools ""`
+  關閉全部工具，維持純補全語意（執行 candidate code 的唯一 seam 仍是
+  ``IsolationRunner``，spec §2）。
+- ``usage_raw`` 原樣透傳 `--output-format json` 回報的 usage（anthropic schema，
+  由 ledger 的 ``map_usage("anthropic", …)`` 拆分）。CLI 未回報可用數值時，以
+  prompt／回覆的字元數估算 input/output tokens 補齊，讓 ledger 有可計費的量而
+  不致崩潰——估算值是 degraded 量測，精度不等同 API 直接回報的 usage。
 """
 
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import subprocess
 import time

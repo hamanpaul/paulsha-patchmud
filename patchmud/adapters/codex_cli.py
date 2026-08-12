@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import tempfile
 
-from patchmud.adapters.base import AdapterError
+from patchmud.adapters.base import AdapterError, AdapterResponse
 from patchmud.adapters.cli_base import CliModelAdapter, iter_json_objects
 
 __all__ = ["CodexCliAdapter"]
@@ -55,10 +55,29 @@ class CodexCliAdapter(CliModelAdapter):
     ) -> None:
         super().__init__(model, binary=codex_binary, **kwargs)
         self._workdir = workdir
+        #: 本次呼叫的臨時工作目錄（只在 complete() 執行期間有值）。
+        self._active_workdir: str | None = None
+
+    def complete(self, messages: list[dict]) -> AdapterResponse:
+        """未指定 workdir 時，每次呼叫配一個用完即刪的臨時空目錄。
+
+        對局是多回合的，每回合一次 ``complete()``；若只建不刪，``/tmp`` 會逐回合
+        累積 ``patchmud-codex-*`` 目錄，長時間 pilot 矩陣會吃光 inode。
+        """
+        if self._workdir is not None:
+            return super().complete(messages)
+        with tempfile.TemporaryDirectory(prefix="patchmud-codex-") as tmp:
+            self._active_workdir = tmp
+            try:
+                return super().complete(messages)
+            finally:
+                self._active_workdir = None
 
     def _build_argv(self, prompt: str) -> list[str]:
-        # workdir 未指定 → 每次呼叫一個新的臨時空目錄（deterministic、無殘留）。
-        workdir = self._workdir or tempfile.mkdtemp(prefix="patchmud-codex-")
+        # 顯式 workdir 優先；否則用 complete() 開的臨時目錄（deterministic、無殘留）。
+        workdir = self._workdir or self._active_workdir
+        if workdir is None:  # pragma: no cover - complete() 保證兩者其一有值
+            raise AdapterError("codex adapter 缺工作目錄（_build_argv 未經 complete 呼叫）")
         argv = [
             self._binary,
             "exec",

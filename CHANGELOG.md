@@ -19,6 +19,9 @@
 - **`opus` 別名更新到 `claude-opus-5`**（原 `claude-opus-4-8`）——兩者同為 1M context、同為 $5/$25 per MTok，是 drop-in 升級。`AnthropicAdapter` 的 `effort`／`thinking` 本次不動：Opus 5 thinking 預設開啟且 `max_tokens` 是 thinking 與回覆的共用上限（目前 4096），要調需連同 `max_tokens` 一起評估，屬獨立的一批改動。
 
 ### Fixed
+- **`CodexCliAdapter` 的臨時工作目錄用完即刪**——未指定 `workdir` 時原本每次 `complete()` 都 `tempfile.mkdtemp()` 卻從不清理；對局是多回合的，`/tmp` 會逐回合累積 `patchmud-codex-*` 空目錄（本次開發期間實測殘留 64 個），長時間 pilot 矩陣會吃光 inode。改用 `TemporaryDirectory` 包住整個呼叫；顯式指定的 `workdir` 由呼叫端擁有，adapter 不得刪除。兩者皆有回歸測試鎖定。
+- **CLI 版號不再硬編**——`patchmud`（無參數、非 TTY）原本印死的 `patchmud 0.0.0`，在 `VERSION` 已是 `0.0.1` 時輸出錯誤資訊。改為讀 `VERSION`（`pyproject.toml` 的 dynamic version 同源），正式安裝時 `VERSION` 不在 package 內則退回 distribution metadata——順序不可顛倒，否則 editable install 會取到安裝當時的舊版號。
+- **`ClaudeCliAdapter` 模組說明與實作對齊**——原文寫「usage_raw 填入空字典」，但實作其實會解析 `--output-format json` 的 usage、缺漏時再以字元數估算補齊；照原文理解會誤判計量策略。一併移除未使用的 `import os`。
 - **`run.yaml` 封存展開後的完整 model spec，不再記使用者打的別名**——`patchmud run --model opus` 原本在 run.yaml 記 `model: opus`。別名表是會演進的間接層（本次 `opus` 就從 `claude-opus-4-8` 改指 `claude-opus-5`），封存只記別名則事後無從得知該場 run 實際跑的是哪個模型，違反「可位元重播」的前提。改記 `normalize_model_spec()` 的結果（如 `codex:gpt-5.6-luna`），與 pilot 路徑（記 `entry.adapter` 完整 spec）及 scripted run 的既有慣例一致；versus 記分板的顯示名不受影響。
 
 ## [0.0.1] - 2026-07-24

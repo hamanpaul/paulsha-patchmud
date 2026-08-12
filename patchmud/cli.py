@@ -71,6 +71,7 @@ import glob as globmod
 import hashlib
 import importlib.util
 import math
+from importlib import metadata
 import os
 import shutil
 import statistics
@@ -366,14 +367,36 @@ def _interactive_menu() -> int:
     return 0
 
 
+def _package_version() -> str:
+    """CLI 顯示用版號；不硬編，避免與 ``VERSION`` 漂移。
+
+    先讀 repo 根的 ``VERSION``（`pyproject.toml` 的 dynamic version 也讀它，
+    是單一真實來源）；source tree 或 editable install 都命中這條。正式安裝時
+    ``VERSION`` 不在 package 內，才退回已安裝的 distribution metadata——反過來
+    的順序在 editable install 下會取到安裝當時的舊版號。兩者都取不到回
+    ``unknown``：顯示字串不值得讓 CLI 失敗。
+    """
+    version_file = Path(__file__).resolve().parent.parent / "VERSION"
+    try:
+        declared = version_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        declared = ""
+    if declared:
+        return declared
+    try:
+        return metadata.version("paulsha-patchmud")
+    except metadata.PackageNotFoundError:
+        return "unknown"
+
+
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
     if not args or args[0] in ("menu", "--interactive", "-i"):
         if sys.stdin.isatty() or (args and args[0] in ("menu", "--interactive", "-i")):
             return _interactive_menu()
         print(
-            "patchmud 0.0.0 — 子命令：validate-deck / author-encounter / score-diff / "
-            "run / versus / play / watch / replay / report / pilot；其餘見 "
+            f"patchmud {_package_version()} — 子命令：validate-deck / author-encounter / "
+            "score-diff / run / versus / play / watch / replay / report / pilot；其餘見 "
             "docs/superpowers/plans/2026-07-16-patchmud-mvp.md"
         )
         return 0
