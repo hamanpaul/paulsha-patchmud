@@ -327,6 +327,26 @@ class TestLiveSpectator:
         LiveSpectator(out=out.append).feed({"type": "note", "x": 1})
         assert out == []
 
+    def test_render_turn_with_claim(self) -> None:
+        events = [
+            {
+                "type": "baseline",
+                "queue": {"open_items": [], "b_t": 0},
+                "probes": {},
+            },
+            {
+                "type": "turn",
+                "turn": 1,
+                "action": "PATCH",
+                "claim": "修復長度檢查 Bug",
+                "outcome": "executed",
+                "queue": {"open_items": [], "b_t": 0},
+                "probes": {},
+            },
+        ]
+        res = render_turn(events, 1)
+        assert "思考鏈" in res and "修復長度檢查 Bug" in res
+
 
 class TestRenderPackSingleSource:
     def test_no_hardcoded_chinese_in_watch_module(self) -> None:

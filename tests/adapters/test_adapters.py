@@ -278,3 +278,346 @@ class TestOpenAICompatAdapter:
             FakeTransport(OPENAI_RESPONSE), clock=FakeClock([5.0, 5.5])
         )
         assert adapter.complete(MESSAGES).wall_ms == 500
+
+
+class TestClaudeCliAdapter:
+    def test_complete_invokes_runner_with_expected_args(self) -> None:
+        import json
+        from patchmud.adapters.claude_cli import ClaudeCliAdapter
+
+        captured_cmd: list[str] = []
+
+        def fake_runner(cmd: list[str]) -> str:
+            captured_cmd.extend(cmd)
+            return json.dumps({"result": "ACTION: RUN_TEST", "usage": {"input_tokens": 10, "output_tokens": 5}})
+
+        adapter = ClaudeCliAdapter(
+            model="claude-haiku-4-5",
+            claude_binary="claude",
+            clock=FakeClock([10.0, 10.25]),
+            runner=fake_runner,
+        )
+        resp = adapter.complete(MESSAGES)
+        assert resp.text == "ACTION: RUN_TEST"
+        assert resp.wall_ms == 250
+        assert resp.usage_raw["input_tokens"] == 10
+        assert resp.usage_raw["output_tokens"] == 5
+        assert "claude" in captured_cmd
+        assert "--model" in captured_cmd
+        assert "claude-haiku-4-5" in captured_cmd
+        assert "--system-prompt" in captured_cmd
+        assert "你是 PatchMUD 的作者 agent。" in captured_cmd[captured_cmd.index("--system-prompt") + 1]
+
+    def test_complete_parses_json_output_and_maps_usage(self) -> None:
+        import json
+        from patchmud.adapters.claude_cli import ClaudeCliAdapter
+        from patchmud.ledger.tokens import map_usage
+
+        fake_json = json.dumps({
+            "result": "ACTION: COMMIT",
+            "usage": {
+                "input_tokens": 100,
+                "output_tokens": 20,
+                "cache_read_input_tokens": 30,
+                "cache_creation_input_tokens": 10,
+            }
+        })
+        adapter = ClaudeCliAdapter(runner=lambda _cmd: fake_json)
+        resp = adapter.complete(MESSAGES)
+        assert resp.text == "ACTION: COMMIT"
+        entry = map_usage("anthropic", resp.usage_raw, turn=1, role="author")
+        assert entry.input_uncached == 100
+        assert entry.output_visible == 20
+
+    def test_complete_fallback_estimated_usage_when_plain_text(self) -> None:
+        from patchmud.adapters.claude_cli import ClaudeCliAdapter
+        from patchmud.ledger.tokens import map_usage
+
+        adapter = ClaudeCliAdapter(runner=lambda _cmd: "ACTION: LOOK")
+        resp = adapter.complete(MESSAGES)
+        assert resp.text == "ACTION: LOOK"
+        # 即使輸出不是 JSON，也會提供合法的 input/output tokens 避免 ledger 崩潰
+        entry = map_usage("anthropic", resp.usage_raw, turn=1, role="author")
+        assert isinstance(entry.input_uncached, int)
+        assert isinstance(entry.output_visible, int)
+
+
+def _codex_jsonl(text: str, usage: dict | None = None) -> str:
+    """codex exec --json 的 JSONL 事件串（含前導雜訊事件）。"""
+    import json
+
+    lines = [
+        {"type": "thread.started", "thread_id": "t1"},
+        {"type": "turn.started"},
+        {
+            "type": "item.completed",
+            "item": {"id": "item_0", "type": "error", "message": "skills trimmed"},
+        },
+        {
+            "type": "item.completed",
+            "item": {"id": "item_1", "type": "agent_message", "text": text},
+        },
+    ]
+    if usage is not None:
+        lines.append({"type": "turn.completed", "usage": usage})
+    return "\n".join(json.dumps(line) for line in lines) + "\n"
+
+
+class TestCodexCliAdapter:
+    """codex CLI headless（純補全模式，spec §2：工具寫入能力一律關閉）。"""
+
+    def test_complete_builds_pure_completion_argv(self) -> None:
+        from patchmud.adapters.codex_cli import CodexCliAdapter
+
+        captured: list[str] = []
+
+        def fake_runner(cmd: list[str]) -> str:
+            captured.extend(cmd)
+            return _codex_jsonl("ACTION: RUN_TEST", {"input_tokens": 10, "output_tokens": 5})
+
+        adapter = CodexCliAdapter(
+            model="gpt-5.6-sol",
+            codex_binary="codex",
+            workdir="/tmp/pm-work",
+            clock=FakeClock([10.0, 10.25]),
+            runner=fake_runner,
+        )
+        resp = adapter.complete(MESSAGES)
+
+        assert resp.text == "ACTION: RUN_TEST"
+        assert resp.wall_ms == 250
+        assert captured[:2] == ["codex", "exec"]
+        assert captured[captured.index("-m") + 1] == "gpt-5.6-sol"
+        # effort 固定 high（issue #14）。
+        assert "model_reasoning_effort=high" in captured
+        # 純補全模式的硬性旗標：不得寫入、不得沾染使用者設定與 git repo。
+        assert captured[captured.index("--sandbox") + 1] == "read-only"
+        assert "--ephemeral" in captured
+        assert "--skip-git-repo-check" in captured
+        assert "--ignore-user-config" in captured
+        assert captured[captured.index("--cd") + 1] == "/tmp/pm-work"
+        assert "--json" in captured
+
+    def test_system_and_chat_messages_are_flattened_into_prompt(self) -> None:
+        from patchmud.adapters.codex_cli import CodexCliAdapter
+
+        captured: list[str] = []
+        adapter = CodexCliAdapter(
+            model="gpt-5.6-luna",
+            runner=lambda cmd: (
+                captured.extend(cmd),
+                _codex_jsonl("ACTION: LOOK", {"input_tokens": 1, "output_tokens": 1}),
+            )[1],
+        )
+        adapter.complete(MESSAGES)
+        prompt = "\n".join(captured)
+        assert "你是 PatchMUD 的作者 agent。" in prompt
+        assert "ACTION: LOOK" in prompt
+
+    def test_usage_passthrough_maps_via_codex_provider(self) -> None:
+        from patchmud.adapters.codex_cli import CodexCliAdapter
+        from patchmud.ledger.tokens import map_usage
+
+        usage = {
+            "input_tokens": 18492,
+            "cached_input_tokens": 8960,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 29,
+            "reasoning_output_tokens": 21,
+        }
+        adapter = CodexCliAdapter(runner=lambda _cmd: _codex_jsonl("ACTION: COMMIT", usage))
+        resp = adapter.complete(MESSAGES)
+
+        assert resp.text == "ACTION: COMMIT"
+        # adapter 原樣透傳，拆分是 ledger 的事（§10.1）。
+        assert resp.usage_raw == usage
+        assert adapter.usage_provider == "codex"
+        entry = map_usage(adapter.usage_provider, resp.usage_raw, turn=1)
+        assert entry.reasoning == 21
+
+    def test_last_agent_message_wins(self) -> None:
+        import json
+
+        from patchmud.adapters.codex_cli import CodexCliAdapter
+
+        stream = "\n".join(
+            json.dumps(line)
+            for line in (
+                {
+                    "type": "item.completed",
+                    "item": {"id": "a", "type": "agent_message", "text": "先說一句"},
+                },
+                {
+                    "type": "item.completed",
+                    "item": {"id": "b", "type": "agent_message", "text": "ACTION: COMMIT"},
+                },
+                {"type": "turn.completed", "usage": {"input_tokens": 1, "output_tokens": 1}},
+            )
+        )
+        adapter = CodexCliAdapter(runner=lambda _cmd: stream)
+        assert adapter.complete(MESSAGES).text == "ACTION: COMMIT"
+
+    def test_missing_agent_message_is_fail_closed(self) -> None:
+        import json
+
+        from patchmud.adapters.base import AdapterError
+        from patchmud.adapters.codex_cli import CodexCliAdapter
+
+        stream = json.dumps({"type": "turn.completed", "usage": {"input_tokens": 1, "output_tokens": 1}})
+        adapter = CodexCliAdapter(runner=lambda _cmd: stream)
+        with pytest.raises(AdapterError):
+            adapter.complete(MESSAGES)
+
+    def test_missing_usage_is_fail_closed(self) -> None:
+        from patchmud.adapters.base import AdapterError
+        from patchmud.adapters.codex_cli import CodexCliAdapter
+
+        adapter = CodexCliAdapter(runner=lambda _cmd: _codex_jsonl("ACTION: LOOK"))
+        with pytest.raises(AdapterError):
+            adapter.complete(MESSAGES)
+
+    def test_unparseable_output_is_fail_closed(self) -> None:
+        from patchmud.adapters.base import AdapterError
+        from patchmud.adapters.codex_cli import CodexCliAdapter
+
+        adapter = CodexCliAdapter(runner=lambda _cmd: "not json at all")
+        with pytest.raises(AdapterError):
+            adapter.complete(MESSAGES)
+
+    def test_implicit_workdir_is_removed_after_each_call(self) -> None:
+        """對局是多回合的：臨時目錄只建不刪會逐回合累積，長 pilot 吃光 inode。"""
+        import os
+
+        from patchmud.adapters.codex_cli import CodexCliAdapter
+
+        seen: list[str] = []
+
+        def fake_runner(cmd: list[str]) -> str:
+            workdir = cmd[cmd.index("--cd") + 1]
+            seen.append(workdir)
+            # 呼叫進行中，目錄必須存在（codex 要 cd 進去）。
+            assert os.path.isdir(workdir), f"workdir 不存在：{workdir}"
+            return _codex_jsonl("ACTION: LOOK", {"input_tokens": 1, "output_tokens": 1})
+
+        adapter = CodexCliAdapter(runner=fake_runner)
+        for _ in range(3):
+            adapter.complete(MESSAGES)
+
+        assert len(set(seen)) == 3, "每回合應配一個獨立的臨時目錄"
+        for workdir in seen:
+            assert not os.path.exists(workdir), f"臨時目錄未清理：{workdir}"
+
+    def test_explicit_workdir_is_not_removed(self) -> None:
+        """顯式指定的 workdir 由呼叫端擁有，adapter 不得刪除。"""
+        import os
+        import tempfile
+
+        from patchmud.adapters.codex_cli import CodexCliAdapter
+
+        with tempfile.TemporaryDirectory() as owned:
+            adapter = CodexCliAdapter(
+                workdir=owned,
+                runner=lambda _cmd: _codex_jsonl(
+                    "ACTION: LOOK", {"input_tokens": 1, "output_tokens": 1}
+                ),
+            )
+            adapter.complete(MESSAGES)
+            assert os.path.isdir(owned)
+
+
+class TestAgyCliAdapter:
+    """agy CLI headless（純補全模式；effort 以 --effort 顯式傳遞）。"""
+
+    def _payload(self, text: str, **overrides) -> str:
+        import json
+
+        body = {
+            "conversation_id": "c1",
+            "status": "SUCCESS",
+            "response": text,
+            "num_turns": 1,
+            "usage": {
+                "input_tokens": 17874,
+                "output_tokens": 459,
+                "thinking_tokens": 452,
+                "cache_read_tokens": 0,
+                "total_tokens": 18333,
+            },
+        }
+        body.update(overrides)
+        return json.dumps(body)
+
+    def test_complete_builds_pure_completion_argv(self) -> None:
+        from patchmud.adapters.agy_cli import AgyCliAdapter
+
+        captured: list[str] = []
+
+        def fake_runner(cmd: list[str]) -> str:
+            captured.extend(cmd)
+            return self._payload("ACTION: RUN_TEST\n")
+
+        adapter = AgyCliAdapter(
+            model="gemini-3.6-flash",
+            agy_binary="agy",
+            clock=FakeClock([1.0, 2.5]),
+            runner=fake_runner,
+        )
+        resp = adapter.complete(MESSAGES)
+
+        assert resp.text == "ACTION: RUN_TEST"  # 尾端換行去除
+        assert resp.wall_ms == 1500
+        assert captured[0] == "agy"
+        assert "--print" in captured
+        assert captured[captured.index("--model") + 1] == "gemini-3.6-flash"
+        assert captured[captured.index("--effort") + 1] == "high"
+        assert captured[captured.index("--output-format") + 1] == "json"
+        # 純補全模式：關閉 slash/skill 展開與終端寫入能力。
+        assert "--disable-slash-commands" in captured
+        assert "--sandbox" in captured
+
+    def test_usage_passthrough_maps_via_agy_provider(self) -> None:
+        from patchmud.adapters.agy_cli import AgyCliAdapter
+        from patchmud.ledger.tokens import map_usage
+
+        adapter = AgyCliAdapter(runner=lambda _cmd: self._payload("ACTION: COMMIT"))
+        resp = adapter.complete(MESSAGES)
+
+        assert adapter.usage_provider == "agy"
+        assert resp.usage_raw["thinking_tokens"] == 452
+        entry = map_usage(adapter.usage_provider, resp.usage_raw, turn=1)
+        assert entry.reasoning == 452
+        assert entry.output_visible == 7
+
+    def test_non_success_status_is_fail_closed(self) -> None:
+        from patchmud.adapters.agy_cli import AgyCliAdapter
+        from patchmud.adapters.base import AdapterError
+
+        adapter = AgyCliAdapter(
+            runner=lambda _cmd: self._payload("", status="ERROR"),
+        )
+        with pytest.raises(AdapterError):
+            adapter.complete(MESSAGES)
+
+    def test_missing_usage_is_fail_closed(self) -> None:
+        import json
+
+        from patchmud.adapters.agy_cli import AgyCliAdapter
+        from patchmud.adapters.base import AdapterError
+
+        adapter = AgyCliAdapter(
+            runner=lambda _cmd: json.dumps(
+                {"status": "SUCCESS", "response": "ACTION: LOOK"}
+            ),
+        )
+        with pytest.raises(AdapterError):
+            adapter.complete(MESSAGES)
+
+    def test_unparseable_output_is_fail_closed(self) -> None:
+        from patchmud.adapters.agy_cli import AgyCliAdapter
+        from patchmud.adapters.base import AdapterError
+
+        adapter = AgyCliAdapter(runner=lambda _cmd: "Fetching available models...")
+        with pytest.raises(AdapterError):
+            adapter.complete(MESSAGES)
+
+

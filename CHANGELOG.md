@@ -3,9 +3,35 @@
 本專案所有重大變更都會記錄在此檔案。
 
 格式基於 [Keep a Changelog 1.1.0](https://keepachangelog.com/zh-TW/1.1.0/)，
-本專案目前遵循 hamanpaul project policy v1.0.14。
+本專案目前遵循 hamanpaul project policy v1.0.15。
 
 ## [Unreleased]
+
+### Added
+- **跨 provider adapter：codex（OpenAI）與 agy（Google Gemini）headless 純補全**（issue #14）——新增 `CodexCliAdapter`（`patchmud/adapters/codex_cli.py`）與 `AgyCliAdapter`（`patchmud/adapters/agy_cli.py`），兩者共用新的 `patchmud/adapters/cli_base.py` 骨架（prompt 攤平、注入式 runner、計時）。認證一律走各 CLI 自帶的 OAuth 登入態（`~/.codex/auth.json`、`~/.antigravitycli`），不需 `OPENAI_API_KEY` 或任何 Gemini key。
+  - **純補全模式是硬性約束（spec §2）**：codex 以 `--sandbox read-only --ephemeral --skip-git-repo-check --ignore-user-config --disable plugins|memories|goals|hooks --cd <臨時空目錄>` 執行，agy 以 `--sandbox --disable-slash-commands` 執行——工具寫入能力全關，執行 candidate code 的唯一 seam 仍是 `IsolationRunner`。若讓 agent CLI 直接在 encounter workspace 讀寫，等於繞過隔離層、`hidden/` 失去防洩漏保證，且與 `anthropic:*` run 的評分基礎不同而失去可比性。
+  - **effort 固定 `high`**（`CLI_EFFORT`）：codex 走 `-c model_reasoning_effort=high`，agy 走 `--effort high`（改用 base model id + 顯式旗標，別名表不必為每個 effort 檔位各列一條）。ranked run 之間的推理預算必須可比，不隨使用者的 CLI 設定漂移；`--ignore-user-config` 一併阻斷 `~/.codex/config.toml` 的 personality／預設 effort／hooks 污染。
+  - **ledger 新增 `codex` 與 `agy` 兩個 provider mapper**（`patchmud/ledger/tokens.py`）：兩家 CLI 的 usage 欄位名各自成一格（codex：`input_tokens`／`cached_input_tokens`／`cache_write_input_tokens`／`output_tokens`／`reasoning_output_tokens`；agy：`input_tokens`／`output_tokens`／`thinking_tokens`／`cache_read_tokens`／`total_tokens`），但語意與 openai 相同（cached ⊆ input、reasoning ⊆ output）——已以真 CLI 實測佐證（codex 29−21=8、agy 459−452=7，皆對應可見回覆量；agy `total = input + output`）。差異吸收在 mapper 內，adapter 一律原樣透傳（§10.1）。agy 的 `total_tokens` 與 `input+output` 對不上、任一子集超出母集、必填欄位缺漏一律 fail-closed。
+  - **新別名**：`spark`（gpt-5.3-codex-spark）／`luna`（gpt-5.6-luna）／`terra`（gpt-5.6-terra）／`sol`（gpt-5.6-sol）／`flash`（gemini-3.6-flash）／`pro`（gemini-3.1-pro）。三家共用同一個短別名命名空間；`codex:` / `agy:` 別名不受 Anthropic 憑證狀態影響，也不會被 claude CLI fallback 劫持。互動選單新增「Claude vs GPT vs Gemini（跨家旗艦對決）」preset。
+  - **計量特性（已知且刻意不扣除）**：CLI 自帶 system prompt 與 skill 目錄，每回合有固定的 input overhead（實測 codex ≈17k、agy ≈18k tokens），且每次呼叫都重新計入。這屬於該 provider 的既有成本結構，跨家比較 economy 維度時需知悉其存在；既有的 `ClaudeCliAdapter` 同樣具此特性。
+
+### Changed
+- **`opus` 別名更新到 `claude-opus-5`**（原 `claude-opus-4-8`）——兩者同為 1M context、同為 $5/$25 per MTok，是 drop-in 升級。`AnthropicAdapter` 的 `effort`／`thinking` 本次不動：Opus 5 thinking 預設開啟且 `max_tokens` 是 thinking 與回覆的共用上限（目前 4096），要調需連同 `max_tokens` 一起評估，屬獨立的一批改動。
+
+### Fixed
+- **`CodexCliAdapter` 的臨時工作目錄用完即刪**——未指定 `workdir` 時原本每次 `complete()` 都 `tempfile.mkdtemp()` 卻從不清理；對局是多回合的，`/tmp` 會逐回合累積 `patchmud-codex-*` 空目錄（本次開發期間實測殘留 64 個），長時間 pilot 矩陣會吃光 inode。改用 `TemporaryDirectory` 包住整個呼叫；顯式指定的 `workdir` 由呼叫端擁有，adapter 不得刪除。兩者皆有回歸測試鎖定。
+- **CLI 版號不再硬編**——`patchmud`（無參數、非 TTY）原本印死的 `patchmud 0.0.0`，在 `VERSION` 已是 `0.0.1` 時輸出錯誤資訊。改為讀 `VERSION`（`pyproject.toml` 的 dynamic version 同源），正式安裝時 `VERSION` 不在 package 內則退回 distribution metadata——順序不可顛倒，否則 editable install 會取到安裝當時的舊版號。
+- **`ClaudeCliAdapter` 模組說明與實作對齊**——原文寫「usage_raw 填入空字典」，但實作其實會解析 `--output-format json` 的 usage、缺漏時再以字元數估算補齊；照原文理解會誤判計量策略。一併移除未使用的 `import os`。
+- **`run.yaml` 封存展開後的完整 model spec，不再記使用者打的別名**——`patchmud run --model opus` 原本在 run.yaml 記 `model: opus`。別名表是會演進的間接層（本次 `opus` 就從 `claude-opus-4-8` 改指 `claude-opus-5`），封存只記別名則事後無從得知該場 run 實際跑的是哪個模型，違反「可位元重播」的前提。改記 `normalize_model_spec()` 的結果（如 `codex:gpt-5.6-luna`），與 pilot 路徑（記 `entry.adapter` 完整 spec）及 scripted run 的既有慣例一致；versus 記分板的顯示名不受影響。
+
+## [0.0.1] - 2026-07-24
+
+### Added
+- **UI/UX 與對局可讀性強化（Junior Engineer & Spectator Manual）**：
+  - **docs/user-manual.md**：新增專門針對 Junior Engineer 玩家與旁觀者（Spectator）的詳細指南（含關卡結構、推薦四大步驟、PATCH 語法範例、watch 戰報與 versus 並排對戰說明、三維計分），並於 `README.md` 建立連結。
+  - **互動式選單 CLI**：直接執行 `patchmud`（或 `patchmud menu` / `--interactive`）可啟動選單，透過編號輕鬆選擇關卡與對戰模型；在缺漏參數時自動進入互動選關／選模型流程。
+  - **Junior Engineer 白話規則與對局指引**：改寫 `play.banner`，提供繁體中文步驟指南與 Unified Diff 實作範例（bump `RENDER_PACK_VERSION` 至 1.7.0）。
+  - **Claude CLI Headless Adapter**：新增 `ClaudeCliAdapter` (`patchmud/adapters/claude_cli.py`)。若系統上已安裝 `claude` CLI 且未在環境變數設定 Anthropic API Key，`patchmud versus` / `run` 會自動無縫走系統 `claude` CLI 非互動 headless 模式（以 `--output-format json` 帶入 Token 使用量與結構化輸出），完全無需手動設定 API Key 或 OAuth Token。
 
 ### Fixed
   - **codex F5（major）frozen deck drift 偵測**：每個 encounter 的 provenance pin `content_sha256`（card + repo/** + hidden/**，排除快取與 reference_timings），`validate-deck` 重算比對，改動 repo/src、hidden 測資或 card 而未同步 pin 一律 fail；pilot-v1 全 8 卡已 pin。codex F8（perf probe 量測品質）、F9（e2e mid-run 保真）列為 spec §14 deferred（非可利用洞）。

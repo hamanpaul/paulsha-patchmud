@@ -118,3 +118,7 @@ class TestTwoTurnFix:
             (run_dir / "run.yaml").read_text(encoding="utf-8")
         )
         assert "render-zh-TW" in run_record["harness_prompt_version"]
+        # 封存的 model 是展開後的完整 spec，不是使用者打的別名——別名表會演進
+        # （`opus` 曾指向 claude-opus-4-8），封存只記別名則事後無從還原當時
+        # 實際跑的模型。
+        assert run_record["model"] == f"scripted:{script}"

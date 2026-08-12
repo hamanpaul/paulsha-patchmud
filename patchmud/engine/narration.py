@@ -35,17 +35,22 @@ def narrate_round(rd: dict) -> str:
     action = rd.get("action") or zh.text("na")
     outcome = rd.get("outcome")
     resolved = rd.get("resolved") or []
+    claim = rd.get("claim")
+    claim_text = f"（意圖：「{claim}」）" if claim else ""
     if outcome == "parse_error":
-        return zh.text("versus.round.parse_error", after=after)
+        return zh.text("versus.round.parse_error", after=after) + claim_text
     if outcome == "illegal":
-        return zh.text("versus.round.illegal", action=action, after=after)
+        return zh.text("versus.round.illegal", action=action, after=after) + claim_text
     if resolved:
-        return zh.text(
-            "versus.round.resolved",
-            action=action,
-            ids="、".join(resolved),
-            before=rd.get("backlog_before"),
-            after=after,
+        return (
+            zh.text(
+                "versus.round.resolved",
+                action=action,
+                ids="、".join(resolved),
+                before=rd.get("backlog_before"),
+                after=after,
+            )
+            + claim_text
         )
     if action == "PATCH":
         key = (
@@ -53,10 +58,10 @@ def narrate_round(rd: dict) -> str:
             if outcome == "error"
             else "versus.round.patch_noop"
         )
-        return zh.text(key, after=after)
+        return zh.text(key, after=after) + claim_text
     if action == "COMMIT":
-        return zh.text("versus.round.commit", after=after)
-    return zh.text("versus.round.observed", action=action, after=after)
+        return zh.text("versus.round.commit", after=after) + claim_text
+    return zh.text("versus.round.observed", action=action, after=after) + claim_text
 
 
 def _power_num(entry: object) -> float:

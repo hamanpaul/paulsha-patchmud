@@ -14,6 +14,8 @@
 - 研究報告：`docs/PatchMUD_research_report_zh-TW_v0.2.md`
 - Spec（v1.1，經 codex gpt-5.6-sol 對抗審查）：`docs/superpowers/specs/2026-07-16-patchmud-mvp-design.md`
 - 實作計劃（21 tasks）：`docs/superpowers/plans/2026-07-16-patchmud-mvp.md`
+- 跨 provider adapter 設計（codex / agy OAuth headless）：`docs/superpowers/specs/2026-08-11-multi-provider-adapters-design.md`
+- 玩家與旁觀者指南：[`docs/user-manual.md`](docs/user-manual.md)
 
 ## Install
 
@@ -41,8 +43,17 @@ patchmud report --runs "runs/*"                # 多榜研究報告（模型比�
 ```
 
 - 關卡可只打名字（自動找 `decks/pilot-v1/<名字>`），`--loadout` 預設 `P0T0R0`（SOLO）。最短：`patchmud play input-validation-v1`。
-- 模型別名：`sonnet` / `haiku` / `opus` / `fable`（展開為對應的 `anthropic:claude-*`）。
-- 認證兩選一：`export ANTHROPIC_API_KEY=…`，**或** 用 Claude 帳號 OAuth——`ant auth login` 後 `set -a; eval "$(ant auth print-credentials --env)"; set +a`（設定 `ANTHROPIC_AUTH_TOKEN`，不必管 API key）。
+- 模型別名（三家共用同一組短名）：
+
+  | Provider | 別名 | 展開後 | 認證 |
+  |---|---|---|---|
+  | Anthropic | `sonnet` / `haiku` / `opus` / `fable` | `anthropic:claude-*` | API key 或 OAuth bearer；缺憑證且有 `claude` CLI 時自動改走 CLI |
+  | OpenAI | `spark` / `luna` / `terra` / `sol` | `codex:gpt-5.3-codex-spark` / `gpt-5.6-luna` / `gpt-5.6-terra` / `gpt-5.6-sol` | `codex login` 的 OAuth 登入態（`~/.codex/auth.json`） |
+  | Google | `flash` / `pro` | `agy:gemini-3.6-flash` / `agy:gemini-3.1-pro` | `agy` CLI 登入態（`~/.antigravitycli`） |
+
+  跨家對戰：`patchmud versus input-validation-v1 --models sonnet,sol,flash`。
+- Anthropic 認證兩選一：`export ANTHROPIC_API_KEY=…`，**或** 用 Claude 帳號 OAuth——`ant auth login` 後 `set -a; eval "$(ant auth print-credentials --env)"; set +a`（設定 `ANTHROPIC_AUTH_TOKEN`，不必管 API key）。codex 與 agy 別名走各自 CLI 的登入態，不需要任何 API key 環境變數。
+- CLI-based adapter（`claude` / `codex` / `agy`）一律以**純補全模式**執行：工具寫入能力全關、在臨時空目錄執行，執行 candidate code 的唯一 seam 仍是 `IsolationRunner`；`codex` / `agy` 的 reasoning effort 固定 `high`，不隨使用者的 CLI 設定漂移。代價是 CLI 自帶的 system prompt 與 skill 目錄會產生每回合固定的 input token overhead（實測 codex ≈17k、agy ≈18k），跨家比較 economy 維度時需知悉。
 - 出題（把已解決的 closed bug 結構化凍結成新關卡、含 bug/fix 品質閘）見 [`docs/authoring/README.md`](docs/authoring/README.md)。
 
 ## Version

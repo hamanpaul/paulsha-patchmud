@@ -30,7 +30,8 @@ RENDER_LANGUAGE = "zh-TW"
 #: 1.4.0：新增 `patchmud watch` 戰報文案（Task 23；既有文案不變）。
 #: 1.5.0：新增 versus 白話戰報——briefing／每回合人話敘述／verdict（Part A）。
 #: 1.6.0：play.banner 改寫為無程式背景可懂的白話規則（開場即上手）。
-RENDER_PACK_VERSION = "1.6.0"
+#: 1.7.0：新增 Junior Engineer 四步驟對局指引與 unified diff 範例，新增 watch.claim 意圖思考鏈文案。
+RENDER_PACK_VERSION = "1.7.0"
 
 
 class RenderError(Exception):
@@ -212,26 +213,32 @@ MESSAGES: dict[str, str] = {
     "loop.probe_line": "- {probe_id}：{status}",
     # ---- human 對局（patchmud play，spec §5.4；Task 22） -------------------
     "play.banner": (
-        "════════ 怎麼玩 PatchMUD ════════\n"
-        "這是一款「修東西」的回合制遊戲。這一關給你一台壞掉的小程式，它有個"
-        "毛病；你的任務是找出毛病、把它修好。\n\n"
-        "■ 目標：把畫面上的「待辦」數字降到 0（那是還沒解決的問題數，"
-        "開場通常是 1）。\n\n"
-        "■ 玩法：一回合只做一件事。每回合打一個動作，最後空一行送出"
-        "（想直接收場按 Ctrl-D）。回合數與時間都有上限，別亂逛。\n\n"
-        "■ 你能做的動作（打左邊那個英文關鍵字）：\n"
-        "   LOOK              看這關有哪些檔案\n"
-        "   INSPECT <檔名>    仔細看某個檔的內容\n"
-        "   PATCH             動手修（下一行起用「PATCH:」附上你的修改）\n"
-        "   RUN_TEST          試跑測試看紅綠\n"
-        "   COMMIT            宣布完工，進最終評分\n\n"
-        "■ 怎麼算贏：送出修理後系統會自動測；修對了「待辦」歸 0。你 COMMIT "
-        "後進評分，給你「通關／未通關」和一個分數（最高 100，越乾淨越省回合"
-        "越高）。\n\n"
-        "■ 最刁鑽的一條：有一批考題是藏起來、你看不到的。看得到的測試過了，"
-        "不代表真的修好——要真的搞懂毛病，別只讓表面過關。\n\n"
-        "（這是你親自玩的場次，不列入任何排名。若「PATCH 怎麼寫」讓你卡住——"
-        "那步要編輯程式碼；只想看熱鬧的話，改用 versus 看 AI 對決。）\n"
+        "════════════════════════════════════════════════════════════\n"
+        "             🎮 怎麼玩 PatchMUD 程式修補對局 🎮\n"
+        "════════════════════════════════════════════════════════════\n"
+        "這是一款「修東西」的回合制遊戲。關卡內會給您一台壞掉的小程式，\n"
+        "您的目標是在有限回合內找出毛病、將「待辦議題 (Backlog)」降為 0！\n\n"
+        "💡 【Junior Engineer 推薦四步驟指引】：\n"
+        "  1️⃣ 檢視專案：打 `LOOK` 或 `INSPECT <檔名>` 觀察原始碼結構與 Bug。\n"
+        "  2️⃣ 試跑測試：打 `RUN_TEST` 看公開測試在哪裡出錯（確認紅燈）。\n"
+        "  3️⃣ 動手修補：打 `PATCH` 並附上 Unified Diff 來修改程式。\n"
+        "  4️⃣ 宣布完工：待辦歸 0 且測試全綠後，打 `COMMIT` 送出收場！\n\n"
+        "🛠️ 【PATCH 命令格式範例】（Unified Diff 格式）：\n"
+        "   ACTION: PATCH\n"
+        "   TARGET_ISSUES: MAIN-1\n"
+        "   CLAIM: 修正折扣碼長度限制 (6-10字元)\n"
+        "   PATCH:\n"
+        "   --- a/src/discount.py\n"
+        "   +++ b/src/discount.py\n"
+        "   @@ -13,4 +13,6 @@\n"
+        "            return False\n"
+        "   +    if not (6 <= len(code) <= 10):\n"
+        "   +        return False\n"
+        "        return code.isalnum()\n\n"
+        "🏆 【勝利與評分標準】：\n"
+        "   修對了待辦降為 0，`COMMIT` 後系統會執行隱藏測試（Critical Rubrics），\n"
+        "   給出「通關／未通關」與綜合能力得分（最高 100 分，越乾淨越省回合越高）。\n\n"
+        "（這是您親自玩的場次，不列入任何排名。只想看熱鬧的話，改用 versus 看 AI 對決。）\n"
         "下面是精確的指令格式，照著打即可 ↓"
     ),
     "play.input_prompt": "請輸入你的動作（回覆以空行結束；Ctrl-D 視同 COMMIT）：",
@@ -242,6 +249,7 @@ MESSAGES: dict[str, str] = {
     "watch.turn_header": "=== 回合 {turn} ===",
     "watch.action": "【行動】{action}——{verdict}",
     "watch.action_unparsed": "【行動】（回覆無法解析，未宣告任何動作）",
+    "watch.claim": "【模型意圖／思考鏈】{claim}",
     "watch.outcome.executed": "動作完成",
     "watch.outcome.parse_error": "回覆無法解析（照樣消耗一回合）",
     "watch.outcome.illegal": "動作不合法（照樣消耗一回合）",

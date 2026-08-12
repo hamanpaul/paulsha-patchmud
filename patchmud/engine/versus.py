@@ -149,6 +149,7 @@ def _timeline(events: list[dict]) -> list[dict]:
                 {
                     "baseline": False,
                     "action": event.get("action"),
+                    "claim": event.get("claim"),
                     "outcome": event.get("outcome"),
                     "resolved": sorted(prev_open - open_ids),
                     "backlog_before": prev_backlog,

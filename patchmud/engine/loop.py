@@ -297,6 +297,7 @@ class _Session:
             "type": "turn",
             "turn": turn,
             "action": outcome.action.keyword if outcome.action else None,
+            "claim": outcome.action.claim if outcome.action else None,
             "outcome": outcome.kind,
             "detail": outcome.detail,
             "checkpoint": checkpoint,
