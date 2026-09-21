@@ -1,0 +1,9 @@
+{
+  "service": "widget-api",
+  "source_commit": "8f31c0d9b7e4",
+  "tree_digest": "sha256:tree-8f31c0d9",
+  "artifact_digest": "sha256:artifact-44b7",
+  "build_id": "build-742",
+  "builder": "public-ci-linux-amd64",
+  "source_identity_status": "reproducible"
+}

@@ -1,0 +1,19 @@
+{
+  "kind": "patch",
+  "outcome_class": "code_change",
+  "reference": {
+    "final_report": "Implemented the optional source field through the parser, validator, serializer, and CLI adapter only. Legacy input remains accepted, and a missing source is omitted from JSON instead of becoming an invented null field; new source values appear in deterministic id/payload/source order. An explicitly empty source fails before serialization with the stable validation error, while legacy text remains byte-for-byte unchanged. The public tests cover legacy text, optional and empty source, legacy JSON shape, new JSON bytes, and the absence of a text prefix.",
+    "patch_file": "hidden/reference.patch",
+    "expected_quality": {"fulfillment": 4, "evidence": 4, "constraints": 4, "verification": 4}
+  },
+  "partial": {
+    "final_report": "Rejected an empty source but left the serializer emitting source null for legacy JSON and did not demonstrate deterministic new output. Validation is improved while backward-compatible schema handling remains partial.",
+    "patch_file": "hidden/partial.patch",
+    "expected_quality": {"fulfillment": 2, "evidence": 2, "constraints": 4, "verification": 1}
+  },
+  "wrong": {
+    "final_report": "Added a source prefix to the legacy text summary and declared the schema extension complete. The legacy bytes, empty-source validation, and JSON contract were not verified.",
+    "patch_file": "hidden/wrong.patch",
+    "expected_quality": {"fulfillment": 0, "evidence": 0, "constraints": 1, "verification": 0}
+  }
+}

@@ -1,0 +1,19 @@
+diff --git a/src/records.py b/src/records.py
+index 284f84e..ace9a73 100644
+--- a/src/records.py
++++ b/src/records.py
+@@ -3,8 +3,12 @@ class RecordStore:
+         self.rows = [dict(row) for row in rows]
+ 
+     def write_v2(self, row):
+-        # Bug: a replay appends another copy instead of replacing by id.
+-        self.rows.append({"id": row["id"], "name": row["name"], "version": 2})
++        updated = {"id": row["id"], "name": row["name"], "version": 2}
++        for index, current in enumerate(self.rows):
++            if current["id"] == row["id"]:
++                self.rows[index] = updated
++                return
++        self.rows.append(updated)
+ 
+     def snapshot(self):
+         return [dict(row) for row in self.rows]

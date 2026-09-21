@@ -1,0 +1,4 @@
+[retry]
+attempts = 3
+timeout_seconds = 2
+delivery_confirmation = "header:X-Delivery-Id"

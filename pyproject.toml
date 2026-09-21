@@ -14,6 +14,7 @@ test = ["pytest>=8", "ruff"]
 
 [project.scripts]
 patchmud = "patchmud.cli:main"
+paulsha-patchmud = "patchmud.scoring.cli:main"
 
 [tool.setuptools.dynamic]
 version = {file = "VERSION"}
@@ -21,6 +22,13 @@ version = {file = "VERSION"}
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["patchmud*"]
+exclude = ["patchmud.scoring.data*"]
+
+[tool.setuptools.package-data]
+"patchmud.scoring" = ["data/**/*"]
+
+[tool.setuptools.exclude-package-data]
+"patchmud.scoring" = ["**/__pycache__/*", "**/*.pyc", "**/.pytest_cache/*", "**/.git/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

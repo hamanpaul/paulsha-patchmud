@@ -1,0 +1,9 @@
+2026-09-21T09:01:02Z version=2.4 request=r17 attempt=1 status=timeout
+2026-09-21T09:01:04Z version=2.4 request=r17 attempt=2 status=202 delivery=d91
+2026-09-21T09:01:04Z version=2.4 request=r17 delivered=1
+2026-09-21T09:03:11Z version=2.4 request=r18 attempt=1 status=timeout
+2026-09-21T09:03:13Z version=2.4 request=r18 attempt=2 status=202 delivery=d92
+2026-09-21T09:03:13Z version=2.4 request=r18 delivered=1
+2026-09-21T09:11:08Z version=2.5 request=r19 attempt=1 status=202 delivery=d93
+2026-09-21T09:11:08Z version=2.5 request=r19 delivered=1
+2026-09-21T09:12:00Z summary attempts=8 deliveries=3 duplicate_delivery_ids=0

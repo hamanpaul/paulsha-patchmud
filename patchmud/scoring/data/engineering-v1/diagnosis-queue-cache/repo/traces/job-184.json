@@ -1,0 +1,8 @@
+{
+  "job": "184",
+  "broker_received": "2026-09-21T10:00:00Z",
+  "cache_decoded": "2026-09-21T10:00:01Z",
+  "handler_started": "2026-09-21T10:00:02Z",
+  "broker_visible_at_start": 0,
+  "cache_pending_at_start": 7
+}

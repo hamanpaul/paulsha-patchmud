@@ -1,0 +1,19 @@
+{
+  "sbom_format": "synthetic-cyclonedx-1.5",
+  "generated_for": "build-811",
+  "source_commit": "a1170f4c2a11",
+  "image_digest": "sha256:image-ci-811",
+  "components": [
+    {
+      "name": "telemetry-lib",
+      "version": "3.7.2",
+      "package_hash": "sha256:package-telemetry-372",
+      "purl": "pkg:pypi/telemetry-lib@3.7.2"
+    },
+    {
+      "name": "serializer-core",
+      "version": "2.1.0",
+      "package_hash": "sha256:package-serializer-210"
+    }
+  ]
+}

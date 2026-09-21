@@ -73,15 +73,29 @@ class CodexCliAdapter(CliModelAdapter):
             finally:
                 self._active_workdir = None
 
+    def complete_with_timeout(
+        self, messages: list[dict], timeout_s: float
+    ) -> AdapterResponse:
+        """Preserve the per-call ephemeral workdir for scoring deadlines."""
+
+        if self._workdir is not None:
+            return super().complete_with_timeout(messages, timeout_s)
+        with tempfile.TemporaryDirectory(prefix="patchmud-codex-") as tmp:
+            self._active_workdir = tmp
+            try:
+                return super().complete_with_timeout(messages, timeout_s)
+            finally:
+                self._active_workdir = None
+
     def _build_argv(self, prompt: str) -> list[str]:
         # 顯式 workdir 優先；否則用 complete() 開的臨時目錄（deterministic、無殘留）。
         workdir = self._workdir or self._active_workdir
         if workdir is None:  # pragma: no cover - complete() 保證兩者其一有值
             raise AdapterError("codex adapter 缺工作目錄（_build_argv 未經 complete 呼叫）")
-        argv = [
-            self._binary,
-            "exec",
-            prompt,
+        argv = [self._binary, "exec"]
+        if not self._stdin_transport:
+            argv.append(prompt)
+        argv += [
             "-m",
             self.model,
             "-c",
@@ -92,9 +106,15 @@ class CodexCliAdapter(CliModelAdapter):
             "--skip-git-repo-check",
             "--ignore-user-config",
         ]
+        if self.controlled:
+            argv.append("--ignore-rules")
         for feature in self.DISABLED_FEATURES:
             argv += ["--disable", feature]
         argv += ["--cd", workdir, "--json"]
+        if self._stdin_transport:
+            # ``-`` tells codex exec to read the prompt from stdin.  Keep it the
+            # final argument so no prompt-sized argv element is ever created.
+            argv.append("-")
         return argv
 
     def _parse(self, stdout: str) -> tuple[str, dict]:
@@ -104,6 +124,16 @@ class CodexCliAdapter(CliModelAdapter):
             kind = event.get("type")
             if kind == "item.completed":
                 item = event.get("item")
+                if self.controlled and isinstance(item, dict) and item.get("type") in {
+                    "command_execution",
+                    "tool_call",
+                    "function_call",
+                    "mcp_tool_call",
+                }:
+                    raise AdapterError(
+                        "codex completion emitted a native tool event; "
+                        "scoring requires completion-only output"
+                    )
                 if isinstance(item, dict) and item.get("type") == "agent_message":
                     message = item.get("text")
                     if not isinstance(message, str):

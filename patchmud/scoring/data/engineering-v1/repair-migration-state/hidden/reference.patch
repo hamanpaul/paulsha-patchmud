@@ -1,0 +1,50 @@
+diff --git a/src/records.py b/src/records.py
+--- a/src/records.py
++++ b/src/records.py
+@@ -1,10 +1,14 @@
+ class RecordStore:
+     def __init__(self, rows):
+         self.rows = [dict(row) for row in rows]
+ 
+     def write_v2(self, row):
+-        # Bug: a replay appends another copy instead of replacing by id.
+-        self.rows.append({"id": row["id"], "name": row["name"], "version": 2})
++        updated = {"id": row["id"], "name": row["name"], "version": 2}
++        for index, current in enumerate(self.rows):
++            if current["id"] == row["id"]:
++                self.rows[index] = updated
++                return
++        self.rows.append(updated)
+ 
+     def snapshot(self):
+         return [dict(row) for row in self.rows]
+diff --git a/src/migrate.py b/src/migrate.py
+--- a/src/migrate.py
++++ b/src/migrate.py
+@@ -1,24 +1,21 @@
+ from .records import RecordStore
+ from .journal import Journal
+ 
+ 
+ def _v2(row):
+     return {"id": row["id"], "name": row["name"].strip(), "version": 2}
+ 
+ 
+ def run(store: RecordStore, journal: Journal, batch_size=2, *, dry_run=False, fail_after_write=False):
+     cursor = journal.cursor
+     batch = store.rows[cursor:cursor + batch_size]
+     if not batch:
+         return {"cursor": cursor, "planned": 0}
+-    # Bug: dry-run writes, and checkpoint is recorded before durable writes.
+     if dry_run:
+-        for row in batch:
+-            store.write_v2(_v2(row))
+-        return {"cursor": cursor + len(batch), "planned": len(batch)}
+-    journal.checkpoint(cursor + len(batch))
++        return {"cursor": cursor, "planned": len(batch)}
+     for row in batch:
+         store.write_v2(_v2(row))
+     if fail_after_write:
+         raise RuntimeError("worker restarted after write")
++    journal.checkpoint(cursor + len(batch))
+     return {"cursor": cursor + len(batch), "planned": len(batch)}

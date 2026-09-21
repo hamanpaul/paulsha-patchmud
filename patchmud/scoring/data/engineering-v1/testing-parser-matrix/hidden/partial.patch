@@ -1,0 +1,21 @@
+diff --git a/src/parser.py b/src/parser.py
+index 6d694da..f123980 100644
+--- a/src/parser.py
++++ b/src/parser.py
+@@ -1,9 +1,12 @@
++import csv
++from io import StringIO
++
++
+ def parse(text):
+-    lines = [line for line in text.splitlines() if line]
+-    headers = lines[0].split(",")
++    reader = csv.reader(StringIO(text))
++    headers = next(reader)
+     rows = []
+-    for line in lines[1:]:
+-        values = line.split(",")
++    for values in reader:
+         if len(values) != len(headers):
+             raise ValueError("row width")
+         rows.append(dict(zip(headers, values)))

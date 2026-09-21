@@ -1,0 +1,55 @@
+diff --git a/src/cache.py b/src/cache.py
+--- a/src/cache.py
++++ b/src/cache.py
+@@ -1,12 +1,13 @@
+ class ProfileCache:
+     def __init__(self):
+         self.items = {}
+ 
+     def get(self, profile_id, loader):
+         if profile_id not in self.items:
+             self.items[profile_id] = loader(profile_id)
+         return dict(self.items[profile_id])
+ 
+     def invalidate(self, profile_id):
+         # Bug: every update flushes every profile and callers can retain stale data.
+-        self.items.clear()
++        if profile_id in self.items:
++            del self.items[profile_id]
+diff --git a/src/api.py b/src/api.py
+--- a/src/api.py
++++ b/src/api.py
+@@ -1,20 +1,20 @@
+ from .cache import ProfileCache
+ from .store import ProfileStore
+ 
+ 
+ class ProfileAPI:
+     def __init__(self):
+         self.store = ProfileStore()
+         self.cache = ProfileCache()
+ 
+     def read(self, profile_id, if_none_match=None):
+         row = self.cache.get(profile_id, self.store.get)
+         etag = f"v{row['version']}"
+         if if_none_match == etag:
+-            return 304, etag, row  # Bug: a 304 response must not carry a body.
++            return 304, etag, None
+         return 200, etag, row
+ 
+     def update(self, profile_id, name):
+         row = self.store.update(profile_id, name)
+         self.cache.invalidate(profile_id)
+         return row
+diff --git a/src/cli.py b/src/cli.py
+--- a/src/cli.py
++++ b/src/cli.py
+@@ -1,7 +1,7 @@
+ from .api import ProfileAPI
+ 
+ 
+ def summary(api: ProfileAPI, profile_id: str) -> str:
+     _status, _etag, row = api.read(profile_id)
+     # Bug: omits the version needed to correlate a stale response.
+-    return f"profile={profile_id} name={row['name']}"
++    return f"profile={profile_id} name={row['name']} version={row['version']}"

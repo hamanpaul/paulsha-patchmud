@@ -1,0 +1,13 @@
+diff --git a/src/config.py b/src/config.py
+index 2359597..1ba4578 100644
+--- a/src/config.py
++++ b/src/config.py
+@@ -5,7 +5,7 @@ DEFAULTS = {"enabled": True, "port": 8080, "region": "us-east"}
+ 
+ def _bool(value: str | None, default: bool) -> bool:
+     # The bug: an explicit false is treated as if the variable were absent.
+-    if not value:
++    if value is None:
+         return default
+     if value.lower() in {"1", "true", "yes"}:
+         return True

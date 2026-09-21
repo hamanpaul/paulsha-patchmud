@@ -6,7 +6,7 @@
 
 - 量測閉環（laboratory），不是生產閉環：frozen fixture、deterministic 評分、可位元重播。
 - 對 `paulsha-cortex` / `paulsha-hippo` 零 runtime 依賴；評測輸出以檔案契約供下游（如 model roster/routing）使用。
-- 排名資料流零 LLM 裁判：所有關鍵結果由 artifact、測試、版本差異與可稽核事件日誌決定。
+- 舊 ranked 模式採 deterministic 裁判；`engineering-v1` 另以固定版本 JEV 評估工程工作品質，依 artifact、測試、版本差異與事件作證據。兩種分數有獨立語義。
 - 三維角色能力：經濟（Economy 55%）、火力（Power 25%）、控場（Control 20%），另設不重複計分的 token-efficiency 稽核指標。
 
 研究設計、implementation spec 與實作計劃見 `docs/`：
@@ -26,6 +26,27 @@ python -m pip install -e ".[test]"
 執行 candidate code 的隔離層需要 [bubblewrap](https://github.com/containers/bubblewrap)（`bwrap`）；無 namespace 能力時 ranked / pilot run 會 fail-closed 拒絕啟動，dev run 以 degraded 模式執行。
 
 ## Usage
+
+### 工程模型評分（JEV）
+
+先在執行環境設定 `TYPESAFE_API_KEY`，並完成 Codex／agy 各自的登入。不要將憑證寫入題庫、命令紀錄或報告。
+
+目前為尚未完成 live 驗證的實作：已查核的 Codex 0.155.1／agy 1.2.7 無法保證關閉原生工具，嚴格統一工具模式會在模型呼叫前拒絕執行。待確認可行的執行契約後，才能完成實際評分；詳見 [驗證紀錄](docs/jev-validation.md)。
+
+```bash
+paulsha-patchmud --list-cases
+paulsha-patchmud --target --harness codex --model gpt-5.6-luna --effort max
+paulsha-patchmud --base --harness agy --model gemini-3.8-flash --effort high \
+  --target --harness codex --model gpt-5.6-luna --effort max
+```
+
+預設題庫涵蓋修正、診斷、範圍遵守、測試設計、失敗恢復與成果查核，六類各三題；三種深度分別最多 8／16／24 回合與 10／20／30 分鐘。模型使用 PatchMUD 統一工具，評測單位為 harness × model × effort。品質分數由 JEV 決定，耗時、原生用量與已知費用另列。
+
+結果與使用的公開 case 詳細內容存於 `~/.config/paulsha-patchmud/models-score.md`，原始結果保存在同目錄 `runs/`。相符的完整歷史 base 可重用並標示日期；`--refresh-base` 強制重跑。`--repeat N` 重複測量，`--pilot` 取六題試跑，`--case ID` 選題；部分評測不產生正式總分。可用 `--output-dir DIR` 指定儲存位置。
+
+評分規則、歷史重用與失敗語義見 [JEV 評分指南](docs/model-scoring.md)。實測與題庫凍結狀態須依交付證據判斷，程式存在不代表已完成 live 評分。
+
+### 舊版關卡與研究命令
 
 MVP CLI（依實作計劃逐步落地）：
 

@@ -1,0 +1,16 @@
+diff --git a/src/client.py b/src/client.py
+index 135fb06..8b7e042 100644
+--- a/src/client.py
++++ b/src/client.py
+@@ -10,8 +10,9 @@ def request(send, clock, *, max_attempts=3):
+             return response
+         if response.status == 401:
+             raise AuthenticationFailed()
+-        # Bug: every error retries and malformed delays can run unbounded.
++        if response.status != 429:
++            return response
+         delay = float(response.headers.get("Retry-After", "0"))
+         clock.sleep(delay)
+         if attempts >= max_attempts:
+-            raise RuntimeError("request failed")
++            raise RateLimitExceeded()

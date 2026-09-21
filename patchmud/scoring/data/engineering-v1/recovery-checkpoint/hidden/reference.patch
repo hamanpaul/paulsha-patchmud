@@ -1,0 +1,66 @@
+diff --git a/src/checkpoint.py b/src/checkpoint.py
+--- a/src/checkpoint.py
++++ b/src/checkpoint.py
+@@ -11,14 +11,18 @@
+ 
+     @property
+     def cursor(self):
+-        # Bug: a torn latest event can move recovery past unwritten records.
+-        checkpoints = [
+-            event["cursor"]
+-            for event in self.events
+-            if event.get("kind") == "checkpoint"
+-        ]
+-        return checkpoints[-1] if checkpoints else 0
++        for event in reversed(self.events):
++            cursor = event.get("cursor")
++            if (
++                event.get("kind") == "checkpoint"
++                and isinstance(cursor, int)
++                and cursor >= 0
++                and event.get("checksum") == _checksum(cursor)
++            ):
++                return cursor
++        return 0
+ 
+     def append(self, cursor):
+-        # Bug: the event has no integrity value, so a partial write is trusted.
+-        self.events.append({"kind": "checkpoint", "cursor": cursor})
++        self.events.append(
++            {"kind": "checkpoint", "cursor": cursor, "checksum": _checksum(cursor)}
++        )
+diff --git a/src/records.py b/src/records.py
+--- a/src/records.py
++++ b/src/records.py
+@@ -5,8 +5,12 @@
+         self.rows = []
+ 
+     def write(self, row):
+-        # Bug: replaying a batch appends a second copy of an already durable id.
+-        self.rows.append(dict(row))
++        updated = dict(row)
++        for index, current in enumerate(self.rows):
++            if current.get("id") == updated.get("id"):
++                self.rows[index] = updated
++                return
++        self.rows.append(updated)
+ 
+     def snapshot(self):
+         return [dict(row) for row in self.rows]
+diff --git a/src/recover.py b/src/recover.py
+--- a/src/recover.py
++++ b/src/recover.py
+@@ -10,12 +10,11 @@
+     if not batch:
+         return {"cursor": cursor, "processed": 0}
+ 
+-    # Bug: the cursor is advanced before the batch is durable.
+-    journal.append(cursor + len(batch))
+     if fail_before_write:
+         raise RuntimeError("worker stopped before batch write")
+     for row in batch:
+         store.write(row)
+     if fail_after_write:
+         raise RuntimeError("worker stopped after batch write")
++    journal.append(cursor + len(batch))
+     return {"cursor": cursor + len(batch), "processed": len(batch)}

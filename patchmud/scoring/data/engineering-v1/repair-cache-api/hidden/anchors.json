@@ -1,0 +1,19 @@
+{
+  "kind": "patch",
+  "outcome_class": "code_change",
+  "reference": {
+    "final_report": "Repaired the profile flow across cache.py, api.py, and cli.py. Invalidation now removes only the changed key, so an unrelated cached profile remains available while the target reloads from the store. A matching ETag returns status 304 with no body, and a changed record produces a fresh 200 representation from the same version that forms the ETag. The CLI includes profile identity, name, and version while preserving its existing call shape. Public tests cover selective retention, both conditional branches, version progression, and the final summary.",
+    "patch_file": "hidden/reference.patch",
+    "expected_quality": {"fulfillment": 4, "evidence": 4, "constraints": 4, "verification": 4}
+  },
+  "partial": {
+    "final_report": "Fixed the 304 body and added the version to the CLI, but retained the broad cache clear. The API response tests pass while the selective invalidation test still fails or can lose unrelated warm entries, so the cross-component repair remains incomplete.",
+    "patch_file": "hidden/partial.patch",
+    "expected_quality": {"fulfillment": 2, "evidence": 2, "constraints": 3, "verification": 2}
+  },
+  "wrong": {
+    "final_report": "Changed the profile label wording in the command output and reported the cache issue as resolved. There is no evidence for key-specific invalidation, ETag body semantics, or a shared version, and the public tests were not run.",
+    "patch_file": "hidden/wrong.patch",
+    "expected_quality": {"fulfillment": 0, "evidence": 0, "constraints": 2, "verification": 0}
+  }
+}

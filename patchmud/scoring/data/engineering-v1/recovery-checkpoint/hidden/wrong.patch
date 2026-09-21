@@ -1,0 +1,13 @@
+diff --git a/src/recover.py b/src/recover.py
+--- a/src/recover.py
++++ b/src/recover.py
+@@ -11,7 +11,7 @@
+     if not batch:
+         return {"cursor": cursor, "processed": 0}
+ 
+     # Bug: the cursor is advanced before the batch is durable.
+-    journal.append(cursor + len(batch))
++    journal.append(cursor + len(batch))  # checkpoint recorded for faster restart
+     if fail_before_write:
+         raise RuntimeError("worker stopped before batch write")
+     for row in batch:

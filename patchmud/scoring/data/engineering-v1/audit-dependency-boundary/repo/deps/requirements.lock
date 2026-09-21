@@ -1,0 +1,7 @@
+# Synthetic lock material for the tested build.
+--index-url https://packages.example.invalid/simple
+event-gateway==6.4.1
+telemetry-lib==3.7.2 \
+    --hash=sha256:package-telemetry-372
+serializer-core==2.1.0 \
+    --hash=sha256:package-serializer-210

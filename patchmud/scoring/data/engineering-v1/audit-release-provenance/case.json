@@ -1,0 +1,61 @@
+{
+  "id": "audit-release-provenance",
+  "category": "audit",
+  "depth": 1,
+  "title": "Audit a release label against immutable provenance",
+  "prompt": "Audit a reconstructed public release packet for a service release. The packet contains a source identity, a CI artifact record, a deployment event log, and a human-facing production label; the labels may describe a stronger state than the exact records establish. Reconcile the source commit, artifact digest, test run, environment, and promotion event, and distinguish a provenance fact from a registry or document label. Decide whether the repository needs a change, whether the release can be called production verified, and what single bounded observation would close any remaining gap. This is an answer-only audit: do not invent a passing test or modify the fixture.",
+  "requirements": [
+    "Reconcile the exact source commit, artifact digest, CI run, and deployment event across all supplied artifacts.",
+    "Identify the contradiction between the production label and the recorded deployment environment or promotion state.",
+    "Separate evidence that the artifact was built and tested from evidence that it was promoted to production.",
+    "State whether a repository change is justified and preserve a no-op result when the evidence calls for no code change.",
+    "Give one bounded follow-up observation that would confirm or correct the release label without guessing hidden state."
+  ],
+  "allowed_paths": [],
+  "max_turns": 8,
+  "wall_seconds": 600,
+  "rubric": {
+    "fulfillment": {
+      "instructions": "Score how completely the audit answers the release provenance question, including the no-change decision and the boundary between a tested artifact and a production promotion.",
+      "criteria": [
+        "0: Accepts the production label as proof or proposes a release change without reconciling the packet.",
+        "1: Mentions a release or test record but omits the source, deployment environment, or no-op decision.",
+        "2: Finds either the identity match or the label contradiction but leaves the promotion conclusion or follow-up unsupported.",
+        "3: Reconciles the main identities, states a defensible no-op, and names a bounded follow-up with one small gap.",
+        "4: Reconciles source, artifact, test, deployment, promotion, label, no-op action, and bounded follow-up with every limitation explicit."
+      ]
+    },
+    "evidence": {
+      "instructions": "Score traceability of every audit claim to exact fields or log records in the synthetic source, CI, deployment, and release-label materials.",
+      "criteria": [
+        "0: Gives a fluent verdict with no reference to an exact artifact or identity.",
+        "1: Cites one label, test, or log line while treating it as proof of the whole release state.",
+        "2: Connects source and CI evidence or deployment evidence but misses the environment or promotion contradiction.",
+        "3: Links the source commit and digest through CI and deployment while leaving one label interpretation weakly supported.",
+        "4: Maps every provenance and contradiction claim to exact source, digest, CI, environment, promotion, and label evidence, marking inference."
+      ]
+    },
+    "constraints": {
+      "instructions": "Score adherence to the answer-only audit boundary: the candidate must preserve the fixture, avoid invented tests or fixes, and keep any requested relabeling bounded.",
+      "criteria": [
+        "0: Claims to have changed code, rerun tests, or completed an unobserved promotion.",
+        "1: Avoids an edit but recommends rollback or relabeling as if the exact deployment state were proven.",
+        "2: Keeps the repository unchanged but conflates an operational label with an observed deployment fact.",
+        "3: Preserves read-only scope and a no-op code decision with one unnecessary or overbroad operational suggestion.",
+        "4: Makes no mutation or fabricated test claim, separates source evidence from labels, and proposes only a bounded observation."
+      ]
+    },
+    "verification": {
+      "instructions": "Score cross-checking of the release identity chain and the arithmetic or equality checks needed to distinguish a tested canary artifact from a production deployment.",
+      "criteria": [
+        "0: Performs no consistency check and repeats the release label.",
+        "1: Checks one checksum or commit but does not compare it with the CI and deployment records.",
+        "2: Checks the source and artifact identity but does not verify environment or promotion evidence.",
+        "3: Cross-checks source, digest, test run, and deployment environment with one residual gap in promotion verification.",
+        "4: Verifies the complete identity chain, detects the label-versus-environment mismatch, explains why no code change follows, and states the remaining check."
+      ]
+    }
+  },
+  "stages": [],
+  "test_argv": []
+}

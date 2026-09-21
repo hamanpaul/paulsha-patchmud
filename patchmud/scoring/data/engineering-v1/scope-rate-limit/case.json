@@ -1,0 +1,25 @@
+{
+  "id": "scope-rate-limit",
+  "category": "scope",
+  "depth": 1,
+  "title": "Add bounded rate-limit handling within a narrow scope",
+  "prompt": "The service client receives HTTP 429 responses with a Retry-After value, but its current helper retries every error and can sleep forever when the header is malformed. Implement the requested bounded rate-limit behavior only in the client transport module: retry 429 up to the configured limit, honor a valid non-negative delay through the injected clock, return a typed exhaustion result, and leave authentication and non-429 errors unchanged. Public tests define the compatibility surface; do not broaden the change into logging or CLI redesign.",
+  "requirements": [
+    "Retry only HTTP 429 responses and stop after the configured maximum attempts.",
+    "Use a valid non-negative Retry-After value through the injected sleeper, with a bounded fallback for malformed values.",
+    "Return a typed RateLimitExceeded result after exhaustion without retrying authentication or server errors.",
+    "Preserve existing request headers, error mapping, and command exit behavior.",
+    "Limit edits to the allowed transport modules and do not change public tests."
+  ],
+  "allowed_paths": ["src/client.py", "src/errors.py", "src/clock.py"],
+  "max_turns": 8,
+  "wall_seconds": 600,
+  "rubric": {
+    "fulfillment": {"instructions": "Score ordered 0..4 scope and behavior completion for bounded 429 handling without changing unrelated errors.", "criteria": ["0: No requested rate-limit behavior works.", "1: Retries a 429 but can loop forever or changes non-429 behavior.", "2: Bounded retries mostly work but delay parsing, typed exhaustion, or compatibility has a material gap.", "3: Main behavior and narrow scope work with one concrete malformed-header or boundary gap.", "4: Only 429 retries within the limit, delay is safely injected, exhaustion is typed, and all unrelated behavior is preserved."]},
+    "evidence": {"instructions": "Score ordered 0..4 evidence quality over response branches, attempts, delays, error types, and allowed-file scope.", "criteria": ["0: Claims a fix without branch or test evidence.", "1: Shows a 429 example but no attempt limit or non-429 evidence.", "2: Shows bounded attempts or delay but leaves error mapping unsupported.", "3: Traces all branches and files with one edge-case evidence gap.", "4: Cites 429 attempts/delays, malformed fallback, typed exhaustion, auth/server preservation, and exact changed paths."]},
+    "constraints": {"instructions": "Score ordered 0..4 adherence to the narrow transport-only scope and injected-clock design.", "criteria": ["0: Changes tests, CLI, authentication, or introduces unbounded sleep.", "1: Touches unrelated modules or changes non-429 behavior to obtain green output.", "2: Uses allowed files but leaks real time or broadens retry policy.", "3: Keeps scope and injection with one minor compatibility change.", "4: Changes only allowed transport modules, uses the injected clock, preserves headers/errors, and adds no dependency."]},
+    "verification": {"instructions": "Score ordered 0..4 verification across 429, malformed delay, exhaustion, auth, and server error paths.", "criteria": ["0: No request behavior is tested.", "1: Tests one successful 429 retry only.", "2: Tests retries and one error but misses malformed delay or exhaustion.", "3: Tests all main branches with one limit or timing assertion missing.", "4: Reports exact tests for valid/malformed delays, attempt limit, typed exhaustion, auth, server errors, and preserved headers."]}
+  },
+  "stages": [],
+  "test_argv": ["python3", "-m", "pytest", "-q"]
+}

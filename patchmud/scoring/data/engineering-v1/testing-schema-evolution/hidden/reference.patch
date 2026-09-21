@@ -1,0 +1,15 @@
+diff --git a/src/normalizer.py b/src/normalizer.py
+--- a/src/normalizer.py
++++ b/src/normalizer.py
+@@ -1,7 +1,10 @@
+ def normalize(event, state):
+     normalized = dict(event)
+     normalized["version"] = 2
+     normalized["tenant"] = event["tenant"]
+-    # Bug: an older replay can overwrite a newer event id.
++    previous = state.get(event["id"])
++    if previous is not None and previous.get("_source_version", 0) > event["version"]:
++        return previous
++    normalized["_source_version"] = event["version"]
+     state[event["id"]] = normalized
+     return normalized

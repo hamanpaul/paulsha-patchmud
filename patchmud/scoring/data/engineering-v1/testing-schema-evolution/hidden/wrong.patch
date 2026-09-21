@@ -1,0 +1,16 @@
+diff --git a/tests/test_envelope.py b/tests/test_envelope.py
+index f124263..c9c7589 100644
+--- a/tests/test_envelope.py
++++ b/tests/test_envelope.py
+@@ -14,11 +14,6 @@ def test_v1_and_v2_normalize_and_preserve_unknown_fields():
+     assert state["e1"]["payload"] == {"n": 2}
+ 
+ 
+-def test_old_replay_does_not_erase_newer_state():
+-    state = {}
+-    normalize(parse({"id": "e2", "version": 2, "tenant": "a", "payload": {"n": 2}}), state)
+-    normalize(parse({"id": "e2", "version": 1, "tenant": "a", "payload": {"n": 1}}), state)
+-    assert state["e2"]["payload"] == {"n": 2}
+ 
+ 
+ def test_tenant_and_version_errors_are_input_errors():

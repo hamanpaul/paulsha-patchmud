@@ -1,0 +1,70 @@
+{
+  "id": "audit-deployment-integrity",
+  "category": "audit",
+  "depth": 3,
+  "title": "Audit fleet deployment integrity as staged evidence arrives",
+  "prompt": "Audit a reconstructed two-node deployment whose manifest and dashboard use a production-complete label while the initial packet contains only a mutable image tag and a tested source identity. The audit must preserve competing assumptions until timestamped evidence arrives after turn eight and turn sixteen. The first addition identifies one node's admitted digest; the second maps the tag and a pull request but still has a limited runtime observation. Reconcile the source, test, control-plane, registry, and node identities at each stage, revise confidence when the evidence changes, and state whether fleet-wide integrity is established. If one node remains unobserved, the correct result is insufficient evidence and a bounded attestation request with no speculative patch or invented test result.",
+  "requirements": [
+    "Build a stage-aware hypothesis table for the dashboard label, expected artifact, node-a identity, and fleet-wide deployment claim.",
+    "Reconcile exact source commit, tested digest, mutable tag, control-plane status, node receipt, and registry timing without using later evidence early.",
+    "Update the conclusion after each staged message and distinguish image selection or pull acceptance from a post-start runtime observation.",
+    "State insufficient evidence when node-b runtime identity remains unobserved, and do not turn the gap into a code fix or a passing test.",
+    "Specify one bounded node-b attestation containing the fields needed to confirm or reject the expected deployment identity."
+  ],
+  "allowed_paths": [],
+  "max_turns": 24,
+  "wall_seconds": 1800,
+  "rubric": {
+    "fulfillment": {
+      "instructions": "Score whether the evolving audit answers each stage, updates the fleet-wide conclusion, and reaches the insufficient-evidence boundary without filling missing node evidence by assumption.",
+      "criteria": [
+        "0: Declares the rollout complete from the initial label and ignores staged evidence or the node boundary.",
+        "1: Lists a digest or deployment symptom but does not maintain competing hypotheses or use both stage messages.",
+        "2: Uses one staged observation and reaches a fleet conclusion without accounting for the second node's missing runtime proof.",
+        "3: Revises the hypothesis after both stages and states a mostly justified insufficient-evidence result with one limited gap.",
+        "4: Tracks every stage, source/test/control-plane/registry/node identity, fleet limitation, no-code decision, and bounded attestation precisely."
+      ]
+    },
+    "evidence": {
+      "instructions": "Score temporal and identity traceability across the public code, CI report, manifest, control-plane log, and each staged admission or registry observation.",
+      "criteria": [
+        "0: Uses the production-complete label as evidence and cites no exact identity or stage.",
+        "1: Cites the initial manifest or CI report but ignores the mutable tag and later node evidence.",
+        "2: Cites node-a or the registry mapping but treats pull acceptance as proof of both running nodes.",
+        "3: Links the initial and staged evidence with correct timing and leaves only one explicitly bounded runtime gap.",
+        "4: Cites exact commits, digests, tag window, event IDs, node coverage, contradictory labels, and every uncertainty at the correct stage."
+      ]
+    },
+    "constraints": {
+      "instructions": "Score compliance with the read-only answer audit and stage-order constraints, including the refusal to invent a test result, node receipt, or speculative deployment repair.",
+      "criteria": [
+        "0: Claims to patch, rerun, or repair the rollout, or uses evidence before its stated stage.",
+        "1: Respects timing partly but recommends an unbounded rollback or treats the dashboard label as an authorization.",
+        "2: Makes no edit but overclaims fleet integrity from node-a, a tag mapping, or a pull request.",
+        "3: Preserves stage order and no-change scope with one unnecessary operational recommendation.",
+        "4: Uses only available evidence at each stage, preserves the fixture, refuses false completion, and asks for one bounded attestation."
+      ]
+    },
+    "verification": {
+      "instructions": "Score deterministic replay of the deployment timeline and explicit tests of the competing claims: expected artifact identity, tag resolution, node-a runtime, and node-b runtime.",
+      "criteria": [
+        "0: Performs no timeline or identity verification and repeats the dashboard status.",
+        "1: Checks the source or CI digest but not stage order, tag resolution, or node coverage.",
+        "2: Verifies one node and the registry window but does not test whether node-b actually started the expected process.",
+        "3: Replays both stages, verifies source and digest consistency, and identifies the missing node-b post-start check.",
+        "4: Tests every hypothesis against initial and staged evidence, distinguishes selection from execution, and proves why fleet integrity remains or becomes established."
+      ]
+    }
+  },
+  "stages": [
+    {
+      "after_turn": 8,
+      "message": "New evidence after turn 8: node-a admission receipt node-a-921 records image_digest=sha256:image-921, source_commit=9d4e11c2a0f8, and signature=valid. This confirms node-a's admitted image, but the receipt contains no node-b runtime observation. Keep the fleet-wide claim open."
+    },
+    {
+      "after_turn": 16,
+      "message": "New evidence after turn 16: registry audit reg-921 maps the mutable tag registry.example.invalid/payments:stable to sha256:image-921 from 2026-09-21T09:03:00Z through 09:18:00Z and records node-b pull request pull-b-771 as accepted. It still has no post-start node-b attestation or signed source binding in that receipt. Treat pull acceptance as image selection evidence, not proof of the running process."
+    }
+  ],
+  "test_argv": []
+}

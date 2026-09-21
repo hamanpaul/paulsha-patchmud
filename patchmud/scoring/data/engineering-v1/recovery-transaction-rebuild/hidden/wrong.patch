@@ -1,0 +1,11 @@
+diff --git a/src/rebuild.py b/src/rebuild.py
+--- a/src/rebuild.py
++++ b/src/rebuild.py
+@@ -36,6 +36,6 @@
+         outbox.publish(txid, operations)
+         next_cursor = end_cursor
+         processed += 1
+-        if max_transactions is not None and processed >= max_transactions:
++        if max_transactions is not None and processed > max_transactions:
+             break
+     return {"cursor": next_cursor, "processed": processed}

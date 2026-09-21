@@ -1,0 +1,14 @@
+diff --git a/src/parser.py b/src/parser.py
+index 6d694da..75997f4 100644
+--- a/src/parser.py
++++ b/src/parser.py
+@@ -4,7 +4,7 @@ def parse(text):
+     rows = []
+     for line in lines[1:]:
+         values = line.split(",")
+-        if len(values) != len(headers):
+-            raise ValueError("row width")
++        if len(values) < len(headers):
++            values += [""] * (len(headers) - len(values))
+         rows.append(dict(zip(headers, values)))
+     return rows

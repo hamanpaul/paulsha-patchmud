@@ -1,0 +1,18 @@
+diff --git a/src/records.py b/src/records.py
+--- a/src/records.py
++++ b/src/records.py
+@@ -5,8 +5,12 @@
+         self.rows = []
+ 
+     def write(self, row):
+-        # Bug: replaying a batch appends a second copy of an already durable id.
+-        self.rows.append(dict(row))
++        updated = dict(row)
++        for index, current in enumerate(self.rows):
++            if current.get("id") == updated.get("id"):
++                self.rows[index] = updated
++                return
++        self.rows.append(updated)
+ 
+     def snapshot(self):
+         return [dict(row) for row in self.rows]

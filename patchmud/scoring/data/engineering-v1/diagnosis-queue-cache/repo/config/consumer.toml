@@ -1,0 +1,4 @@
+[consumer]
+prefetch = 32
+cache_decode_ms = 850
+metric_window_seconds = 60

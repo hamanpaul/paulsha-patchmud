@@ -1,0 +1,29 @@
+{
+  "id": "diagnosis-incident-timeline",
+  "category": "diagnosis",
+  "depth": 3,
+  "title": "Diagnose an incident whose evidence arrives in stages",
+  "prompt": "An incident timeline includes application logs, a deploy manifest, a feature-flag snapshot, and a redacted dependency report. At the start there are two plausible causes for elevated error rates. During the run, new timestamped evidence arrives after turn eight, then a second service's partial trace arrives after turn sixteen. Reconcile the timeline and update the diagnosis when evidence changes. If the supplied artifacts still cannot identify the causal request path, the correct answer is explicitly insufficient evidence and no code change.",
+  "requirements": [
+    "Maintain a hypothesis table with observations that support or contradict each candidate cause.",
+    "Reconcile event ordering across application, deployment, flag, and service timestamps.",
+    "Use each staged message only after its after_turn boundary and revise earlier confidence when warranted.",
+    "Identify the causal path only if the evidence establishes it; otherwise state insufficient evidence.",
+    "Recommend a bounded next trace or log field and do not patch speculative code."
+    ,"請以繁體中文回報證據鏈與不確定性，保留 artifact 名稱與時間戳。"
+  ],
+  "allowed_paths": [],
+  "max_turns": 24,
+  "wall_seconds": 1800,
+  "rubric": {
+    "fulfillment": {"instructions": "Score ordered 0..4 evolving diagnosis quality; later evidence must change the conclusion only when it warrants doing so.", "criteria": ["0: Gives a fixed theory without using the timeline or evidence limits.", "1: Lists symptoms but ignores competing hypotheses or staged evidence.", "2: Uses some timeline evidence but reaches an unsupported causal conclusion.", "3: Updates the hypothesis table and states a mostly justified conclusion with one evidence gap.", "4: Reconciles all staged artifacts, identifies or correctly withholds causality, states insufficient evidence when required, and gives a bounded next step."]},
+    "evidence": {"instructions": "Score ordered 0..4 traceability and temporal reasoning across the incident artifacts and staged additions.", "criteria": ["0: Provides no timestamped evidence.", "1: Quotes one log without event-order reconciliation.", "2: Reconciles one boundary but ignores a contradictory or later artifact.", "3: Links all major artifacts and revises confidence with one unresolved timestamp gap.", "4: Cites event IDs/times, flag and deploy versions, contradictory observations, staged trace limits, and every uncertainty."]},
+    "constraints": {"instructions": "Score ordered 0..4 adherence to read-only incident analysis, evidence timing, and no speculative patching.", "criteria": ["0: Patches or treats redacted data as known.", "1: Uses later evidence before its stage or recommends an unbounded fix.", "2: Respects most timing but overclaims from missing trace data.", "3: Preserves timing and no-patch scope with one minor process gap.", "4: Uses only available evidence at each stage, preserves the repository, and proposes one bounded collection action."]},
+    "verification": {"instructions": "Score ordered 0..4 verification of event order, competing hypotheses, staged evidence arrival, and the insufficient-evidence boundary.", "criteria": ["0: No cross-check is performed.", "1: Repeats the incident narrative without a timeline check.", "2: Checks timestamps or flags but not the competing request paths.", "3: Checks timeline, flags, deploy, and partial trace with one missing contradiction test.", "4: Reconstructs deterministic event order, tests both hypotheses against every stage, and proves why causality is established or remains insufficient."]}
+  },
+  "stages": [
+    {"after_turn": 8, "message": "New evidence: gateway logs show one retry with the same request id, but the application log still lacks the downstream service span."},
+    {"after_turn": 16, "message": "New evidence: a partial downstream trace covers only successful requests and omits the failing request id. Treat missing coverage as a limitation, not as proof of absence."}
+  ],
+  "test_argv": []
+}

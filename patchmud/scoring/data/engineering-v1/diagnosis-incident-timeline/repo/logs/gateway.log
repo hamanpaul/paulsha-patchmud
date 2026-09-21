@@ -1,0 +1,5 @@
+2026-09-21T10:59:59.900Z deploy=7.4 route=payments
+2026-09-21T11:00:00.090Z request=x1 gateway_status=200 upstream_status=500
+2026-09-21T11:00:01.090Z request=x1 retry=1 gateway_status=200 upstream_status=500
+2026-09-21T11:00:01.290Z request=x3 gateway_status=200 upstream_status=200
+2026-09-21T11:00:02.100Z note=downstream_trace_sampling=success_only

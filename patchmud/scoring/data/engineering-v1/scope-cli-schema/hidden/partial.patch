@@ -1,0 +1,12 @@
+diff --git a/src/validator.py b/src/validator.py
+index 4ab5e0f..7f170ae 100644
+--- a/src/validator.py
++++ b/src/validator.py
+@@ -1,5 +1,7 @@
+ def validate(event):
+     if not event["id"]:
+         raise ValueError("id is required")
++    if event.get("source") == "":
++        raise ValueError("source is required when supplied")
+     # Bug: an empty source is accepted once the field is present.
+     return event

@@ -1,0 +1,25 @@
+diff --git a/src/parser.py b/src/parser.py
+--- a/src/parser.py
++++ b/src/parser.py
+@@ -1,9 +1,16 @@
+-def parse(text):
+-    lines = [line for line in text.splitlines() if line]
+-    headers = lines[0].split(",")
++import csv
++from io import StringIO
++
++
++def parse(text):
++    reader = csv.reader(StringIO(text))
++    headers = next(reader)
++    if len(headers) != len(set(headers)):
++        raise ValueError("header duplicate")
+     rows = []
+-    for line in lines[1:]:
+-        values = line.split(",")
++    for values in reader:
++        if not values:
++            continue
+         if len(values) != len(headers):
+             raise ValueError("row width")
+         rows.append(dict(zip(headers, values)))

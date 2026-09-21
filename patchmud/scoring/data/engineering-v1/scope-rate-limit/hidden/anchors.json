@@ -1,0 +1,19 @@
+{
+  "kind": "patch",
+  "outcome_class": "code_change",
+  "reference": {
+    "final_report": "Kept the change inside client.py and the existing error/clock seams. Successful responses return immediately, authentication still raises its existing typed error, and every non-429 response is returned without entering the retry loop. A 429 parses a non-negative Retry-After through the injected clock, clamps a malformed or excessive value to a bounded fallback, and raises RateLimitExceeded exactly at max_attempts. The public tests cover a valid delay, malformed delay, exhaustion count, and authentication preservation; no real sleeping or CLI change is involved.",
+    "patch_file": "hidden/reference.patch",
+    "expected_quality": {"fulfillment": 4, "evidence": 4, "constraints": 4, "verification": 4}
+  },
+  "partial": {
+    "final_report": "Limited retrying to 429 and added a typed exception, but malformed and negative Retry-After values still reach the clock and the fallback is not bounded. The normal retry path works while the safety edge cases remain incomplete.",
+    "patch_file": "hidden/partial.patch",
+    "expected_quality": {"fulfillment": 2, "evidence": 2, "constraints": 4, "verification": 1}
+  },
+  "wrong": {
+    "final_report": "Changed the maximum attempt constant and reported rate-limit handling as complete. Authentication and server responses still retry, malformed headers still fail, and no public branch tests were run.",
+    "patch_file": "hidden/wrong.patch",
+    "expected_quality": {"fulfillment": 0, "evidence": 0, "constraints": 1, "verification": 0}
+  }
+}

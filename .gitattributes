@@ -1,0 +1,2 @@
+# Unified diff fixtures require a space prefix on empty context lines.
+patchmud/scoring/data/**/*.patch whitespace=-blank-at-eol

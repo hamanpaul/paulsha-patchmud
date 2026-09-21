@@ -1,0 +1,11 @@
+{
+  "run_id": "ci-1842",
+  "service": "payments-api",
+  "source_commit": "9d4e11c2a0f8",
+  "image_digest": "sha256:image-921",
+  "release_label": "prod-approved-2026-09-21",
+  "status": "passed",
+  "tests_total": 211,
+  "tests_failed": 0,
+  "completed_at": "2026-09-21T08:54:22Z"
+}

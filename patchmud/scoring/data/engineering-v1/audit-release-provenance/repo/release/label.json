@@ -1,0 +1,10 @@
+{
+  "service": "widget-api",
+  "release_label": "v4.12.0-production",
+  "label_status": "verified-production",
+  "claimed_source_commit": "8f31c0d9b7e4",
+  "claimed_artifact_digest": "sha256:artifact-44b7",
+  "claimed_environment": "production",
+  "claimed_test_run": "ci-742",
+  "published_at": "2026-09-21T08:30:00Z"
+}

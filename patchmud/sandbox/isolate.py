@@ -84,6 +84,9 @@ def build_bwrap_argv(
     *,
     bwrap_path: str | os.PathLike[str] = DEFAULT_BWRAP_PATH,
     chdir: Path | None = None,
+    masked_paths: Sequence[Path] = (),
+    protected_paths: Sequence[Path] = (),
+    writable_paths: Sequence[Path] = (),
 ) -> list[str]:
     """組裝 bubblewrap argv：bind allowlist + namespace 旗標 + env 白名單。
 
@@ -108,6 +111,25 @@ def build_bwrap_argv(
     for path in toolchain_ro:
         out += ["--ro-bind", str(path), str(path)]
     out += ["--bind", str(worktree), str(worktree)]
+    # Host-side Workspace subsequently invokes Git.  Scoring protects its
+    # metadata and original tests against writes made by candidate code, too.
+    for path in protected_paths:
+        canonical = Path(path).resolve()
+        if not canonical.is_relative_to(worktree.resolve()):
+            raise ValueError('protected path must be within worktree')
+        out += ["--ro-bind", str(canonical), str(canonical)]
+    for path in writable_paths:
+        canonical = Path(path).resolve()
+        if not any(canonical.is_relative_to(Path(root).resolve()) for root in protected_paths):
+            raise ValueError('writable exception must be within a protected path')
+        out += ["--bind", str(canonical), str(canonical)]
+    # Wheels can install engine code and private case anchors inside a
+    # toolchain's site-packages.  Overlay those directories only after the
+    # toolchain mounts; otherwise the read-only parent would reveal them again.
+    for path in masked_paths:
+        canonical = Path(path).resolve()
+        if any(canonical.is_relative_to(Path(root).resolve()) for root in toolchain_ro):
+            out += ["--tmpfs", str(canonical)]
     out += ["--proc", "/proc", "--dev", "/dev"]
     if chdir is not None:
         out += ["--chdir", str(chdir)]
@@ -126,10 +148,16 @@ class IsolationRunner:
         *,
         bwrap_path: str | os.PathLike[str] = DEFAULT_BWRAP_PATH,
         extra_ro: Sequence[Path] = (),
+        masked_paths: Sequence[Path] = (),
+        protected_paths: Sequence[Path] = (),
+        writable_paths: Sequence[Path] = (),
     ) -> None:
         self._worktree = Path(worktree)
         self._toolchain_ro = tuple(Path(p) for p in toolchain_ro)
         self._extra_ro = [Path(p) for p in extra_ro]
+        self._masked_paths = tuple(Path(p) for p in masked_paths)
+        self._protected_paths = tuple(Path(p) for p in protected_paths)
+        self._writable_paths = tuple(Path(p) for p in writable_paths)
         self._bwrap_path = str(bwrap_path)
 
     def add_ro_bind(self, path: Path) -> None:
@@ -152,6 +180,9 @@ class IsolationRunner:
             argv,
             bwrap_path=self._bwrap_path,
             chdir=cwd,
+            masked_paths=self._masked_paths,
+            protected_paths=self._protected_paths,
+            writable_paths=self._writable_paths,
         )
 
         rusage_before = resource.getrusage(resource.RUSAGE_CHILDREN)
@@ -173,6 +204,12 @@ class IsolationRunner:
             timed_out = True
             _kill_process_group(proc.pid)
             stdout, stderr = proc.communicate()
+        except BaseException:
+            # Scoring cancellation must not leave candidate descendants alive
+            # after its workspace or evidence writer has been torn down.
+            _kill_process_group(proc.pid)
+            proc.communicate()
+            raise
         wall_ms = round((time.monotonic() - started) * 1000)
         rusage_after = resource.getrusage(resource.RUSAGE_CHILDREN)
         cpu_s = (rusage_after.ru_utime - rusage_before.ru_utime) + (

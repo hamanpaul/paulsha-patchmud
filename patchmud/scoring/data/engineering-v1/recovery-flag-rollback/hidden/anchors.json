@@ -1,0 +1,19 @@
+{
+  "kind": "patch",
+  "outcome_class": "code_change",
+  "reference": {
+    "final_report": "Updated recovery.py after both operational stages. The rollback now treats rollout-42 as owning only search_v2: it restores that flag for an applied tenant whose current value still differs, preserving the newer billing_v2 publication and its revision/audit history. The stage-two acknowledgement policy is explicit: acme is skipped and remains enabled, while globex is restored, producing a partial result with separate restored and skipped lists. Tenants outside the rollout remain untouched. The terminal status and result are cached on the Rollout object, so a second call returns the same partial outcome without another audit mutation. The isolated public run verifies concurrent publication, acknowledged retention, unacknowledged compensation, untouched initech, audit shape, and repeat idempotence.",
+    "patch_file": "hidden/reference.patch",
+    "expected_quality": {"fulfillment": 4, "evidence": 4, "constraints": 4, "verification": 4}
+  },
+  "partial": {
+    "final_report": "Added the stage-two acknowledgement skip, so acme is retained and the result lists it as skipped. The remaining unacknowledged path still replaces a whole stale tenant snapshot, which erases the newer billing_v2 flag, reports the old rolled_back status, and is not safely repeatable. The evolving rollback is therefore incomplete and the concurrent publication and idempotence assertions remain red.",
+    "patch_file": "hidden/partial.patch",
+    "expected_quality": {"fulfillment": 2, "evidence": 2, "constraints": 3, "verification": 1}
+  },
+  "wrong": {
+    "final_report": "Added a manual reason field to the rollback result. This changes the result shape without addressing stale whole-tenant restoration, acknowledgement policy, newer flags, or repeated recovery, and the public contract tests fail.",
+    "patch_file": "hidden/wrong.patch",
+    "expected_quality": {"fulfillment": 0, "evidence": 0, "constraints": 1, "verification": 0}
+  }
+}

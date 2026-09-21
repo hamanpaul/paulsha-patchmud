@@ -1,0 +1,25 @@
+{
+  "id": "testing-parser-matrix",
+  "category": "testing",
+  "depth": 1,
+  "title": "Build a parser regression matrix around real input boundaries",
+  "prompt": "The import tool parses a small CSV-like format used by two producers. The current tests cover only a single row, while production evidence includes quoted commas, escaped quotes, blank optional fields, and a duplicate header that must be rejected. Add or repair the focused test matrix in the allowed parser/test surface, keep fixtures deterministic, and make the implementation satisfy the public contract. A green happy path alone is insufficient: report which input boundaries are covered and which malformed input remains outside the contract.",
+  "requirements": [
+    "Parse quoted commas and escaped quotes without splitting the field incorrectly.",
+    "Preserve blank optional fields as empty strings and reject duplicate headers deterministically.",
+    "Keep row-width errors distinct from header errors.",
+    "Add focused regression coverage without weakening or deleting the existing public tests.",
+    "Keep test data local and deterministic, with no network or clock dependency."
+  ],
+  "allowed_paths": ["src/parser.py", "tests/test_parser.py", "tests/fixtures/parser.csv"],
+  "max_turns": 8,
+  "wall_seconds": 600,
+  "rubric": {
+    "fulfillment": {"instructions": "Score ordered 0..4 completion of parser behavior and the regression matrix, including both valid and malformed boundaries.", "criteria": ["0: The parser or tests do not cover the requested boundaries.", "1: Covers one input shape but misses quoted fields, blanks, or header/row errors.", "2: Most matrix cases work but one important distinction or regression check is missing.", "3: Valid and malformed cases are nearly complete with one concrete boundary gap.", "4: Quoted/escaped fields, blank optionals, duplicate headers, row-width distinction, and focused non-weakening tests all hold."]},
+    "evidence": {"instructions": "Score ordered 0..4 evidence quality from fixtures, test names/assertions, parser branches, and failure messages.", "criteria": ["0: Provides no test or parser evidence.", "1: Shows a happy-path test only.", "2: Shows some edge tests but cannot link failures to parser branches or error types.", "3: Links fixture inputs, assertions, and parser behavior with one missing malformed case.", "4: Cites each matrix input, expected rows/errors, exact parser branch, and the untested contract boundary."]},
+    "constraints": {"instructions": "Score ordered 0..4 adherence to the parser/test-only scope and deterministic fixture rules.", "criteria": ["0: Deletes tests, uses network/time, or changes unrelated behavior.", "1: Adds broad brittle tests or hides failures with permissive assertions.", "2: Stays in allowed paths but makes fixtures nondeterministic or weakens an existing assertion.", "3: Preserves focused scope and deterministic data with one minor test organization issue.", "4: Changes only allowed parser/test fixture paths, retains existing tests, and has deterministic local coverage."]},
+    "verification": {"instructions": "Score ordered 0..4 verification breadth across valid quoting, optional blanks, duplicate headers, and row-width errors.", "criteria": ["0: No parser test is run.", "1: Runs one single-row test.", "2: Runs one quoted or malformed case but misses error distinction.", "3: Runs the main matrix with one assertion or fixture gap.", "4: Reports exact passing tests for all valid/malformed matrix cells and distinct failure classes."]}
+  },
+  "stages": [],
+  "test_argv": ["python3", "-m", "pytest", "-q"]
+}

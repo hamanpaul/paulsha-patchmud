@@ -1,0 +1,19 @@
+{
+  "kind": "patch",
+  "outcome_class": "code_change",
+  "reference": {
+    "final_report": "Repaired the checkpoint recovery boundary across records.py, checkpoint.py, and recover.py. The worker now keeps the journal cursor unchanged until every selected record has been written, so a pre-write stop cannot skip input and a post-write stop can safely replay. RecordStore replaces an existing id in place and appends only new ids, preserving order without duplicate rows. CheckpointJournal validates cursor type, non-negative range, and the deterministic integrity value while scanning backwards for the latest valid event, so a torn latest entry falls back to the older checkpoint. The final isolated pytest run passes the pre-write, post-write, order, replay, and torn-entry cases; the public API and RuntimeError behavior remain unchanged.",
+    "patch_file": "hidden/reference.patch",
+    "expected_quality": {"fulfillment": 4, "evidence": 4, "constraints": 4, "verification": 4}
+  },
+  "partial": {
+    "final_report": "Made replay idempotent by replacing records by id, which prevents duplicate rows after a worker writes and dies. The checkpoint is still appended before the batch and its entries are still accepted without integrity validation, so a pre-write interruption can skip records and a torn latest event can move the cursor past durable data. The public restart and journal tests remain red; this is only a partial recovery fix.",
+    "patch_file": "hidden/partial.patch",
+    "expected_quality": {"fulfillment": 2, "evidence": 2, "constraints": 4, "verification": 1}
+  },
+  "wrong": {
+    "final_report": "Added a comment to the existing checkpoint append and called the recovery path faster. No durable ordering, idempotent replay, cursor integrity, or restart test evidence was provided, and the public suite still fails at the checkpoint and torn-entry boundaries.",
+    "patch_file": "hidden/wrong.patch",
+    "expected_quality": {"fulfillment": 0, "evidence": 0, "constraints": 2, "verification": 0}
+  }
+}

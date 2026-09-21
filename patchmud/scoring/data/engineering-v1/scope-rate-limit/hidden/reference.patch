@@ -1,0 +1,30 @@
+diff --git a/src/client.py b/src/client.py
+--- a/src/client.py
++++ b/src/client.py
+@@ -1,17 +1,21 @@
+ from .errors import AuthenticationFailed, RateLimitExceeded
+ 
+ 
+ def request(send, clock, *, max_attempts=3):
+     attempts = 0
+     while True:
+         attempts += 1
+         response = send()
+         if response.status == 200:
+             return response
+         if response.status == 401:
+             raise AuthenticationFailed()
+-        # Bug: every error retries and malformed delays can run unbounded.
+-        delay = float(response.headers.get("Retry-After", "0"))
+-        clock.sleep(delay)
+-        if attempts >= max_attempts:
+-            raise RuntimeError("request failed")
++        if response.status != 429:
++            return response
++        try:
++            delay = max(0.0, min(float(response.headers.get("Retry-After", "0")), 60.0))
++        except (TypeError, ValueError):
++            delay = 1.0
++        clock.sleep(delay)
++        if attempts >= max_attempts:
++            raise RateLimitExceeded()

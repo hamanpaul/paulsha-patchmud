@@ -1,0 +1,25 @@
+{
+  "id": "repair-cache-api",
+  "category": "repair",
+  "depth": 2,
+  "title": "Repair cache invalidation across API and CLI",
+  "prompt": "The repository contains a small profile service with an in-memory cache, an HTTP-shaped API adapter, and a command-line summary. Updating a profile currently leaves a stale cached representation, while a conditional request can report a 304 response with a body and the CLI hides the version that would diagnose the mismatch. Repair the cross-component contract: one update must invalidate the right key, conditional responses must be bodyless, and the CLI must expose the observed version without changing its existing exit codes.",
+  "requirements": [
+    "Invalidate only the updated profile key after a successful write, while retaining unrelated cached profiles.",
+    "Return 304 with an empty body when the caller's ETag matches, and 200 with the new representation otherwise.",
+    "Keep API and cache version values derived from the same stored record.",
+    "Show the profile id and version in the CLI summary while preserving error exit behavior.",
+    "Do not weaken the public tests or edit files outside the allowed source modules."
+  ],
+  "allowed_paths": ["src/cache.py", "src/api.py", "src/cli.py", "src/store.py"],
+  "max_turns": 16,
+  "wall_seconds": 1200,
+  "rubric": {
+    "fulfillment": {"instructions": "Score the ordered 0..4 completeness of the cache, API conditional-response, version, and CLI repair across component boundaries.", "criteria": ["0: No cross-component behavior is repaired.", "1: One component changes but stale cache or invalid conditional responses remain.", "2: Cache and API mostly agree but one invalidation, ETag, or CLI compatibility path remains wrong.", "3: All main paths work with one concrete edge case in key retention, errors, or version reporting.", "4: Successful writes invalidate exactly one key, 304 is bodyless, 200 is fresh, versions agree, and CLI errors remain compatible."]},
+    "evidence": {"instructions": "Score ordered 0..4 traceability of evidence through store, cache, API, and CLI rather than relying on a single passing assertion.", "criteria": ["0: Claims success without identifying any component evidence.", "1: Identifies a stale value but cannot show where it crosses the API boundary.", "2: Shows either cache or response evidence while leaving version and CLI claims unsupported.", "3: Traces write, invalidation, ETag branch, and CLI output with one missing cross-check.", "4: Cites the stored record, cache keys, status/body pair, ETag, version, CLI output, and exact tests separately."]},
+    "constraints": {"instructions": "Score ordered 0..4 adherence to the allowed source surface, selective invalidation, and compatibility constraints.", "criteria": ["0: Changes tests, harness, or unrelated modules to hide failures.", "1: Makes broad cache resets or changes exit behavior while partially addressing the bug.", "2: Uses allowed modules but invalidates unrelated keys or changes the response contract.", "3: Preserves scope and compatibility with one small unnecessary change.", "4: Edits only allowed source modules, invalidates selectively, preserves status/error semantics, and adds no dependency."]},
+    "verification": {"instructions": "Score ordered 0..4 verification breadth for interactions among writes, two cached keys, ETags, response bodies, and CLI output.", "criteria": ["0: No component-level verification is reported.", "1: Checks only a direct write or a single 200 response.", "2: Checks cache and one API branch but misses selective retention or CLI errors.", "3: Exercises both API branches, update retention, and CLI output with one gap.", "4: Reports exact tests for selective invalidation, bodyless 304, fresh 200, shared version, and stable CLI errors."]}
+  },
+  "stages": [],
+  "test_argv": ["python3", "-m", "pytest", "-q"]
+}

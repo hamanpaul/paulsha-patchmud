@@ -1,0 +1,16 @@
+{
+  "kind": "answer",
+  "outcome_class": "noop",
+  "reference": {
+    "final_report": "Diagnosis: the evidence does not show duplicate delivery. Version 2.4 reduced the transport timeout, so requests r17 and r18 each made two attempts, but both received one confirmed delivery id (d91 and d92); the summary reports three attempts for r19 and three distinct delivery ids overall. The retry budget remains three attempts and the confirmation branch is unchanged. The word duplicate describes attempts, not deliveries. No repository change is justified. A bounded follow-up is to correlate broker delivery receipts with request ids for one timeout window; a repeated delivery id would change this conclusion.",
+    "expected_quality": {"fulfillment": 4, "evidence": 4, "constraints": 4, "verification": 4}
+  },
+  "partial": {
+    "final_report": "The timeout change probably caused duplicate messages, so changing the retry count may help. The report notices two attempts but does not reconcile delivery ids or prove the first breaking version, and it recommends a speculative code change.",
+    "expected_quality": {"fulfillment": 2, "evidence": 2, "constraints": 1, "verification": 1}
+  },
+  "wrong": {
+    "final_report": "Version 2.4 caused duplicate delivery and should be rolled back immediately. The log is enough to prove the broker delivered each message twice, so no further observation is needed.",
+    "expected_quality": {"fulfillment": 0, "evidence": 0, "constraints": 0, "verification": 0}
+  }
+}

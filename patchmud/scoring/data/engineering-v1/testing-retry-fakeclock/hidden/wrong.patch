@@ -1,0 +1,13 @@
+diff --git a/src/dispatcher.py b/src/dispatcher.py
+index 0b9a391..250e5b9 100644
+--- a/src/dispatcher.py
++++ b/src/dispatcher.py
+@@ -2,7 +2,7 @@ from .backoff import delay
+ 
+ 
+ def dispatch(send, clock, cancellation, request_id, *, max_attempts=3, log=None):
+-    log = [] if log is None else log
++    log = []
+     for attempt in range(1, max_attempts + 1):
+         result = send(request_id)
+         log.append({"request_id": request_id, "attempt": attempt, "status": result})

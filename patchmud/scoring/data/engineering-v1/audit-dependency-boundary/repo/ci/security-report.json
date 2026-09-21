@@ -1,0 +1,12 @@
+{
+  "run_id": "ci-811",
+  "source_commit": "a1170f4c2a11",
+  "tested_image_digest": "sha256:image-ci-811",
+  "dependency": "telemetry-lib",
+  "scanned_version": "3.7.2",
+  "advisory": "TL-2026-04",
+  "status": "patched",
+  "scanner": "public-scan-4",
+  "tests_total": 62,
+  "tests_failed": 0
+}

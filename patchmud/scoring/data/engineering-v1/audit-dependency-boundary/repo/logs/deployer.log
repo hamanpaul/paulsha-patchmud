@@ -1,0 +1,4 @@
+2026-09-21T10:01:02Z deployment=dep-811 environment=production source_commit=b992e1d7f0aa image_ref=registry.example.invalid/event-gateway:release-811
+2026-09-21T10:01:06Z deployment=dep-811 registry_resolution=not-recorded image_digest=unknown
+2026-09-21T10:01:14Z deployment=dep-811 event=ready release_label=security-fixed
+2026-09-21T10:02:00Z deployment=dep-811 event=advisory-annotation status=patched advisory=TL-2026-04
