@@ -1,0 +1,12 @@
+diff --git a/src/cursor.py b/src/cursor.py
+index 8ea0de3..ac3a409 100644
+--- a/src/cursor.py
++++ b/src/cursor.py
+@@ -1,6 +1,5 @@
+ def encode(offset, tenant=None):
+-    # Initial implementation exposes an offset with no tenant binding.
+-    return str(offset)
++    return f"{tenant}|{offset}"
+ 
+ 
+ def decode(token):

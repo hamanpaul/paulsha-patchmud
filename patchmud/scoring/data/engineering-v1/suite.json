@@ -1,0 +1,25 @@
+{
+  "id": "engineering-v1",
+  "version": "1.1.0",
+  "rubric_version": "jev-1.13.0",
+  "case_ids": [
+    "repair-config-rollback",
+    "repair-cache-api",
+    "repair-migration-state",
+    "diagnosis-retry-budget",
+    "diagnosis-queue-cache",
+    "diagnosis-incident-timeline",
+    "scope-rate-limit",
+    "scope-cli-schema",
+    "scope-changing-boundary",
+    "testing-parser-matrix",
+    "testing-retry-fakeclock",
+    "testing-schema-evolution",
+    "recovery-checkpoint",
+    "recovery-transaction-rebuild",
+    "recovery-flag-rollback",
+    "audit-release-provenance",
+    "audit-dependency-boundary",
+    "audit-deployment-integrity"
+  ]
+}

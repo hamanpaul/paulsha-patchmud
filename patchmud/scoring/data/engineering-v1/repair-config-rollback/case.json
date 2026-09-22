@@ -1,0 +1,24 @@
+{
+  "id": "repair-config-rollback",
+  "category": "repair",
+  "depth": 1,
+  "title": "Repair a layered configuration rollback",
+  "prompt": "The service reads a layered configuration from a file and environment variables. A recent refactor made an explicit false value behave like an unset value, accepted malformed integer ports, and wrote a partially updated cache before validation completed. Repair the smallest allowed surface so precedence, type errors, atomic rollback, and the existing command output remain consistent. Demonstrate the behavior with the public tests and report the observable evidence.",
+  "requirements": [
+    "Preserve file values when an environment variable is absent, while allowing an explicit environment false or zero.",
+    "Reject malformed or out-of-range PORT values before changing the active configuration.",
+    "Make a failed reload leave the last known-good configuration and cache untouched.",
+    "Keep the public CLI summary stable and do not edit tests or unrelated files."
+  ],
+  "allowed_paths": ["src/config.py", "src/reloader.py", "src/cli.py"],
+  "max_turns": 8,
+  "wall_seconds": 600,
+  "rubric": {
+    "fulfillment": {"instructions": "Treat the five criteria as ordered 0..4 quality levels. Score the highest level supported by the final diff and public behavior.", "criteria": ["0: No repair is made or the public behavior remains broken.", "1: One parsing symptom is changed but precedence, range validation, or rollback is still broken.", "2: Most parsing and validation behavior works, but a material rollback or compatibility condition remains broken.", "3: The requested behavior is nearly complete with one concrete edge case or compatibility gap.", "4: Precedence, explicit false/zero, range validation, atomic rollback, and CLI compatibility all work together."]},
+    "evidence": {"instructions": "Treat the five criteria as ordered 0..4 evidence levels. Score the highest level supported by traceable source and test evidence.", "criteria": ["0: Gives an unsupported claim with no source or test evidence.", "1: Names a configuration file or test but cannot connect evidence to the failure.", "2: Traces either parsing or rollback with partial command output, leaving a major claim unsubstantiated.", "3: Traces parsing, validation order, and state preservation with concrete tests but misses one boundary.", "4: Separately cites explicit false/zero, invalid ports, atomic failure state, and stable CLI output, distinguishing facts from assumptions."]},
+    "constraints": {"instructions": "Treat the five criteria as ordered 0..4 constraint levels. Score adherence to the allowed source surface and atomic safety requirement.", "criteria": ["0: Edits protected tests or unrelated files and weakens the benchmark.", "1: Stays partly in scope but changes a test, harness, or dependency to obtain green output.", "2: Uses allowed files but introduces unrelated behavior or leaves mutation-before-validation risk.", "3: Keeps the source-only scope and atomic design with one minor unnecessary change.", "4: Touches only allowed source files, preserves public tests, adds no dependency, and validates before replacing state."]},
+    "verification": {"instructions": "Treat the five criteria as ordered 0..4 verification levels. Score whether the checks exercise interactions rather than a single happy path.", "criteria": ["0: No relevant test or command was run.", "1: Runs one happy-path check without failure or boundary evidence.", "2: Runs parsing and one failure test but misses an interaction between validation and rollback.", "3: Runs explicit false/zero, malformed/boundary ports, and rollback, with one reporting gap.", "4: Reports exact passing public tests covering precedence, boundaries, failed reload state, and stable CLI behavior, plus any unperformed environment gate."]}
+  },
+  "stages": [],
+  "test_argv": ["python3", "-m", "pytest", "-q"]
+}

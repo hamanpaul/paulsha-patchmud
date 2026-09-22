@@ -1,0 +1,61 @@
+{
+  "id": "audit-dependency-boundary",
+  "category": "audit",
+  "depth": 2,
+  "title": "Audit a dependency security label across build and runtime boundaries",
+  "prompt": "Audit a reconstructed dependency security packet in which a source contract, lock file, SBOM, CI security report, and deployment manifest use similar words for different identities. The public report calls the dependency patched, but the exact test artifact and the deployed release reference do not share a verified immutable digest. Determine what can be concluded about the dependency in the running service, distinguish declared or scanned evidence from observed runtime evidence, and decide whether a code change is justified. A conservative insufficient-evidence result is correct when the packet cannot establish the deployed package version. The answer must give one bounded attestation request and must not invent a test pass, a vulnerability fix, or a runtime inventory.",
+  "requirements": [
+    "Trace the dependency declaration from source and lock file through the SBOM and CI security artifact.",
+    "Compare the exact source commit, artifact digest, deployment source identity, and immutable image reference.",
+    "Explain why the patched label does or does not establish the dependency version in the running service.",
+    "State an insufficient-evidence verdict when the deployed package cannot be tied to the tested artifact, with no speculative code fix.",
+    "Request one bounded runtime or registry attestation that would discriminate the competing dependency identities."
+  ],
+  "allowed_paths": [],
+  "max_turns": 16,
+  "wall_seconds": 1200,
+  "rubric": {
+    "fulfillment": {
+      "instructions": "Score whether the audit completes the dependency identity chain and reaches the conservative action boundary instead of treating a security label as a runtime fact.",
+      "criteria": [
+        "0: Declares the dependency fixed or proposes an upgrade without tracing the tested and deployed identities.",
+        "1: Repeats the patched label or lock version but omits the deployment boundary and evidence limitation.",
+        "2: Traces source, lock, or CI evidence but leaves the runtime conclusion and bounded attestation incomplete.",
+        "3: Finds the tested-versus-deployed identity gap, states insufficient evidence, and gives a mostly bounded next step.",
+        "4: Traces declaration, lock, SBOM, CI, source, image, deployment, limitation, no-code action, and discriminating attestation completely."
+      ]
+    },
+    "evidence": {
+      "instructions": "Score exact evidence use across source code, dependency lock, SBOM, security report, deployment manifest, and deploy log, including contradictory labels.",
+      "criteria": [
+        "0: Treats the security status label as evidence and cites no exact identity.",
+        "1: Cites the lock file or CI status but provides no exact deployed source or image evidence.",
+        "2: Links the tested SBOM and CI artifact but misses that deployment uses a different source or mutable tag.",
+        "3: Links source, lock, SBOM, CI, and deployment records while leaving one missing runtime field implicit.",
+        "4: Maps every claim to exact dependency, commit, digest, report, deployment, and missing-attestation evidence and labels inference."
+      ]
+    },
+    "constraints": {
+      "instructions": "Score discipline in the answer-only audit: do not mutate the repository, claim a test run, or prescribe an unbounded dependency remediation when runtime identity is unknown.",
+      "criteria": [
+        "0: Claims to have upgraded or verified the deployed dependency, or invents a passing security test.",
+        "1: Avoids a patch but recommends immediate upgrade or rollback as if the vulnerable runtime were proven.",
+        "2: Preserves read-only scope but treats the lock or SBOM as the running image without qualification.",
+        "3: Preserves the no-change boundary and insufficient-evidence conclusion with one unnecessarily broad operational request.",
+        "4: Makes no mutation or fabricated result, keeps labels separate from observations, and asks only for a bounded attestation."
+      ]
+    },
+    "verification": {
+      "instructions": "Score cross-component verification of dependency version, source commit, artifact digest, image reference, deployment record, and the exact boundary that prevents closure.",
+      "criteria": [
+        "0: Performs no identity or boundary check and simply closes the advisory.",
+        "1: Checks the declared version or scan result but not its relationship to the deployed release.",
+        "2: Checks the CI digest and deployment reference but misses the source mismatch or absent runtime inventory.",
+        "3: Reconciles declaration, tested artifact, deployment source, and mutable image reference with one residual gap.",
+        "4: Verifies every available identity, proves why the gap blocks a patched-runtime claim, and defines the observation that would resolve it."
+      ]
+    }
+  },
+  "stages": [],
+  "test_argv": []
+}

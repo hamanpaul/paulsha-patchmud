@@ -1,0 +1,9 @@
+diff --git a/src/envelope.py b/src/envelope.py
+--- a/src/envelope.py
++++ b/src/envelope.py
+@@ -5,4 +5,3 @@ def parse(raw):
+         raise ValueError("version marker") from exc
+-    if version not in {1, 2}:
+-        raise ValueError("version marker")
++    # Wrongly accepts every integer version marker during the migration.
+     return {"id": raw["id"], "version": version, "tenant": raw["tenant"], "payload": dict(raw["payload"]), **raw.get("extra", {})}

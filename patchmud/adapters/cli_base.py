@@ -24,8 +24,12 @@ economy 維度時，這層 overhead 屬於 provider 的既有成本結構，不�
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
+import os
+import signal
 import shutil
 import subprocess
+import tempfile
 import time
 from collections.abc import Callable
 
@@ -42,7 +46,11 @@ __all__ = [
 DEFAULT_CLI_TIMEOUT_S = 600.0
 
 #: runner callable：送出 argv、回傳子行程 stdout。
-CliRunner = Callable[[list[str]], str]
+#:
+#: The optional timeout and prompt arguments are supported by the runner
+#: returned from :func:`build_subprocess_runner`.  Existing tests and callers
+#: can continue to inject a one-argument callable.
+CliRunner = Callable[..., str]
 
 _ROLE_LABELS = {
     "system": "System",
@@ -65,35 +73,111 @@ def flatten_messages(messages: list[dict]) -> str:
     return "\n\n".join(blocks)
 
 
-def build_subprocess_runner(timeout_s: float = DEFAULT_CLI_TIMEOUT_S) -> CliRunner:
+def build_subprocess_runner(
+    timeout_s: float = DEFAULT_CLI_TIMEOUT_S, *, controlled: bool = False
+) -> CliRunner:
     """真子行程執行；非零 exit、逾時或 OS 層失敗 → ``AdapterError``。
 
-    ``stdin`` 一律導向 ``DEVNULL``：CLI 偵測到 stdin 是 pipe 時會等待補充輸入
-    而卡住。
+    Legacy invocations keep ``stdin=DEVNULL``.  Controlled invocations use a pipe
+    so the flattened prompt can be supplied without putting a deep prompt in the
+    command-line argument vector.
     """
 
-    def _runner(argv: list[str]) -> str:
-        try:
-            completed = subprocess.run(
-                argv,
-                capture_output=True,
-                text=True,
-                check=True,
-                timeout=timeout_s,
-                stdin=subprocess.DEVNULL,
-            )
-        except subprocess.CalledProcessError as exc:
-            detail = (exc.stderr or exc.stdout or "").strip()[:500]
+    def _runner(
+        argv: list[str],
+        timeout_override_s: float | None = None,
+        input_text: str | None = None,
+    ) -> str:
+        effective_timeout = timeout_s if timeout_override_s is None else timeout_override_s
+        process: subprocess.Popen[str] | None = None
+        # Controlled scoring invocations start in a fresh empty cwd and use a
+        # scrubbed child environment.  Legacy callers retain their historical
+        # cwd/environment contract; process-group cleanup and timeout support
+        # are safe universal improvements.
+        cwd_context = (
+            tempfile.TemporaryDirectory(prefix="patchmud-cli-guard-")
+            if controlled
+            else nullcontext(None)
+        )
+        with cwd_context as clean_cwd:
+            try:
+                process = subprocess.Popen(
+                    argv,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    stdin=subprocess.PIPE if controlled else subprocess.DEVNULL,
+                    cwd=clean_cwd,
+                    env=_controlled_cli_env() if controlled else None,
+                    start_new_session=True,
+                )
+                if controlled:
+                    stdout, stderr = process.communicate(
+                        input=input_text, timeout=effective_timeout
+                    )
+                else:
+                    # Preserve the legacy fake/process contract: no input
+                    # keyword is sent when stdin is DEVNULL.
+                    stdout, stderr = process.communicate(timeout=effective_timeout)
+            except subprocess.TimeoutExpired as exc:
+                if process is not None:
+                    _kill_process_group(process.pid)
+                    stdout, stderr = process.communicate()
+                error = AdapterError(f"{argv[0]} 逾時（{effective_timeout}s）")
+                error.timed_out = True  # type: ignore[attr-defined]
+                error.stdout = stdout if process is not None else ""  # type: ignore[attr-defined]
+                error.stderr = stderr if process is not None else ""  # type: ignore[attr-defined]
+                raise error from exc
+            except OSError as exc:
+                raise AdapterError(f"{argv[0]} 無法執行：{exc}") from exc
+            except BaseException:
+                # Cancellation/interrupts must not orphan a provider CLI or
+                # one of its descendants.  ``start_new_session`` gives us a
+                # private process group for this exact cleanup boundary.
+                if process is not None:
+                    _kill_process_group(process.pid)
+                    if process.poll() is None:
+                        process.communicate()
+                raise
+        if process is None:  # pragma: no cover - Popen either succeeds or raises
+            raise AdapterError(f"{argv[0]} 未建立子行程")
+        if process.returncode != 0:
+            detail = (stderr or stdout or "").strip()[:500]
             raise AdapterError(
-                f"{argv[0]} 以 exit={exc.returncode} 結束：{detail}"
-            ) from exc
-        except subprocess.TimeoutExpired as exc:
-            raise AdapterError(f"{argv[0]} 逾時（{timeout_s}s）") from exc
-        except OSError as exc:
-            raise AdapterError(f"{argv[0]} 無法執行：{exc}") from exc
-        return completed.stdout
+                f"{argv[0]} 以 exit={process.returncode} 結束：{detail}"
+            )
+        return stdout
 
+    _runner.supports_timeout = True  # type: ignore[attr-defined]
+    _runner.supports_input = controlled  # type: ignore[attr-defined]
     return _runner
+
+
+def _controlled_cli_env() -> dict[str, str]:
+    """Keep provider authentication while removing ambient execution state."""
+
+    env = {
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+    }
+    # OAuth CLIs read these stores themselves.  Codex also has explicit
+    # ``--ignore-user-config``; agy's plan/sandbox mode is paired with the
+    # empty cwd above.  Do not pass generic XDG/plugin/skill variables.
+    for key in ("HOME", "CODEX_HOME", "ANTIGRAVITY_HOME"):
+        value = os.environ.get(key)
+        if value:
+            env[key] = value
+    return env
+
+
+def _kill_process_group(pid: int) -> None:
+    """Terminate a timed-out CLI and every descendant it may have spawned."""
+
+    try:
+        os.killpg(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
 
 
 def iter_json_objects(stdout: str) -> list[dict]:
@@ -131,6 +215,7 @@ class CliModelAdapter(ModelAdapter):
         clock: Callable[[], float] = time.monotonic,
         runner: CliRunner | None = None,
         timeout_s: float = DEFAULT_CLI_TIMEOUT_S,
+        controlled: bool = False,
     ) -> None:
         if not model:
             raise AdapterError(f"{self.binary_name} adapter 需要 model id")
@@ -138,13 +223,52 @@ class CliModelAdapter(ModelAdapter):
         self.effort = effort
         self._binary = binary or shutil.which(self.binary_name) or self.binary_name
         self._clock = clock
-        self._runner = runner if runner is not None else build_subprocess_runner(timeout_s)
+        self.controlled = bool(controlled)
+        # Concrete controlled adapters switch their prompt argument shape while
+        # ``_build_argv`` runs.  The flag is transient so direct argv-building
+        # and injected one-argument fakes retain the historical contract.
+        self._stdin_transport = False
+        self._runner = (
+            runner
+            if runner is not None
+            else build_subprocess_runner(timeout_s, controlled=self.controlled)
+        )
 
     def complete(self, messages: list[dict]) -> AdapterResponse:
+        return self._complete(messages, timeout_s=None)
+
+    def complete_with_timeout(
+        self, messages: list[dict], timeout_s: float
+    ) -> AdapterResponse:
+        """Complete with a per-call deadline when the subprocess runner supports it.
+
+        The method is additive to ``ModelAdapter`` so legacy adapters and injected
+        one-argument fake runners retain their existing contract.  Scoring uses it
+        to clamp every model call to the case's remaining wall budget.
+        """
+
+        return self._complete(messages, timeout_s=max(0.001, float(timeout_s)))
+
+    def _complete(
+        self, messages: list[dict], *, timeout_s: float | None
+    ) -> AdapterResponse:
         prompt = flatten_messages(list(messages))
-        argv = self._build_argv(prompt)
-        started = self._clock()
-        stdout = self._runner(argv)
+        use_stdin = self.controlled and getattr(self._runner, "supports_input", False)
+        self._stdin_transport = use_stdin
+        try:
+            argv = self._build_argv(prompt)
+            started = self._clock()
+            if use_stdin:
+                # The built-in controlled runner accepts the third argument.  A
+                # one-argument injected fake does not advertise this capability,
+                # so it continues to receive the complete argv as before.
+                stdout = self._runner(argv, timeout_s, prompt)
+            elif timeout_s is not None and getattr(self._runner, "supports_timeout", False):
+                stdout = self._runner(argv, timeout_s)
+            else:
+                stdout = self._runner(argv)
+        finally:
+            self._stdin_transport = False
         wall_ms = round((self._clock() - started) * 1000)
         text, usage_raw = self._parse(stdout)
         return AdapterResponse(text=text, usage_raw=usage_raw, wall_ms=wall_ms)

@@ -51,10 +51,12 @@ class AgyCliAdapter(CliModelAdapter):
         super().__init__(model, binary=agy_binary, **kwargs)
 
     def _build_argv(self, prompt: str) -> list[str]:
-        return [
-            self._binary,
-            "--print",
-            prompt,
+        argv = [self._binary]
+        if self._stdin_transport:
+            argv += ["--input-format", "text", "--print"]
+        else:
+            argv += ["--print", prompt]
+        argv += [
             "--model",
             self.model,
             "--effort",
@@ -64,6 +66,10 @@ class AgyCliAdapter(CliModelAdapter):
             "--disable-slash-commands",
             "--sandbox",
         ]
+        if self.controlled:
+            sandbox_index = argv.index("--sandbox")
+            argv[sandbox_index:sandbox_index] = ["--mode", "plan"]
+        return argv
 
     def _parse(self, stdout: str) -> tuple[str, dict]:
         payload: dict | None = None
@@ -78,6 +84,15 @@ class AgyCliAdapter(CliModelAdapter):
         status = payload.get("status")
         if status != SUCCESS_STATUS:
             raise AdapterError(f"agy 回報非成功狀態：status={status!r}")
+
+        if self.controlled and any(
+            key in payload
+            for key in ("tool_calls", "tool_results", "tool_use", "command_execution")
+        ):
+            raise AdapterError(
+                "agy completion emitted native tool data; "
+                "scoring requires completion-only output"
+            )
 
         response = payload.get("response")
         if not isinstance(response, str):

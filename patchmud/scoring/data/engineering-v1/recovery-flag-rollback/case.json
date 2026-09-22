@@ -1,0 +1,72 @@
+{
+  "id": "recovery-flag-rollback",
+  "category": "recovery",
+  "depth": 3,
+  "title": "Recover a feature-flag rollout while the policy changes",
+  "prompt": "A feature-flag rollout enabled search_v2 for a tenant cohort, then stalled during an incident. The recovery helper currently restores a captured tenant snapshot, but the control plane can publish unrelated flags after the rollout starts and an acknowledged tenant may no longer be eligible for compensation. Investigate the flag store, rollout record, audit trail, and rollback helper. Start with the original cohort and preserve the existing APIs; incorporate the first and second follow-up operational notes that arrive during the run. The final recovery must be safe to repeat, must not erase newer unrelated flag values, and must report which tenants were restored versus intentionally retained.",
+  "requirements": [
+    "Restore only the rollout-owned flag for an applied, unacknowledged tenant and preserve unrelated newer flags and revisions.",
+    "Honor the second follow-up acknowledgement policy by retaining an acknowledged tenant and reporting a partial rollback when necessary.",
+    "Keep tenants outside the rollout and flags outside the rollout unchanged while preserving the existing audit record shape.",
+    "Make the recovery idempotent: a repeated call must not create another state mutation or audit entry.",
+    "Use the final follow-up state in the report, distinguish restored and skipped tenants, and verify the concurrent publication scenario."
+  ],
+  "allowed_paths": ["src/**", "tests/agent/**"],
+  "max_turns": 24,
+  "wall_seconds": 1800,
+  "rubric": {
+    "fulfillment": {
+      "instructions": "Score ordered 0..4 evolving rollback completion across cohort ownership, concurrent flag publication, acknowledgement policy, audit state, and repeated recovery.",
+      "criteria": [
+        "0: Applies a broad snapshot restore or ignores the staged policy and cannot state the final cohort outcome.",
+        "1: Restores some rollout tenants but erases unrelated flags, ignores acknowledgement, or repeats mutations.",
+        "2: Preserves one boundary but has a material gap in concurrent state, partial rollback reporting, or idempotence.",
+        "3: Handles the staged cohort and concurrent flag safely with one concrete audit or repeat edge case unresolved.",
+        "4: Restores exactly eligible rollout flags, retains acknowledged and unrelated state, records partial outcome, and is idempotent."
+      ]
+    },
+    "evidence": {
+      "instructions": "Score ordered 0..4 traceability from revisions, per-tenant flag values, rollout ownership, acknowledgements, audit events, and each staged message to the final decision.",
+      "criteria": [
+        "0: Gives a rollback claim without tenant, revision, flag, stage, or audit evidence.",
+        "1: Cites the original rollout snapshot but cannot prove concurrent publication or cohort selection.",
+        "2: Shows one state transition and one stage but leaves acknowledgement, audit, or repeat evidence unsupported.",
+        "3: Links rollout, store revision, staged publication, acknowledgement, and rollback result with one limited inference gap.",
+        "4: Cites exact per-tenant before/current values, unrelated revision, applied/acknowledged sets, audit delta, stage updates, and repeat result."
+      ]
+    },
+    "constraints": {
+      "instructions": "Score ordered 0..4 adherence to the flag, rollout, recovery, and audit APIs, evolving policy boundaries, and deterministic no-dependency scope.",
+      "criteria": [
+        "0: Rewrites tests or store meaning, deletes audit history, or resets every tenant to obtain a simple result.",
+        "1: Bypasses acknowledgement or concurrent updates by replacing the entire flag snapshot or broadening the scope.",
+        "2: Mostly stays in the allowed modules but changes audit shape, rollout ownership, or repeat semantics.",
+        "3: Preserves APIs and staged boundaries with one minor unnecessary state or reporting change.",
+        "4: Edits only allowed source/test-agent paths, preserves APIs and audit shape, and incorporates both notes without unrelated refactoring."
+      ]
+    },
+    "verification": {
+      "instructions": "Score ordered 0..4 verification breadth over initial rollout, newer unrelated publication, acknowledged retention, unacknowledged compensation, untouched tenant, audit delta, and repeated rollback.",
+      "criteria": [
+        "0: No evolving-state rollback verification is run.",
+        "1: Checks one tenant's final flag and omits concurrent or staged behavior.",
+        "2: Checks a rollback and one boundary but misses acknowledgement, unrelated flag preservation, or repeat safety.",
+        "3: Exercises the final cohort and concurrent update with one exact audit or untouched-tenant check missing.",
+        "4: Reports exact tests for both staged states, per-flag preservation, acknowledged skip, unacknowledged restore, audit count, and idempotent repeat."
+      ]
+    }
+  },
+  "stages": [
+    {
+      "after_turn": 8,
+      "native_phase": 1,
+      "message": "Control-plane evidence arrived: after rollout-42 began, revision 4 published billing_v2=true for acme and globex. Preserve this unrelated newer flag while compensating search_v2. Do not restore a stale whole-tenant snapshot."
+    },
+    {
+      "after_turn": 16,
+      "native_phase": 2,
+      "message": "Incident policy changed: acme acknowledged search_v2 before recovery. Keep acknowledged tenants enabled and compensate only applied, unacknowledged tenants; report a partial rollback and make a repeated recovery call produce no new mutation."
+    }
+  ],
+  "test_argv": ["python3", "-m", "pytest", "-q"]
+}

@@ -1,0 +1,13 @@
+diff --git a/src/serializer.py b/src/serializer.py
+index 142e46f..2c4e471 100644
+--- a/src/serializer.py
++++ b/src/serializer.py
+@@ -2,7 +2,7 @@ import json
+ 
+ 
+ def text(event):
+-    return f"{event['id']}: {event['payload']}"
++    return f"source={event.get('source')} {event['id']}: {event['payload']}"
+ 
+ 
+ def as_json(event):

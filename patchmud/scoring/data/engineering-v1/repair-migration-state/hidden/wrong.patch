@@ -1,0 +1,13 @@
+diff --git a/src/migrate.py b/src/migrate.py
+index 934e478..31e0719 100644
+--- a/src/migrate.py
++++ b/src/migrate.py
+@@ -10,7 +10,7 @@ def run(store: RecordStore, journal: Journal, batch_size=2, *, dry_run=False, fa
+     cursor = journal.cursor
+     batch = store.rows[cursor:cursor + batch_size]
+     if not batch:
+-        return {"cursor": cursor, "planned": 0}
++        return {"cursor": cursor, "planned": len(batch)}
+     # Bug: dry-run writes, and checkpoint is recorded before durable writes.
+     if dry_run:
+         for row in batch:

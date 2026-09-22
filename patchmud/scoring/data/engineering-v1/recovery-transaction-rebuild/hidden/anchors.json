@@ -1,0 +1,19 @@
+{
+  "kind": "patch",
+  "outcome_class": "code_change",
+  "reference": {
+    "final_report": "Repaired the transaction rebuild boundary in projection.py, outbox.py, and rebuild.py. AccountProjection now treats the transaction id as an idempotency key, so a transaction that was applied before a crash is not charged again on replay. Outbox.publish applies the same key to downstream notifications and keeps one event. The cursor is saved only after both projection and outbox work complete; the injected failure therefore leaves cursor zero and a retry publishes txn-1 exactly once. The isolated public tests also show that committed transactions preserve operation order, the abort and open tail are excluded, max_transactions resumes at the next commit boundary, and the final balances and outbox ids are correct.",
+    "patch_file": "hidden/reference.patch",
+    "expected_quality": {"fulfillment": 4, "evidence": 4, "constraints": 4, "verification": 4}
+  },
+  "partial": {
+    "final_report": "Added transaction-id deduplication to the projection, so a repeated committed group no longer doubles the balance. The cursor is still saved before outbox publication and the outbox still emits duplicates, so a crash at that boundary can skip the notification or leave replayed downstream events inconsistent. Aborted and bounded cases are not enough to call the cross-component recovery complete; the restart test remains red.",
+    "patch_file": "hidden/partial.patch",
+    "expected_quality": {"fulfillment": 2, "evidence": 2, "constraints": 4, "verification": 1}
+  },
+  "wrong": {
+    "final_report": "Changed the bounded transaction comparison so a run may process one extra transaction. This does not repair projection or outbox replay, cursor durability, aborted groups, or the injected crash, and the public bounded-resume evidence is now incorrect.",
+    "patch_file": "hidden/wrong.patch",
+    "expected_quality": {"fulfillment": 0, "evidence": 1, "constraints": 2, "verification": 0}
+  }
+}

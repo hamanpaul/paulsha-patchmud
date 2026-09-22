@@ -1,0 +1,57 @@
+diff --git a/src/dispatcher.py b/src/dispatcher.py
+--- a/src/dispatcher.py
++++ b/src/dispatcher.py
+@@ -7,12 +7,10 @@ def dispatch(send, clock, cancellation, request_id, *, max_attempts=3, log=None):
+         result = send(request_id)
+         log.append({"request_id": request_id, "attempt": attempt, "status": result})
+         if result == "ok":
+-            clock.sleep(delay(attempt))  # Bug: success schedules a needless delay.
+             return result
+         if result == "permanent":
+             return result
+-        clock.sleep(delay(attempt))
+-        # Bug: cancellation is checked after scheduling the next delay.
+         if cancellation.cancelled:
+             return "cancelled"
++        clock.sleep(delay(attempt))
+     return "exhausted"
+diff --git a/tests/agent/test_retry_contract.py b/tests/agent/test_retry_contract.py
+new file mode 100644
+--- /dev/null
++++ b/tests/agent/test_retry_contract.py
+@@ -0,0 +1,32 @@
++from src.cancel import Cancellation
++from src.dispatcher import dispatch
++
++
++class RecordingClock:
++    def __init__(self):
++        self.events = []
++
++    def sleep(self, seconds):
++        self.events.append(seconds)
++
++
++def test_agent_success_and_permanent_errors_never_sleep():
++    clock = RecordingClock()
++    assert dispatch(lambda request_id: "ok", clock, Cancellation(), "agent-ok") == "ok"
++    assert clock.events == []
++
++    clock = RecordingClock()
++    assert dispatch(lambda request_id: "permanent", clock, Cancellation(), "agent-permanent") == "permanent"
++    assert clock.events == []
++
++
++def test_agent_cancellation_is_checked_before_next_delay():
++    clock = RecordingClock()
++    cancellation = Cancellation()
++    attempts = []
++
++    def send(request_id):
++        attempts.append(request_id)
++        cancellation.cancelled = True
++        return "transient"
++
++    assert dispatch(send, clock, cancellation, "agent-cancel", log=[]) == "cancelled"
++    assert attempts == ["agent-cancel"]
++    assert clock.events == []

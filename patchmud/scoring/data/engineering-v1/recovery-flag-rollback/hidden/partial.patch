@@ -1,0 +1,13 @@
+diff --git a/src/recovery.py b/src/recovery.py
+--- a/src/recovery.py
++++ b/src/recovery.py
+@@ -9,6 +9,9 @@
+     restored = []
+     skipped = []
+     for tenant in rollout.applied:
++        if tenant in rollout.acknowledged:
++            skipped.append(tenant)
++            continue
+         # Bug: a stale whole-tenant snapshot erases newer unrelated flags and
+         # restores tenants that have already acknowledged the rollout.
+         store.replace(tenant, rollout.before[tenant], actor=f"rollback:{rollout.id}")

@@ -1,0 +1,23 @@
+diff --git a/src/api.py b/src/api.py
+index 4bff91b..017a814 100644
+--- a/src/api.py
++++ b/src/api.py
+@@ -11,7 +11,7 @@ class ProfileAPI:
+         row = self.cache.get(profile_id, self.store.get)
+         etag = f"v{row['version']}"
+         if if_none_match == etag:
+-            return 304, etag, row  # Bug: a 304 response must not carry a body.
++            return 304, etag, None
+         return 200, etag, row
+ 
+     def update(self, profile_id, name):
+diff --git a/src/cli.py b/src/cli.py
+index d4c30c3..faad6d6 100644
+--- a/src/cli.py
++++ b/src/cli.py
+@@ -4,4 +4,4 @@ from .api import ProfileAPI
+ def summary(api: ProfileAPI, profile_id: str) -> str:
+     _status, _etag, row = api.read(profile_id)
+     # Bug: omits the version needed to correlate a stale response.
+-    return f"profile={profile_id} name={row['name']}"
++    return f"profile={profile_id} name={row['name']} version={row['version']}"

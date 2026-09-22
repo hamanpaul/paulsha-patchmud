@@ -1,0 +1,40 @@
+diff --git a/src/outbox.py b/src/outbox.py
+--- a/src/outbox.py
++++ b/src/outbox.py
+@@ -3,5 +3,6 @@
+         self.events = []
+ 
+     def publish(self, txid, operations):
+-        # Bug: a replay publishes a second downstream event.
++        if any(event["txid"] == txid for event in self.events):
++            return
+         self.events.append({"txid": txid, "operations": [dict(item) for item in operations]})
+diff --git a/src/projection.py b/src/projection.py
+--- a/src/projection.py
++++ b/src/projection.py
+@@ -4,7 +4,8 @@
+         self.applied = []
+ 
+     def apply(self, txid, operations):
+-        # Bug: a replay applies the same transaction's deltas again.
++        if txid in self.applied:
++            return
+         for operation in operations:
+             account = operation["account"]
+             self.balances[account] = self.balances.get(account, 0) + operation["delta"]
+diff --git a/src/rebuild.py b/src/rebuild.py
+--- a/src/rebuild.py
++++ b/src/rebuild.py
+@@ -29,11 +29,10 @@
+     next_cursor = cursor.value
+     for txid, operations, end_cursor in _transactions(log, cursor.value):
+         projection.apply(txid, operations)
+-        # Bug: the cursor is durable before the downstream side effect.
+-        cursor.save(end_cursor)
+         if fail_after_projection:
+             raise RuntimeError("rebuild stopped before outbox publication")
+         outbox.publish(txid, operations)
++        cursor.save(end_cursor)
+         next_cursor = end_cursor
+         processed += 1
+         if max_transactions is not None and processed >= max_transactions:

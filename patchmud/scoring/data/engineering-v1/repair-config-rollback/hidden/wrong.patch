@@ -1,0 +1,10 @@
+diff --git a/src/cli.py b/src/cli.py
+index 70e50e9..2e4bf0d 100644
+--- a/src/cli.py
++++ b/src/cli.py
+@@ -2,4 +2,4 @@ from .reloader import ConfigStore
+ 
+ 
+ def summary(store: ConfigStore) -> str:
+-    return f"enabled={store.active['enabled']} port={store.active['port']} endpoint={store.cache['endpoint']}"
++    return f"config: enabled={store.active['enabled']} port={store.active['port']} endpoint={store.cache['endpoint']}"

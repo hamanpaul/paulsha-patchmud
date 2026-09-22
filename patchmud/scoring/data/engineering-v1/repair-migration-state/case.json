@@ -1,0 +1,28 @@
+{
+  "id": "repair-migration-state",
+  "category": "repair",
+  "depth": 3,
+  "title": "Repair a resumable migration after an evolving incident",
+  "prompt": "A versioned migration moves user records from v1 to v2 in bounded batches and records a checkpoint. The initial repository loses idempotency when a batch is retried and marks a checkpoint before the write is durable. During the run, a first follow-up reports that workers may restart between the write and checkpoint, and a second follow-up adds a dry-run mode that must never mutate the journal. Repair the state machine, preserve restart safety, and explain how the new evidence changes the implementation.",
+  "requirements": [
+    "Make each record transformation idempotent and safe to replay after a worker restart.",
+    "Persist the checkpoint only after the batch write succeeds, with a durable ordering visible in the journal.",
+    "Resume from the last committed checkpoint without skipping or duplicating records.",
+    "Implement the second follow-up dry-run requirement without writing records or advancing the journal.",
+    "Keep batch boundaries and existing error reporting stable."
+  ],
+  "allowed_paths": ["src/migrate.py", "src/journal.py", "src/records.py"],
+  "max_turns": 24,
+  "wall_seconds": 1800,
+  "rubric": {
+    "fulfillment": {"instructions": "Score ordered 0..4 completion against the initial migration contract and the later restart and dry-run evidence.", "criteria": ["0: Migration remains non-resumable or mutates in dry-run.", "1: Adds a checkpoint or idempotent write in isolation but replay can still skip or duplicate records.", "2: Restart behavior is mostly safe but ordering, journal durability, or dry-run has a material gap.", "3: The state machine is nearly complete with one concrete failure under the staged restart scenario.", "4: Idempotent batches, write-before-checkpoint ordering, exact resume, and non-mutating dry-run all hold."]},
+    "evidence": {"instructions": "Score ordered 0..4 evidence quality over state transitions, journal records, restart observations, and staged requirements.", "criteria": ["0: Gives an outcome without state or journal evidence.", "1: Cites one migration function or log line without proving ordering.", "2: Shows either replay or checkpoint evidence but not both stages and dry-run.", "3: Traces restart, write, checkpoint, and dry-run with one missing persisted-state check.", "4: Cites concrete journal sequence, record counts, resume cursor, restart incident, and dry-run non-mutation."]},
+    "constraints": {"instructions": "Score ordered 0..4 adherence to the allowed modules, batch API, error contract, and no-hidden-state assumptions.", "criteria": ["0: Rewrites tests, changes batch semantics, or ignores the staged constraint.", "1: Fixes one path by bypassing the journal or changing error behavior.", "2: Stays in scope but introduces a new ordering or batch compatibility regression.", "3: Preserves APIs and scope with one minor unnecessary state change.", "4: Edits only allowed modules, preserves batch/error contracts, and makes every mutation ordering explicit."]},
+    "verification": {"instructions": "Score ordered 0..4 verification of evolving state, including an interruption at each side of the checkpoint and dry-run.", "criteria": ["0: No migration or restart check is run.", "1: Runs only a clean one-batch migration.", "2: Runs a replay or resume check but misses a write/checkpoint interruption or dry-run.", "3: Exercises resume and dry-run with one interruption or journal assertion missing.", "4: Reports deterministic tests for clean, replay, pre-checkpoint failure, post-write restart, exact resume, and dry-run journal stability."]}
+  },
+  "stages": [
+    {"after_turn": 8, "native_phase": 1, "message": "Operational note: workers can restart after writing records but before writing the checkpoint. A replay must be harmless and the journal must show the write before the checkpoint."},
+    {"after_turn": 16, "native_phase": 2, "message": "The product requirement is clarified: add --dry-run behavior that may read and report planned batches but must not write records or advance the migration journal."}
+  ],
+  "test_argv": ["python3", "-m", "pytest", "-q"]
+}

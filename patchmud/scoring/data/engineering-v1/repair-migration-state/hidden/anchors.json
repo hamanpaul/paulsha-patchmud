@@ -1,0 +1,19 @@
+{
+  "kind": "patch",
+  "outcome_class": "code_change",
+  "reference": {
+    "final_report": "Repaired the migration state machine across records.py and migrate.py. A v2 write now replaces a record by id and remains idempotent on replay. Normal execution writes the whole batch before appending its checkpoint; an injected restart therefore leaves cursor zero and a safe replay, while a completed run advances exactly to the batch boundary. Dry-run only reports the planned batch and leaves both records and journal events unchanged. Public tests cover interruption, replay, multi-batch resume, and dry-run behavior after the reference diff.",
+    "patch_file": "hidden/reference.patch",
+    "expected_quality": {"fulfillment": 4, "evidence": 4, "constraints": 4, "verification": 4}
+  },
+  "partial": {
+    "final_report": "Made record writes replace by id but left the checkpoint before the durable batch and allowed dry-run to mutate state. Replay duplication is reduced, yet restart ordering and the final non-mutating requirement remain unproven and the public suite is still red.",
+    "patch_file": "hidden/partial.patch",
+    "expected_quality": {"fulfillment": 2, "evidence": 2, "constraints": 3, "verification": 1}
+  },
+  "wrong": {
+    "final_report": "Changed the batch size default and described the migration as resumable. No journal ordering, idempotent record replacement, restart evidence, or dry-run proof was supplied, and the public tests were not run.",
+    "patch_file": "hidden/wrong.patch",
+    "expected_quality": {"fulfillment": 0, "evidence": 0, "constraints": 2, "verification": 0}
+  }
+}

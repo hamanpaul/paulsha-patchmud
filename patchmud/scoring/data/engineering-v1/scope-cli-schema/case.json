@@ -1,0 +1,25 @@
+{
+  "id": "scope-cli-schema",
+  "category": "scope",
+  "depth": 2,
+  "title": "Extend a schema across parser, API, and CLI without format drift",
+  "prompt": "A telemetry command currently accepts a legacy event object and emits a text summary. The requested change adds an optional source field and a stable JSON output mode, but only the parser, validator, serializer, and CLI adapter may change. The API must keep accepting legacy events, reject an empty source with a precise validation error, and keep text output byte-for-byte compatible unless --json is selected. Implement the cross-component contract and demonstrate that unrelated event fields and exit statuses remain stable.",
+  "requirements": [
+    "Parse optional source while accepting legacy events that omit it.",
+    "Reject an explicitly empty source before serialization with a stable validation error.",
+    "Emit deterministic JSON only when --json is selected, with a fixed key order and no text prefix.",
+    "Preserve legacy text bytes, unrelated fields, and CLI exit statuses.",
+    "Edit only parser, validator, serializer, and CLI adapter files named in the scope."
+  ],
+  "allowed_paths": ["src/parser.py", "src/validator.py", "src/serializer.py", "src/cli.py"],
+  "max_turns": 16,
+  "wall_seconds": 1200,
+  "rubric": {
+    "fulfillment": {"instructions": "Score ordered 0..4 completion of the schema through parser, validation, serializer, and CLI boundaries.", "criteria": ["0: The optional field or JSON mode is absent or breaks legacy input.", "1: Adds one boundary but rejects legacy events or emits unstable JSON/text.", "2: Parser/API behavior mostly works but validation, key order, or text compatibility remains wrong.", "3: Cross-component behavior is nearly complete with one concrete error or compatibility gap.", "4: Legacy and new input, empty-source validation, deterministic JSON, byte-stable text, fields, and exit statuses all work."]},
+    "evidence": {"instructions": "Score ordered 0..4 evidence traceability from input bytes through validation, serialization, CLI mode, and exit result.", "criteria": ["0: No artifact evidence is reported.", "1: Shows a new JSON example without proving legacy compatibility.", "2: Shows parser and serializer output but omits validation or byte comparison.", "3: Traces all four boundaries with one unverified compatibility claim.", "4: Cites legacy/new input, exact validation error, ordered JSON bytes, text diff, unrelated fields, and exit statuses."]},
+    "constraints": {"instructions": "Score ordered 0..4 adherence to the explicit four-module scope and byte-compatible legacy contract.", "criteria": ["0: Changes tests, models, docs, or unrelated transport behavior.", "1: Broadens the patch beyond the named modules or changes legacy text.", "2: Uses named files but introduces a dependency or hidden global formatting change.", "3: Preserves scope and legacy behavior with one minor unnecessary edit.", "4: Touches only parser/validator/serializer/CLI adapter, preserves legacy bytes and statuses, and adds no dependency."]},
+    "verification": {"instructions": "Score ordered 0..4 verification of legacy/new events, empty values, JSON determinism, text bytes, and exit statuses.", "criteria": ["0: No parser or CLI check is run.", "1: Runs only a new JSON happy path.", "2: Runs new and legacy input but misses empty-source or byte-level compatibility.", "3: Covers validation, JSON, text, and statuses with one deterministic-order gap.", "4: Reports exact checks for legacy omission, source values, empty error, fixed key order, byte-stable text, unrelated fields, and exit codes."]}
+  },
+  "stages": [],
+  "test_argv": ["python3", "-m", "pytest", "-q"]
+}

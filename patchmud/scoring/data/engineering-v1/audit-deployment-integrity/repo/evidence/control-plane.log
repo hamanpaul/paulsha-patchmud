@@ -1,0 +1,5 @@
+2026-09-21T09:02:58Z manifest=payments-api-921 release_label=prod-approved-2026-09-21 environment=production
+2026-09-21T09:03:00Z event=apply image_ref=registry.example.invalid/payments:stable nodes=node-a,node-b status=accepted
+2026-09-21T09:03:02Z event=desired-state release_label=prod-approved-2026-09-21 deployment_status=complete
+2026-09-21T09:04:11Z event=healthcheck nodes=node-a,node-b result=green check=process-port
+2026-09-21T09:05:00Z event=dashboard-label label=production-complete basis=manifest-accepted

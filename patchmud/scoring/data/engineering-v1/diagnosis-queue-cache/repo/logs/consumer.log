@@ -1,0 +1,9 @@
+2026-09-21T10:00:00Z release=3.2 prefetch=32 visible=0
+2026-09-21T10:00:01Z job=184 broker_received=10:00:00 cache_decoded=10:00:01
+2026-09-21T10:00:02Z job=184 handler_started=10:00:02
+2026-09-21T10:00:02Z job=184 queue_depth=0 consumer_lag_ms=1000
+2026-09-21T10:00:03Z job=185 broker_received=10:00:00 cache_decoded=10:00:03
+2026-09-21T10:00:04Z job=185 handler_started=10:00:04
+2026-09-21T10:00:04Z job=185 queue_depth=0 consumer_lag_ms=1000
+2026-09-21T10:00:08Z broker_visible=0 cache_pending=7
+2026-09-21T10:00:30Z dashboard_window=60s queue_empty=true

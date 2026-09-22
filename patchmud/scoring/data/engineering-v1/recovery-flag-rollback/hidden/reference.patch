@@ -1,0 +1,24 @@
+diff --git a/src/recovery.py b/src/recovery.py
+--- a/src/recovery.py
++++ b/src/recovery.py
+@@ -9,12 +9,16 @@
+     restored = []
+     skipped = []
+     for tenant in rollout.applied:
+-        # Bug: a stale whole-tenant snapshot erases newer unrelated flags and
+-        # restores tenants that have already acknowledged the rollout.
+-        store.replace(tenant, rollout.before[tenant], actor=f"rollback:{rollout.id}")
++        if tenant in rollout.acknowledged:
++            skipped.append(tenant)
++            continue
++        previous = rollout.before[tenant][rollout.flag]
++        if store.read(tenant, rollout.flag) != previous:
++            store.set(tenant, rollout.flag, previous, actor=f"rollback:{rollout.id}")
+         restored.append(tenant)
+ 
+-    result = {"status": "rolled_back", "restored": restored, "skipped": skipped}
++    status = "partial" if skipped else "rolled_back"
++    result = {"status": status, "restored": restored, "skipped": skipped}
+     rollout.status = result["status"]
+     rollout.result = dict(result)
+     return result

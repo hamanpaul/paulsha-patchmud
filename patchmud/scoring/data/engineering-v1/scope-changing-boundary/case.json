@@ -1,0 +1,29 @@
+{
+  "id": "scope-changing-boundary",
+  "category": "scope",
+  "depth": 3,
+  "title": "Keep a changing feature request inside an explicit boundary",
+  "prompt": "The repository adds a batch export endpoint over an existing query service. The initial request permits changing the export handler and query adapter, while preserving pagination and authorization. In the first follow-up, a product note requires resumable cursors and says a cursor must never expose records from a later tenant. In the second follow-up, compatibility evidence requires accepting old cursor tokens for one release. Work only within the named boundary, incorporate follow-up requirements when they arrive, and report any requirement that cannot be verified from the fixture.",
+  "requirements": [
+    "Keep tenant authorization and pagination semantics intact while adding batch export.",
+    "Make cursors resumable and bind them to the requesting tenant.",
+    "Reject malformed or cross-tenant cursors without leaking record existence.",
+    "Accept the legacy cursor token format during the compatibility window and emit the new bound format.",
+    "Do not modify storage schema, unrelated endpoints, or public tests.",
+    "以繁體中文摘要 staged requirement 的取捨，並引用可核對的測試結果。"
+  ],
+  "allowed_paths": ["src/export.py", "src/query.py", "src/cursor.py", "src/auth.py"],
+  "max_turns": 24,
+  "wall_seconds": 1800,
+  "rubric": {
+    "fulfillment": {"instructions": "Score ordered 0..4 evolving scope completion, requiring staged cursor isolation and legacy compatibility without boundary drift.", "criteria": ["0: Export or authorization is missing and the staged requirements are ignored.", "1: Adds an export path but cursors are not resumable or tenant-bound.", "2: Tenant-bound cursors mostly work but malformed/legacy handling or pagination has a material gap.", "3: Export, isolation, and compatibility are nearly complete with one concrete staged edge case.", "4: All initial and staged requirements hold: pagination/auth, resumable tenant-bound cursors, safe rejection, and legacy acceptance."]},
+    "evidence": {"instructions": "Score ordered 0..4 evidence connecting export requests, query pages, tenant checks, cursor bytes, and staged compatibility behavior.", "criteria": ["0: No evidence traces the export boundary.", "1: Reports one export result without cursor or tenant proof.", "2: Shows cursor behavior but leaves cross-tenant and legacy paths unsupported.", "3: Traces all main paths and staged notes with one missing byte/error assertion.", "4: Cites page/cursor sequence, tenant identity, rejection behavior, old/new token bytes, and unchanged auth/query evidence."]},
+    "constraints": {"instructions": "Score ordered 0..4 adherence to the named boundary and preservation of storage, endpoint, test, and authorization constraints.", "criteria": ["0: Changes storage schema, unrelated endpoints, or tests.", "1: Solves cursor behavior by bypassing authorization or broadening the patch.", "2: Stays mostly in scope but changes pagination or error semantics.", "3: Preserves boundaries with one minor compatibility or organization issue.", "4: Edits only four allowed modules, preserves storage/auth/query contracts, and incorporates stages without unrelated refactoring."]},
+    "verification": {"instructions": "Score ordered 0..4 verification of evolving requirements, especially tenant isolation, malformed tokens, and legacy compatibility.", "criteria": ["0: No export verification is reported.", "1: Checks one page for one tenant only.", "2: Checks pagination or tenant binding but not malformed and legacy tokens.", "3: Checks all main paths with one staged compatibility assertion missing.", "4: Reports deterministic multi-page, cross-tenant, malformed, authorization, old-token, new-token, and unchanged-endpoint checks."]}
+  },
+  "stages": [
+    {"after_turn": 8, "native_phase": 1, "message": "Product clarification: export cursors must be resumable and cryptographically or structurally bound to the requesting tenant; a cross-tenant cursor must fail without revealing whether its records exist."},
+    {"after_turn": 16, "native_phase": 2, "message": "Compatibility note: old cursor tokens remain valid for one release. Accept the old format, but emit the new tenant-bound format for new responses and document the observed behavior in the final report."}
+  ],
+  "test_argv": ["python3", "-m", "pytest", "-q"]
+}

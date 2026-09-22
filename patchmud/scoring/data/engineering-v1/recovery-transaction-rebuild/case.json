@@ -1,0 +1,61 @@
+{
+  "id": "recovery-transaction-rebuild",
+  "category": "recovery",
+  "depth": 2,
+  "title": "Rebuild a projection across a transaction and outbox boundary",
+  "prompt": "A service rebuilds an account projection from an append-only transaction log while also reconstructing an outbox for downstream delivery. The recovery worker can stop after applying a committed transaction to the projection but before publishing its outbox event. It must resume from a durable cursor, ignore aborted or incomplete transactions, preserve operation order within each committed transaction, and avoid double-applying or double-publishing when the same transaction is replayed. Repair the cross-component recovery contract with the existing log, projection, outbox, and cursor APIs. Use the public tests to demonstrate a clean rebuild, a bounded resume, and a restart at the projection/outbox boundary; do not change event meaning or add an external dependency.",
+  "requirements": [
+    "Apply only transactions with a complete commit marker, and skip aborted or incomplete transaction groups without changing their event meaning.",
+    "Advance the recovery cursor only after the projection and corresponding outbox publication both complete.",
+    "Make replay idempotent by transaction id for both balance changes and emitted outbox events.",
+    "Preserve operation order and transaction boundaries while supporting a bounded rebuild that resumes at the next complete transaction.",
+    "Keep the existing cursor, projection, outbox, and exception APIs stable and report exact cross-component evidence."
+  ],
+  "allowed_paths": ["src/**", "tests/agent/**"],
+  "max_turns": 16,
+  "wall_seconds": 1200,
+  "rubric": {
+    "fulfillment": {
+      "instructions": "Score ordered 0..4 completion of the transaction rebuild state machine across log parsing, projection, outbox, cursor durability, replay, and bounded resume.",
+      "criteria": [
+        "0: Rebuilds incomplete or aborted work, loses the cursor boundary, or cannot recover the projection/outbox pair.",
+        "1: Processes a clean commit but leaves a material duplicate, ordering, abort, or cursor failure.",
+        "2: Handles committed and aborted groups but replay or projection/outbox failure recovery remains materially unsafe.",
+        "3: Rebuilds and resumes correctly with idempotent behavior and one concrete edge case unresolved.",
+        "4: Commits only complete transactions, orders operations, publishes once, advances after both sinks, and safely replays/resumes."
+      ]
+    },
+    "evidence": {
+      "instructions": "Score ordered 0..4 traceability through transaction markers, operation order, projection balances, outbox records, cursor values, and failure/restart test output.",
+      "criteria": [
+        "0: Claims a rebuild result without log, sink, cursor, or restart evidence.",
+        "1: Cites a projection balance or outbox row without proving transaction completion or cursor order.",
+        "2: Shows clean rebuild evidence but leaves aborted/incomplete groups or the crash boundary unsupported.",
+        "3: Traces log groups, projection, outbox, cursor, and resume tests with one limited evidence gap.",
+        "4: Cites begin/operation/commit markers, skipped abort/tail, exact balances and events, cursor transitions, and failure replay outcomes."
+      ]
+    },
+    "constraints": {
+      "instructions": "Score ordered 0..4 adherence to the existing component APIs, transaction semantics, allowed source surface, and deterministic no-dependency recovery scope.",
+      "criteria": [
+        "0: Changes tests or event meaning, bypasses a sink, or introduces an unrelated persistence system.",
+        "1: Solves the crash by skipping projection/outbox work or changing cursor and exception contracts.",
+        "2: Mostly stays in scope but alters transaction ordering, abort semantics, or bounded-resume compatibility.",
+        "3: Preserves APIs and source scope with one unnecessary state or compatibility change.",
+        "4: Edits only allowed source/test-agent paths, retains event and API semantics, and uses deterministic local state only."
+      ]
+    },
+    "verification": {
+      "instructions": "Score ordered 0..4 verification breadth over clean committed work, aborted/incomplete groups, max-transaction resume, projection-before-outbox interruption, replay, and cursor durability.",
+      "criteria": [
+        "0: No deterministic transaction recovery verification is run.",
+        "1: Runs one clean commit and reports a balance without sink or cursor checks.",
+        "2: Verifies a clean rebuild and one failure path but misses aborted/incomplete work or bounded resume.",
+        "3: Exercises all main paths with one exact idempotence, ordering, or cursor assertion missing.",
+        "4: Reports exact passing checks for commit filtering, operation order, abort/tail exclusion, bounded cursor resume, crash replay, and one outbox event."
+      ]
+    }
+  },
+  "stages": [],
+  "test_argv": ["python3", "-m", "pytest", "-q"]
+}

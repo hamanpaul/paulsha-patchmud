@@ -1,0 +1,13 @@
+diff --git a/src/client.py b/src/client.py
+index 135fb06..c50c85e 100644
+--- a/src/client.py
++++ b/src/client.py
+@@ -2,7 +2,7 @@ from .errors import AuthenticationFailed, RateLimitExceeded
+ 
+ 
+ def request(send, clock, *, max_attempts=3):
+-    attempts = 0
++    attempts = -1
+     while True:
+         attempts += 1
+         response = send()

@@ -1,0 +1,29 @@
+{
+  "id": "testing-schema-evolution",
+  "category": "testing",
+  "depth": 3,
+  "title": "Test schema evolution while a compatibility rule changes",
+  "prompt": "The event envelope is migrating from version 1 to version 2. The parser accepts both, the normalizer adds a tenant field, and the sink rejects incompatible combinations. Build a staged regression suite with new regression tests and fixtures under tests/agent/**; keep the original fixture tests read-only. Protect old producers, new producers, unknown optional fields, and a tenant mismatch. In the first follow-up, an operational note says replay may deliver a v1 envelope after a v2 envelope; in the second follow-up, the compatibility window is shortened and malformed version markers must be classified as input errors. Adapt the tests and any minimal source fix without broadening scope.",
+  "requirements": [
+    "Cover v1 and v2 envelopes, normalization, and sink acceptance as separate assertions.",
+    "Preserve unknown optional fields while rejecting tenant mismatch and malformed version markers.",
+    "Verify replay order v1-after-v2 is idempotent and does not erase newer data.",
+    "Use the first and second follow-up compatibility rules and classify malformed markers as input errors.",
+    "Keep new regression tests and fixtures under tests/agent/** deterministic; do not edit the original fixture tests, storage, or unrelated transport code.",
+    "以繁體中文列出 v1-after-v2 replay 的驗證證據與仍未覆蓋的限制。"
+  ],
+  "allowed_paths": ["src/envelope.py", "src/normalizer.py", "src/sink.py", "tests/agent/**"],
+  "max_turns": 24,
+  "wall_seconds": 1800,
+  "rubric": {
+    "fulfillment": {"instructions": "Score ordered 0..4 evolving test and source completion across envelope versions, replay order, tenant checks, and shortened compatibility.", "criteria": ["0: The suite ignores version migration or replay behavior.", "1: Tests one version or happy-path normalization only.", "2: Tests both versions but misses replay ordering, malformed markers, or tenant isolation.", "3: Main staged matrix works with one concrete compatibility or idempotency gap.", "4: v1/v2, unknown fields, tenant mismatch, malformed marker class, v1-after-v2 replay, and shortened window are all protected."]},
+    "evidence": {"instructions": "Score ordered 0..4 evidence quality from fixture envelopes, normalizer/sink branches, replay order, and staged test results.", "criteria": ["0: No input/output evidence is shown.", "1: Reports only a passing version test.", "2: Shows version and normalization evidence but not replay or error classification.", "3: Links all main artifacts with one missing staged assertion.", "4: Cites concrete envelope bytes, normalized fields, sink decision, tenant/version errors, replay state, and stage-specific tests."]},
+    "constraints": {"instructions": "Score ordered 0..4 adherence to envelope/normalizer/sink/test scope and deterministic replay checks.", "criteria": ["0: Changes storage, transport, or disables compatibility assertions.", "1: Broadens the patch or drops old-producer coverage.", "2: Stays in scope but uses order-dependent/global state or weakens error checks.", "3: Preserves boundaries with one minor test isolation gap.", "4: Touches only allowed paths, keeps v1 coverage, uses deterministic fixtures, and makes no unrelated change."]},
+    "verification": {"instructions": "Score ordered 0..4 verification of the evolving envelope matrix, replay order, malformed input, and compatibility cutoff.", "criteria": ["0: No migration test is run.", "1: Checks only v2 happy path.", "2: Checks v1/v2 but misses replay or malformed markers.", "3: Checks replay, errors, and versions with one cutoff assertion missing.", "4: Reports exact tests for all versions, fields, tenant mismatch, malformed marker class, replay order, and shortened window."]}
+  },
+  "stages": [
+    {"after_turn": 8, "native_phase": 1, "message": "Operational note: replay can deliver a v1 envelope after a v2 envelope for the same event id. The older replay must not erase the newer normalized state."},
+    {"after_turn": 16, "native_phase": 2, "message": "Compatibility window is shortened to one release: malformed version markers must be reported as input errors, while valid v1 and v2 envelopes remain covered during the window. Include this in the final test report."}
+  ],
+  "test_argv": ["python3", "-m", "pytest", "-q"]
+}

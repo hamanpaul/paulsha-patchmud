@@ -1,0 +1,19 @@
+{
+  "kind": "patch",
+  "outcome_class": "code_change",
+  "reference": {
+    "final_report": "Kept the evolving export change inside cursor.py and export.py. New cursors carry the tenant and offset, decode rejects a cursor bound to another tenant before calling query.page, while legacy numeric tokens remain accepted for the compatibility window. Authorization and page boundaries are unchanged, malformed tokens still fail without exposing rows, and new responses emit the bound format. The public tests cover multi-page resume, authorization, old tokens, and cross-tenant cursor rejection; no storage schema or unrelated endpoint changed.",
+    "patch_file": "hidden/reference.patch",
+    "expected_quality": {"fulfillment": 4, "evidence": 4, "constraints": 4, "verification": 4}
+  },
+  "partial": {
+    "final_report": "Added tenant text to new cursors and accepts old numeric tokens, but does not validate a cursor's tenant before querying. Cross-tenant input can still select a page, so the staged isolation requirement is incomplete despite the happy path working.",
+    "patch_file": "hidden/partial.patch",
+    "expected_quality": {"fulfillment": 2, "evidence": 2, "constraints": 4, "verification": 1}
+  },
+  "wrong": {
+    "final_report": "Changed the page size and stated that export cursors are now secure. No tenant binding, legacy compatibility, or cross-tenant test evidence was supplied.",
+    "patch_file": "hidden/wrong.patch",
+    "expected_quality": {"fulfillment": 0, "evidence": 0, "constraints": 2, "verification": 0}
+  }
+}

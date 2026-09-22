@@ -1,0 +1,12 @@
+diff --git a/src/recovery.py b/src/recovery.py
+--- a/src/recovery.py
++++ b/src/recovery.py
+@@ -14,7 +14,7 @@
+         store.replace(tenant, rollout.before[tenant], actor=f"rollback:{rollout.id}")
+         restored.append(tenant)
+ 
+-    result = {"status": "rolled_back", "restored": restored, "skipped": skipped}
++    result = {"status": "rolled_back", "restored": restored, "skipped": skipped, "reason": "manual"}
+     rollout.status = result["status"]
+     rollout.result = dict(result)
+     return result

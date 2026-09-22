@@ -1,0 +1,6 @@
+{
+  "release": "7.4",
+  "deployed_at": "2026-09-21T10:59:59Z",
+  "services": {"gateway": "7.4", "payments": "7.3"},
+  "trace_sampling": "success_only"
+}

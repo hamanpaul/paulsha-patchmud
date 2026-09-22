@@ -1,0 +1,25 @@
+{
+  "id": "diagnosis-retry-budget",
+  "category": "diagnosis",
+  "depth": 1,
+  "title": "Diagnose a retry budget regression without changing code",
+  "prompt": "The checkout contains a worker, a retry policy, a deployment note, and a bounded incident log. A team suspects that a recent timeout change caused duplicate deliveries, but the supplied evidence may show a different boundary. Investigate the call path, distinguish attempts from deliveries, identify the first version where the observed invariant breaks, and produce a concise evidence-backed diagnosis. This is an evidence task: the correct action is no change to the repository, and speculative fixes should lower the result.",
+  "requirements": [
+    "Reconstruct the retry budget and delivery-count relationship from code and timestamped logs.",
+    "Name the first version and branch that explains the observed duplicate-delivery symptom.",
+    "Separate a timeout retry from a confirmed duplicate delivery and cite the relevant evidence lines.",
+    "State explicitly that no code change is warranted by the supplied evidence.",
+    "List one bounded follow-up observation if the evidence cannot establish causality."
+  ],
+  "allowed_paths": [],
+  "max_turns": 8,
+  "wall_seconds": 600,
+  "rubric": {
+    "fulfillment": {"instructions": "Score ordered 0..4 diagnosis completeness; the correct fulfillment includes a justified no-op and a causal boundary.", "criteria": ["0: Gives a fix or theory without answering the supplied incident.", "1: Mentions retries or duplicates but confuses attempts with deliveries and omits the no-op decision.", "2: Identifies the likely version or budget but leaves causal evidence or follow-up incomplete.", "3: Correctly diagnoses the boundary and recommends no change with one minor evidence or follow-up gap.", "4: Reconstructs budget, attempts, deliveries, first breaking version, causal branch, no-op action, and bounded follow-up."]},
+    "evidence": {"instructions": "Score ordered 0..4 evidence traceability across worker code, retry policy, deployment history, config, and logs.", "criteria": ["0: No line-level evidence is cited.", "1: Cites one log or source line without connecting it to the symptom.", "2: Cites code and logs but omits the version boundary or delivery distinction.", "3: Cites all major artifacts with one weak or unverified inference.", "4: Every causal claim maps to a source/log/config/deployment observation and uncertainty is labeled."]},
+    "constraints": {"instructions": "Score ordered 0..4 adherence to the read-only diagnosis scope and prohibition on speculative code changes.", "criteria": ["0: Changes code or recommends an unbounded remediation as if proven.", "1: Avoids a patch but proposes changing retry behavior without evidence.", "2: Keeps the tree unchanged but mixes observed facts with an overconfident fix.", "3: Gives a no-op diagnosis and bounded follow-up with one unnecessary suggestion.", "4: Makes no repository change, respects evidence limits, and proposes only a bounded observation."]},
+    "verification": {"instructions": "Score ordered 0..4 verification of the diagnosis through arithmetic and cross-artifact consistency checks.", "criteria": ["0: No verification is described.", "1: Repeats one log line without checking the retry budget.", "2: Checks counts or versions but not both against source behavior.", "3: Reconciles counts, version, and branch with one minor gap.", "4: Recomputes attempts versus deliveries, checks first-break version, cross-checks code/config/logs, and states residual uncertainty."]}
+  },
+  "stages": [],
+  "test_argv": []
+}

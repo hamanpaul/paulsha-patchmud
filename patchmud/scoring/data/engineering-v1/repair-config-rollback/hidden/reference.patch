@@ -1,0 +1,50 @@
+diff --git a/src/config.py b/src/config.py
+--- a/src/config.py
++++ b/src/config.py
+@@ -1,28 +1,31 @@
+ """Layered configuration with an intentionally broken reload boundary."""
+ 
+ DEFAULTS = {"enabled": True, "port": 8080, "region": "us-east"}
+ 
+ 
+ def _bool(value: str | None, default: bool) -> bool:
+     # The bug: an explicit false is treated as if the variable were absent.
+-    if not value:
++    if value is None:
+         return default
+     if value.lower() in {"1", "true", "yes"}:
+         return True
+     if value.lower() in {"0", "false", "no"}:
+         return False
+     raise ValueError("ENABLED must be a boolean")
+ 
+ 
+ def _port(value: str | None, default: int) -> int:
+     if value is None:
+         return default
+-    return int(value)
++    result = int(value)
++    if not 0 <= result <= 65535:
++        raise ValueError("PORT must be between 0 and 65535")
++    return result
+ 
+ 
+ def parse(file_values: dict[str, object], env: dict[str, str]) -> dict[str, object]:
+     result = dict(DEFAULTS)
+     result.update(file_values)
+     result["enabled"] = _bool(env.get("ENABLED"), bool(result["enabled"]))
+     result["port"] = _port(env.get("PORT"), int(result["port"]))
+     return result
+diff --git a/src/reloader.py b/src/reloader.py
+--- a/src/reloader.py
++++ b/src/reloader.py
+@@ -19,6 +19,7 @@
+         # The bug: active and cache are changed before the complete candidate
+         # has been validated, so an exception leaves a half-reloaded store.
+         candidate = parse(file_values, env)
++        derived = self._derive(candidate)
+         self.file_values = dict(file_values)
+-        self.active.update(candidate)
+-        self.cache = self._derive(self.active)
++        self.active = candidate
++        self.cache = derived

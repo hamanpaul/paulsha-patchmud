@@ -1,0 +1,51 @@
+diff --git a/src/parser.py b/src/parser.py
+--- a/src/parser.py
++++ b/src/parser.py
+@@ -1,9 +1,16 @@
+-def parse(text):
+-    lines = [line for line in text.splitlines() if line]
+-    headers = lines[0].split(",")
++import csv
++from io import StringIO
++
++
++def parse(text):
++    reader = csv.reader(StringIO(text))
++    headers = next(reader)
++    if len(headers) != len(set(headers)):
++        raise ValueError("header duplicate")
+     rows = []
+-    for line in lines[1:]:
+-        values = line.split(",")
++    for values in reader:
++        if not values:
++            continue
+         if len(values) != len(headers):
+             raise ValueError("row width")
+         rows.append(dict(zip(headers, values)))
+diff --git a/tests/agent/test_parser_regression.py b/tests/agent/test_parser_regression.py
+new file mode 100644
+--- /dev/null
++++ b/tests/agent/test_parser_regression.py
+@@ -0,0 +1,21 @@
++import pytest
++
++from src.parser import parse
++
++
++def test_agent_matrix_preserves_quotes_and_blank_optional_values():
++    assert parse('id,name,note\n7,"Chen, Li","said ""hi"""\n8,Bea,') == [
++        {"id": "7", "name": "Chen, Li", "note": 'said "hi"'},
++        {"id": "8", "name": "Bea", "note": ""},
++    ]
++
++
++def test_agent_matrix_keeps_header_and_row_errors_distinct():
++    with pytest.raises(ValueError, match="header"):
++        parse("id,id\n1,2")
++    with pytest.raises(ValueError, match="row width"):
++        parse("id,name\n1")
++
++
++def test_agent_matrix_ignores_blank_lines():
++    assert parse("id,name\n\n1,Ada\n") == [{"id": "1", "name": "Ada"}]

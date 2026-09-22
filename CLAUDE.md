@@ -13,7 +13,7 @@ policy_version: 1.0.17
 ## 本 repo 定位
 - `paulsha-patchmud` 是 PatchMUD 評測引擎：成本優先、純文字回合制的 coding-agent benchmark（量測閉環，不是生產閉環）。
 - 對 `paulsha-cortex` / `paulsha-hippo` 零 runtime 依賴；輸出以檔案契約（run 封存、報告）供下游使用。
-- 排名資料流零 LLM 裁判；hidden 資產永不進 sandbox；ranked run 的隔離與校準參數 fail-closed。
+- 舊 ranked 資料流維持 deterministic 裁判；新增 `engineering-v1` 模型評分以固定版本 JEV 為唯一品質裁判，測試結果僅作證據，兩套分數不可混榜。hidden 資產永不進受測 sandbox／公開報告；正式 run 的隔離 fail-closed。
 - Spec：`docs/superpowers/specs/2026-07-16-patchmud-mvp-design.md`；實作計劃：`docs/superpowers/plans/2026-07-16-patchmud-mvp.md`。
 
 ## 動工前
@@ -75,3 +75,5 @@ R-14（agent symlink 單一真檔）與 R-20（workflow policy_version 同步）
 - 金額計算全程 `decimal.Decimal`。
 - 校準參數只能由 `analysis/registered/estimators.yaml` 的 estimator 產出；凍結後拒絕覆寫。
 - deck `hidden/` 內容不得出現在任何 sandbox 可見路徑、log render 或公開封存。
+- JEV 評分必須保留原生分布、confidence、實際裁判版本與證據；服務錯誤不算零分，缺題不發布完整總分。requested／resolved 設定不冒充 observed model identity。
+- 新 `engineering-v1` 評的是原生 coding agent：允許 CLI 自帶工具，整個 CLI 仍經 `IsolationRunner`；隔離 HOME 僅帶入必要登入資料。同題使用原生對話續跑，以 wall time 限制預算，不把各 CLI 內部回合數當成可互換的上限。原始 fixture tests/config 唯讀，`tests/agent` 與 disposable Git 可寫；controller 以檔案快照產生 diff，不執行 candidate 改過的 Git metadata。

@@ -1,0 +1,11 @@
+service: payments-api
+release_label: prod-approved-2026-09-21
+environment: production
+image_ref: registry.example.invalid/payments:stable
+expected_source_commit: 9d4e11c2a0f8
+expected_image_digest: sha256:image-921
+test_run: ci-1842
+nodes:
+  - node-a
+  - node-b
+deployment_status: complete

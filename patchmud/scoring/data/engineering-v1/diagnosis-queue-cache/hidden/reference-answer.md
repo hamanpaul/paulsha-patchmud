@@ -1,0 +1,1 @@
+The dashboard reports visible broker messages, excluding prefetched cache work. Job 184 and the release configuration prove that seven jobs can be pending while queue depth is zero. No consumer rewrite is justified; collect paired broker-visible and cache-pending metrics to separate broker and cache delay.

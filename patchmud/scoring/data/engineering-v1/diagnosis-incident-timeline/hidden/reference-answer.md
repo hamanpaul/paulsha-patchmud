@@ -1,0 +1,1 @@
+The staged evidence supports an insufficient-evidence conclusion. Logs establish x1 failure and retry, flags establish rollout, and the manifest establishes mixed versions, but success-only downstream sampling omits the failing request path. Collect unsampled correlated spans and one control request; do not patch speculation.

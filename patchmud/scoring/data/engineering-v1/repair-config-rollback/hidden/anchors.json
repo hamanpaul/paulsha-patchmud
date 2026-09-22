@@ -1,0 +1,19 @@
+{
+  "kind": "patch",
+  "outcome_class": "code_change",
+  "reference": {
+    "final_report": "Implemented the configuration repair in config.py and reloader.py. The environment parser now distinguishes an absent variable from explicit false and zero, validates the inclusive port range before a candidate is accepted, and rejects an empty region. Reload constructs and derives a complete candidate before replacing file_values, active, or cache, so a failed reload leaves the prior snapshot intact. The public pytest run covers precedence, malformed and boundary ports, CLI-compatible state, and rollback; all tests pass after the reference diff is applied.",
+    "patch_file": "hidden/reference.patch",
+    "expected_quality": {"fulfillment": 4, "evidence": 4, "constraints": 4, "verification": 4}
+  },
+  "partial": {
+    "final_report": "Changed boolean parsing so explicit false is honored, but did not finish the port range validation or make reload replacement atomic for a derived-state failure. The targeted test run still exposes boundary and rollback failures, so this is a partial repair and should not be treated as complete.",
+    "patch_file": "hidden/partial.patch",
+    "expected_quality": {"fulfillment": 2, "evidence": 2, "constraints": 3, "verification": 1}
+  },
+  "wrong": {
+    "final_report": "Adjusted the command summary formatting and described the configuration issue as resolved. No evidence was provided for explicit false, port validation, or preserving the active snapshot after a failed reload, and the public tests were not run. The change does not address the stated behavior.",
+    "patch_file": "hidden/wrong.patch",
+    "expected_quality": {"fulfillment": 0, "evidence": 0, "constraints": 2, "verification": 0}
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "id": "recovery-checkpoint",
+  "category": "recovery",
+  "depth": 1,
+  "title": "Recover a checkpointed batch after a worker interruption",
+  "prompt": "A small ingestion worker consumes an ordered batch of records and writes them to a local store while a checkpoint journal records the next cursor. An incident exposed two recovery hazards: a checkpoint can be persisted before the corresponding records, and a worker can write a batch and die before persisting its checkpoint. The journal may also contain a torn or tampered checkpoint entry. Repair the recovery boundary so a restart never skips input, replay is idempotent and preserves record order, invalid journal entries are ignored, and a successful checkpoint is appended only after the full batch is durable. Use the supplied evidence and public tests; keep the recovery API and error behavior stable.",
+  "requirements": [
+    "Persist the checkpoint only after every record in the selected batch has been written successfully.",
+    "Make a replay after a write-before-checkpoint interruption idempotent by record id and preserve input order.",
+    "Ignore a torn or invalid checkpoint entry and resume from the latest valid checkpoint instead of trusting its cursor.",
+    "Handle an interruption before the batch write without advancing the journal or skipping records on restart.",
+    "Report the processed cursor and preserve the existing recovery API, exception type, and read-only evidence scope."
+  ],
+  "allowed_paths": ["src/**", "tests/agent/**"],
+  "max_turns": 8,
+  "wall_seconds": 600,
+  "rubric": {
+    "fulfillment": {
+      "instructions": "Score ordered 0..4 recovery completion across write ordering, replay identity, journal validation, and the two interruption boundaries; a passing happy path alone is insufficient.",
+      "criteria": [
+        "0: Leaves checkpoint ordering or replay unsafe and cannot explain the recovery outcome.",
+        "1: Repairs one interruption path but can still skip input, duplicate records, or trust a torn cursor.",
+        "2: Makes replay mostly safe but leaves checkpoint validation or an interruption boundary materially broken.",
+        "3: Covers ordering, idempotent replay, and valid cursor recovery with one concrete edge case unresolved.",
+        "4: Writes before checkpointing, replays by id in order, rejects invalid cursors, and safely handles both interruption boundaries."
+      ]
+    },
+    "evidence": {
+      "instructions": "Score ordered 0..4 traceability from the worker call, record snapshots, journal events, cursor checks, and public test output to each recovery claim.",
+      "criteria": [
+        "0: Claims recovery is fixed without state, journal, or test evidence.",
+        "1: Cites one record or checkpoint observation without showing their ordering relationship.",
+        "2: Shows replay or cursor evidence but leaves one interruption and invalid-entry behavior unsupported.",
+        "3: Traces writes, cursor, journal event order, and test results with one limited evidence gap.",
+        "4: Cites input ids, before/after snapshots, valid and torn journal entries, interruption point, and exact test outcomes."
+      ]
+    },
+    "constraints": {
+      "instructions": "Score ordered 0..4 adherence to the narrow recovery source surface, stable API and exceptions, immutable public tests, and no speculative redesign.",
+      "criteria": [
+        "0: Changes tests or unrelated files, removes the recovery API, or hides failures with broad state resets.",
+        "1: Touches unrelated components or changes exception and cursor semantics to obtain a green path.",
+        "2: Stays near the source boundary but introduces a new ordering, identity, or compatibility regression.",
+        "3: Preserves the API and allowed source scope with one unnecessary compatibility or state change.",
+        "4: Edits only allowed source/test-agent paths, preserves API and exceptions, and makes no unrelated mutation."
+      ]
+    },
+    "verification": {
+      "instructions": "Score ordered 0..4 verification breadth over pre-write interruption, post-write interruption, duplicate replay, order, valid checkpoint selection, and torn entries.",
+      "criteria": [
+        "0: Does not run or describe a deterministic recovery verification.",
+        "1: Runs only one clean batch and gives no restart or journal assertion.",
+        "2: Verifies replay or checkpoint progress but misses an interruption boundary or invalid entry.",
+        "3: Verifies both interruption points and replay with one cursor-integrity or ordering assertion missing.",
+        "4: Reports exact passing checks for both failures, idempotent ordered state, valid cursor selection, and torn-entry rejection."
+      ]
+    }
+  },
+  "stages": [],
+  "test_argv": ["python3", "-m", "pytest", "-q"]
+}

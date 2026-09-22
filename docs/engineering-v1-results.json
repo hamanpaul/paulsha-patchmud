@@ -1,0 +1,1697 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-09-22T03:32:52.330902+00:00",
+  "suite": {
+    "case_ids": [
+      "repair-config-rollback",
+      "repair-cache-api",
+      "repair-migration-state",
+      "diagnosis-retry-budget",
+      "diagnosis-queue-cache",
+      "diagnosis-incident-timeline",
+      "scope-rate-limit",
+      "scope-cli-schema",
+      "scope-changing-boundary",
+      "testing-parser-matrix",
+      "testing-retry-fakeclock",
+      "testing-schema-evolution",
+      "recovery-checkpoint",
+      "recovery-transaction-rebuild",
+      "recovery-flag-rollback",
+      "audit-release-provenance",
+      "audit-dependency-boundary",
+      "audit-deployment-integrity"
+    ],
+    "id": "engineering-v1",
+    "rubric_version": "jev-1.13.0",
+    "suite_hash": "77c5913af8725ae584c9e8c0a73220b77eb1e107293c4d51578dceea24a4bca4",
+    "version": "1.1.0"
+  },
+  "judge_model": "jev-1.13.0",
+  "judge_protocol_version": "dimension-evidence-v1",
+  "judge_engine_digest": "f0411bf9af0cbd18ce603c0984d8fd0c3ececb33c451b577996ab731d671e3a1",
+  "source_execution_engine_digest": "0ab4c023b6c9c4c769c154fef8aa43fb713f15459766df5974cf53fcaaaeb22b",
+  "repetition": 1,
+  "profiles": [
+    {
+      "role": "base",
+      "run_id": "20260922T032512-derived-20260922T011608Z-base-3ff7a8b332cd-cf7f3bc25680",
+      "content_digest": "865c12e30eb3aca701b47d8a046cffddee22968dbfa29509a917cdf8b72cf232",
+      "source_run_id": "20260922T011608Z-base-3ff7a8b332cd",
+      "source_content_digest": "ca80ce582081c1c805bfd1b7f509a51da8d4fc742fe0937cc6042c3d5d3c7aa8",
+      "source_created_at": "2026-09-22T01:16:08.829457+00:00",
+      "profile": {
+        "requested": {
+          "effort": "high",
+          "harness": "agy",
+          "model": "gemini-3.8-flash"
+        },
+        "resolved": {
+          "effort": "high",
+          "harness": "agy",
+          "model": "gemini-3.8-flash-high"
+        },
+        "observed": {
+          "effort": null,
+          "harness": "agy",
+          "model": null
+        },
+        "harness_version": "agy-cli-native-v1:1.2.7"
+      },
+      "summary": {
+        "cases": {
+          "audit-dependency-boundary": {
+            "category": "audit",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 92.6875,
+                "status": "scored"
+              }
+            },
+            "score": 92.6875,
+            "scored_repetitions": 1
+          },
+          "audit-deployment-integrity": {
+            "category": "audit",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 90.125,
+                "status": "scored"
+              }
+            },
+            "score": 90.125,
+            "scored_repetitions": 1
+          },
+          "audit-release-provenance": {
+            "category": "audit",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 91.75,
+                "status": "scored"
+              }
+            },
+            "score": 91.75,
+            "scored_repetitions": 1
+          },
+          "diagnosis-incident-timeline": {
+            "category": "diagnosis",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 93.375,
+                "status": "scored"
+              }
+            },
+            "score": 93.375,
+            "scored_repetitions": 1
+          },
+          "diagnosis-queue-cache": {
+            "category": "diagnosis",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 92.8125,
+                "status": "scored"
+              }
+            },
+            "score": 92.8125,
+            "scored_repetitions": 1
+          },
+          "diagnosis-retry-budget": {
+            "category": "diagnosis",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 93.3125,
+                "status": "scored"
+              }
+            },
+            "score": 93.3125,
+            "scored_repetitions": 1
+          },
+          "recovery-checkpoint": {
+            "category": "recovery",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 89.1875,
+                "status": "scored"
+              }
+            },
+            "score": 89.1875,
+            "scored_repetitions": 1
+          },
+          "recovery-flag-rollback": {
+            "category": "recovery",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 91.8125,
+                "status": "scored"
+              }
+            },
+            "score": 91.8125,
+            "scored_repetitions": 1
+          },
+          "recovery-transaction-rebuild": {
+            "category": "recovery",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 90.625,
+                "status": "scored"
+              }
+            },
+            "score": 90.625,
+            "scored_repetitions": 1
+          },
+          "repair-cache-api": {
+            "category": "repair",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 93.375,
+                "status": "scored"
+              }
+            },
+            "score": 93.375,
+            "scored_repetitions": 1
+          },
+          "repair-config-rollback": {
+            "category": "repair",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 88.75,
+                "status": "scored"
+              }
+            },
+            "score": 88.75,
+            "scored_repetitions": 1
+          },
+          "repair-migration-state": {
+            "category": "repair",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 91.9375,
+                "status": "scored"
+              }
+            },
+            "score": 91.9375,
+            "scored_repetitions": 1
+          },
+          "scope-changing-boundary": {
+            "category": "scope",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 92.875,
+                "status": "scored"
+              }
+            },
+            "score": 92.875,
+            "scored_repetitions": 1
+          },
+          "scope-cli-schema": {
+            "category": "scope",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 94.0625,
+                "status": "scored"
+              }
+            },
+            "score": 94.0625,
+            "scored_repetitions": 1
+          },
+          "scope-rate-limit": {
+            "category": "scope",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 83.25,
+                "status": "scored"
+              }
+            },
+            "score": 83.25,
+            "scored_repetitions": 1
+          },
+          "testing-parser-matrix": {
+            "category": "testing",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 92.5625,
+                "status": "scored"
+              }
+            },
+            "score": 92.5625,
+            "scored_repetitions": 1
+          },
+          "testing-retry-fakeclock": {
+            "category": "testing",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 94.25,
+                "status": "scored"
+              }
+            },
+            "score": 94.25,
+            "scored_repetitions": 1
+          },
+          "testing-schema-evolution": {
+            "category": "testing",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 84.4375,
+                "status": "scored"
+              }
+            },
+            "score": 84.4375,
+            "scored_repetitions": 1
+          }
+        },
+        "categories": {
+          "audit": {
+            "cases": {
+              "audit-dependency-boundary": 92.6875,
+              "audit-deployment-integrity": 90.125,
+              "audit-release-provenance": 91.75
+            },
+            "complete": true,
+            "expected_cases": 3,
+            "score": 91.52083333333333,
+            "scored_cases": 3
+          },
+          "diagnosis": {
+            "cases": {
+              "diagnosis-incident-timeline": 93.375,
+              "diagnosis-queue-cache": 92.8125,
+              "diagnosis-retry-budget": 93.3125
+            },
+            "complete": true,
+            "expected_cases": 3,
+            "score": 93.16666666666667,
+            "scored_cases": 3
+          },
+          "recovery": {
+            "cases": {
+              "recovery-checkpoint": 89.1875,
+              "recovery-flag-rollback": 91.8125,
+              "recovery-transaction-rebuild": 90.625
+            },
+            "complete": true,
+            "expected_cases": 3,
+            "score": 90.54166666666667,
+            "scored_cases": 3
+          },
+          "repair": {
+            "cases": {
+              "repair-cache-api": 93.375,
+              "repair-config-rollback": 88.75,
+              "repair-migration-state": 91.9375
+            },
+            "complete": true,
+            "expected_cases": 3,
+            "score": 91.35416666666667,
+            "scored_cases": 3
+          },
+          "scope": {
+            "cases": {
+              "scope-changing-boundary": 92.875,
+              "scope-cli-schema": 94.0625,
+              "scope-rate-limit": 83.25
+            },
+            "complete": true,
+            "expected_cases": 3,
+            "score": 90.0625,
+            "scored_cases": 3
+          },
+          "testing": {
+            "cases": {
+              "testing-parser-matrix": 92.5625,
+              "testing-retry-fakeclock": 94.25,
+              "testing-schema-evolution": 84.4375
+            },
+            "complete": true,
+            "expected_cases": 3,
+            "score": 90.41666666666667,
+            "scored_cases": 3
+          }
+        },
+        "complete": true,
+        "coverage": {
+          "expected": 18,
+          "scored": 18
+        },
+        "errors": [],
+        "repeat": 1,
+        "total": 91.17708333333333
+      },
+      "execution_wall_ms": 3552551,
+      "http_attempts": 79,
+      "cases": [
+        {
+          "case_id": "repair-config-rollback",
+          "case_hash": "8482b4a6c09a768b6a014d65294fba67189f44d79cf02f1cdebf35ba350ca647",
+          "category": "repair",
+          "depth": 1,
+          "score": 88.75,
+          "dimensions": {
+            "fulfillment": 3.73,
+            "evidence": 3.53,
+            "constraints": 3.19,
+            "verification": 3.75
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [
+            "passed"
+          ],
+          "execution_wall_ms": 214170,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "repair-cache-api",
+          "case_hash": "719e0c33b1d10a2e3694c96e44dbaaa91cbe23ed3f07ff3a4fb712f88d6aad07",
+          "category": "repair",
+          "depth": 2,
+          "score": 93.375,
+          "dimensions": {
+            "fulfillment": 3.9,
+            "evidence": 3.54,
+            "constraints": 3.77,
+            "verification": 3.73
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [
+            "passed"
+          ],
+          "execution_wall_ms": 116645,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "repair-migration-state",
+          "case_hash": "4b38024bfcced7f30e7ef129894019a606933fd5a9b7fefea094f55a8d64136c",
+          "category": "repair",
+          "depth": 3,
+          "score": 91.9375,
+          "dimensions": {
+            "fulfillment": 3.82,
+            "evidence": 3.65,
+            "constraints": 3.71,
+            "verification": 3.53
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [
+            "passed"
+          ],
+          "execution_wall_ms": 250928,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "diagnosis-retry-budget",
+          "case_hash": "a56a9fd81ee4b2504c0d99bc71fe6470d98519c3926e874ea0387c056dc4bb99",
+          "category": "diagnosis",
+          "depth": 1,
+          "score": 93.3125,
+          "dimensions": {
+            "fulfillment": 3.79,
+            "evidence": 3.62,
+            "constraints": 3.8,
+            "verification": 3.72
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [],
+          "execution_wall_ms": 96738,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "diagnosis-queue-cache",
+          "case_hash": "9fc21e06bcaf5a129bce5b6be8088e5fa12d1c40ef407a78b499e7f73ef825d9",
+          "category": "diagnosis",
+          "depth": 2,
+          "score": 92.8125,
+          "dimensions": {
+            "fulfillment": 3.71,
+            "evidence": 3.77,
+            "constraints": 3.59,
+            "verification": 3.78
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [],
+          "execution_wall_ms": 90701,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "diagnosis-incident-timeline",
+          "case_hash": "68f6932f402bf53feec9b2ee45dae739af6dacd1ff6b66146f0f262c0bb9df5c",
+          "category": "diagnosis",
+          "depth": 3,
+          "score": 93.375,
+          "dimensions": {
+            "fulfillment": 3.79,
+            "evidence": 3.84,
+            "constraints": 3.54,
+            "verification": 3.77
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [],
+          "execution_wall_ms": 127615,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "scope-rate-limit",
+          "case_hash": "40193058dfad15695eadf7fe3fa8866d0193284401d9a82b020ebeee2e3ede77",
+          "category": "scope",
+          "depth": 1,
+          "score": 83.25,
+          "dimensions": {
+            "fulfillment": 3.76,
+            "evidence": 3.05,
+            "constraints": 2.95,
+            "verification": 3.56
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [
+            "passed"
+          ],
+          "execution_wall_ms": 207967,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "scope-cli-schema",
+          "case_hash": "52cc72ef31253b0c231ad584015e3ff137540181105e583813940ec9cef00816",
+          "category": "scope",
+          "depth": 2,
+          "score": 94.0625,
+          "dimensions": {
+            "fulfillment": 3.83,
+            "evidence": 3.8,
+            "constraints": 3.58,
+            "verification": 3.84
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [
+            "passed"
+          ],
+          "execution_wall_ms": 250250,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "scope-changing-boundary",
+          "case_hash": "847a6157321bb1eb82c84c2248f40ff981800466318f520c312681ab9b201963",
+          "category": "scope",
+          "depth": 3,
+          "score": 92.875,
+          "dimensions": {
+            "fulfillment": 3.85,
+            "evidence": 3.74,
+            "constraints": 3.5,
+            "verification": 3.77
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [
+            "passed"
+          ],
+          "execution_wall_ms": 296758,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "testing-parser-matrix",
+          "case_hash": "90ac3d37bdd2602fe4c716c4f73d26029e25135c7ab95d12b16d0b04d915f079",
+          "category": "testing",
+          "depth": 1,
+          "score": 92.5625,
+          "dimensions": {
+            "fulfillment": 3.79,
+            "evidence": 3.42,
+            "constraints": 3.73,
+            "verification": 3.87
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [
+            "passed"
+          ],
+          "execution_wall_ms": 213307,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "testing-retry-fakeclock",
+          "case_hash": "c1d5aa840b3aade2eea66259dcbedf0699bb5faf640cfb13597553162a134a66",
+          "category": "testing",
+          "depth": 2,
+          "score": 94.25,
+          "dimensions": {
+            "fulfillment": 3.86,
+            "evidence": 3.73,
+            "constraints": 3.68,
+            "verification": 3.81
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [
+            "passed"
+          ],
+          "execution_wall_ms": 228586,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "testing-schema-evolution",
+          "case_hash": "e6e5b93b24a67b9df12a9398c65de699454c77605804c75232f27b6fd2b91b4d",
+          "category": "testing",
+          "depth": 3,
+          "score": 84.4375,
+          "dimensions": {
+            "fulfillment": 3.82,
+            "evidence": 3.71,
+            "constraints": 2.19,
+            "verification": 3.79
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [
+            "passed"
+          ],
+          "execution_wall_ms": 376220,
+          "judge_http_attempts": 8
+        },
+        {
+          "case_id": "recovery-checkpoint",
+          "case_hash": "bcc4adb74e932f78849b02860519bf242b826967f0757f61a0c04d1dab744491",
+          "category": "recovery",
+          "depth": 1,
+          "score": 89.1875,
+          "dimensions": {
+            "fulfillment": 3.81,
+            "evidence": 3.49,
+            "constraints": 3.15,
+            "verification": 3.82
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [
+            "passed"
+          ],
+          "execution_wall_ms": 159226,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "recovery-transaction-rebuild",
+          "case_hash": "9b636d5935af54edb025d1d7dde04c4cfb389bfb5fd866c0f2c98a996f5a7118",
+          "category": "recovery",
+          "depth": 2,
+          "score": 90.625,
+          "dimensions": {
+            "fulfillment": 3.73,
+            "evidence": 3.73,
+            "constraints": 3.24,
+            "verification": 3.8
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [
+            "passed"
+          ],
+          "execution_wall_ms": 386558,
+          "judge_http_attempts": 7
+        },
+        {
+          "case_id": "recovery-flag-rollback",
+          "case_hash": "a23267424d294aa687d7b8a8b86cb0c3ed699806375a24f5cf7945d82bfe7c25",
+          "category": "recovery",
+          "depth": 3,
+          "score": 91.8125,
+          "dimensions": {
+            "fulfillment": 3.73,
+            "evidence": 3.6,
+            "constraints": 3.51,
+            "verification": 3.85
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [
+            "passed"
+          ],
+          "execution_wall_ms": 218614,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "audit-release-provenance",
+          "case_hash": "7a961418b720ecd1e9884b0c347d10141975dd7d74cbdb5ca5ee0dda65eb64e4",
+          "category": "audit",
+          "depth": 1,
+          "score": 91.75,
+          "dimensions": {
+            "fulfillment": 3.6,
+            "evidence": 3.78,
+            "constraints": 3.66,
+            "verification": 3.64
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [],
+          "execution_wall_ms": 89083,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "audit-dependency-boundary",
+          "case_hash": "ea38dd7907648c96a16f789cf1b3d691c55e98a55ee4ea3e4adf2dfd13b063d9",
+          "category": "audit",
+          "depth": 2,
+          "score": 92.6875,
+          "dimensions": {
+            "fulfillment": 3.61,
+            "evidence": 3.87,
+            "constraints": 3.73,
+            "verification": 3.62
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [],
+          "execution_wall_ms": 83563,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "audit-deployment-integrity",
+          "case_hash": "9db1b43055e319c586aef56091c30fa51999b13118130940096f2da9d06b3ba4",
+          "category": "audit",
+          "depth": 3,
+          "score": 90.125,
+          "dimensions": {
+            "fulfillment": 3.63,
+            "evidence": 3.68,
+            "constraints": 3.66,
+            "verification": 3.45
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [],
+          "execution_wall_ms": 145622,
+          "judge_http_attempts": 4
+        }
+      ]
+    },
+    {
+      "role": "target",
+      "run_id": "20260922T033017-derived-20260922T021546Z-target-79fd15f788fa-3bcf3d9cbf57",
+      "content_digest": "80ebcc4d89b027b57307e7c698a405787a66efdfd359e63f0ee4a8049de70095",
+      "source_run_id": "20260922T021546Z-target-79fd15f788fa",
+      "source_content_digest": "727765b902d60d9178d545968586ec3fa487bdcaa4b6cd4e1b589822ab21df1c",
+      "source_created_at": "2026-09-22T02:15:46.526347+00:00",
+      "profile": {
+        "requested": {
+          "effort": "max",
+          "harness": "codex",
+          "model": "gpt-5.6-luna"
+        },
+        "resolved": {
+          "effort": "max",
+          "harness": "codex",
+          "model": "gpt-5.6-luna"
+        },
+        "observed": {
+          "effort": null,
+          "harness": "codex",
+          "model": null
+        },
+        "harness_version": "codex-cli-native-v1:codex-cli 0.155.1"
+      },
+      "summary": {
+        "cases": {
+          "audit-dependency-boundary": {
+            "category": "audit",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 93.0,
+                "status": "scored"
+              }
+            },
+            "score": 93.0,
+            "scored_repetitions": 1
+          },
+          "audit-deployment-integrity": {
+            "category": "audit",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 88.3125,
+                "status": "scored"
+              }
+            },
+            "score": 88.3125,
+            "scored_repetitions": 1
+          },
+          "audit-release-provenance": {
+            "category": "audit",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 94.25,
+                "status": "scored"
+              }
+            },
+            "score": 94.25,
+            "scored_repetitions": 1
+          },
+          "diagnosis-incident-timeline": {
+            "category": "diagnosis",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 94.0,
+                "status": "scored"
+              }
+            },
+            "score": 94.0,
+            "scored_repetitions": 1
+          },
+          "diagnosis-queue-cache": {
+            "category": "diagnosis",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 91.0625,
+                "status": "scored"
+              }
+            },
+            "score": 91.0625,
+            "scored_repetitions": 1
+          },
+          "diagnosis-retry-budget": {
+            "category": "diagnosis",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 92.375,
+                "status": "scored"
+              }
+            },
+            "score": 92.375,
+            "scored_repetitions": 1
+          },
+          "recovery-checkpoint": {
+            "category": "recovery",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 92.9375,
+                "status": "scored"
+              }
+            },
+            "score": 92.9375,
+            "scored_repetitions": 1
+          },
+          "recovery-flag-rollback": {
+            "category": "recovery",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 86.625,
+                "status": "scored"
+              }
+            },
+            "score": 86.625,
+            "scored_repetitions": 1
+          },
+          "recovery-transaction-rebuild": {
+            "category": "recovery",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 94.8125,
+                "status": "scored"
+              }
+            },
+            "score": 94.8125,
+            "scored_repetitions": 1
+          },
+          "repair-cache-api": {
+            "category": "repair",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 94.75,
+                "status": "scored"
+              }
+            },
+            "score": 94.75,
+            "scored_repetitions": 1
+          },
+          "repair-config-rollback": {
+            "category": "repair",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 94.5,
+                "status": "scored"
+              }
+            },
+            "score": 94.5,
+            "scored_repetitions": 1
+          },
+          "repair-migration-state": {
+            "category": "repair",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 75.9375,
+                "status": "scored"
+              }
+            },
+            "score": 75.9375,
+            "scored_repetitions": 1
+          },
+          "scope-changing-boundary": {
+            "category": "scope",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 94.0625,
+                "status": "scored"
+              }
+            },
+            "score": 94.0625,
+            "scored_repetitions": 1
+          },
+          "scope-cli-schema": {
+            "category": "scope",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 92.0625,
+                "status": "scored"
+              }
+            },
+            "score": 92.0625,
+            "scored_repetitions": 1
+          },
+          "scope-rate-limit": {
+            "category": "scope",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 88.875,
+                "status": "scored"
+              }
+            },
+            "score": 88.875,
+            "scored_repetitions": 1
+          },
+          "testing-parser-matrix": {
+            "category": "testing",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 89.4375,
+                "status": "scored"
+              }
+            },
+            "score": 89.4375,
+            "scored_repetitions": 1
+          },
+          "testing-retry-fakeclock": {
+            "category": "testing",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 95.4375,
+                "status": "scored"
+              }
+            },
+            "score": 95.4375,
+            "scored_repetitions": 1
+          },
+          "testing-schema-evolution": {
+            "category": "testing",
+            "complete": true,
+            "expected_repetitions": 1,
+            "repetitions": {
+              "1": {
+                "score": 93.0625,
+                "status": "scored"
+              }
+            },
+            "score": 93.0625,
+            "scored_repetitions": 1
+          }
+        },
+        "categories": {
+          "audit": {
+            "cases": {
+              "audit-dependency-boundary": 93.0,
+              "audit-deployment-integrity": 88.3125,
+              "audit-release-provenance": 94.25
+            },
+            "complete": true,
+            "expected_cases": 3,
+            "score": 91.85416666666667,
+            "scored_cases": 3
+          },
+          "diagnosis": {
+            "cases": {
+              "diagnosis-incident-timeline": 94.0,
+              "diagnosis-queue-cache": 91.0625,
+              "diagnosis-retry-budget": 92.375
+            },
+            "complete": true,
+            "expected_cases": 3,
+            "score": 92.47916666666667,
+            "scored_cases": 3
+          },
+          "recovery": {
+            "cases": {
+              "recovery-checkpoint": 92.9375,
+              "recovery-flag-rollback": 86.625,
+              "recovery-transaction-rebuild": 94.8125
+            },
+            "complete": true,
+            "expected_cases": 3,
+            "score": 91.45833333333333,
+            "scored_cases": 3
+          },
+          "repair": {
+            "cases": {
+              "repair-cache-api": 94.75,
+              "repair-config-rollback": 94.5,
+              "repair-migration-state": 75.9375
+            },
+            "complete": true,
+            "expected_cases": 3,
+            "score": 88.39583333333333,
+            "scored_cases": 3
+          },
+          "scope": {
+            "cases": {
+              "scope-changing-boundary": 94.0625,
+              "scope-cli-schema": 92.0625,
+              "scope-rate-limit": 88.875
+            },
+            "complete": true,
+            "expected_cases": 3,
+            "score": 91.66666666666667,
+            "scored_cases": 3
+          },
+          "testing": {
+            "cases": {
+              "testing-parser-matrix": 89.4375,
+              "testing-retry-fakeclock": 95.4375,
+              "testing-schema-evolution": 93.0625
+            },
+            "complete": true,
+            "expected_cases": 3,
+            "score": 92.64583333333333,
+            "scored_cases": 3
+          }
+        },
+        "complete": true,
+        "coverage": {
+          "expected": 18,
+          "scored": 18
+        },
+        "errors": [],
+        "repeat": 1,
+        "total": 91.41666666666667
+      },
+      "execution_wall_ms": 4425414,
+      "http_attempts": 72,
+      "cases": [
+        {
+          "case_id": "repair-config-rollback",
+          "case_hash": "8482b4a6c09a768b6a014d65294fba67189f44d79cf02f1cdebf35ba350ca647",
+          "category": "repair",
+          "depth": 1,
+          "score": 94.5,
+          "dimensions": {
+            "fulfillment": 3.8,
+            "evidence": 3.67,
+            "constraints": 3.82,
+            "verification": 3.83
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [
+            "passed"
+          ],
+          "execution_wall_ms": 140908,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "repair-cache-api",
+          "case_hash": "719e0c33b1d10a2e3694c96e44dbaaa91cbe23ed3f07ff3a4fb712f88d6aad07",
+          "category": "repair",
+          "depth": 2,
+          "score": 94.75,
+          "dimensions": {
+            "fulfillment": 3.93,
+            "evidence": 3.88,
+            "constraints": 3.81,
+            "verification": 3.54
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [
+            "passed"
+          ],
+          "execution_wall_ms": 144866,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "repair-migration-state",
+          "case_hash": "4b38024bfcced7f30e7ef129894019a606933fd5a9b7fefea094f55a8d64136c",
+          "category": "repair",
+          "depth": 3,
+          "score": 75.9375,
+          "dimensions": {
+            "fulfillment": 2.96,
+            "evidence": 3.62,
+            "constraints": 2.09,
+            "verification": 3.48
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [
+            "failed"
+          ],
+          "execution_wall_ms": 652987,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "diagnosis-retry-budget",
+          "case_hash": "a56a9fd81ee4b2504c0d99bc71fe6470d98519c3926e874ea0387c056dc4bb99",
+          "category": "diagnosis",
+          "depth": 1,
+          "score": 92.375,
+          "dimensions": {
+            "fulfillment": 3.73,
+            "evidence": 3.45,
+            "constraints": 3.81,
+            "verification": 3.79
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [],
+          "execution_wall_ms": 201205,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "diagnosis-queue-cache",
+          "case_hash": "9fc21e06bcaf5a129bce5b6be8088e5fa12d1c40ef407a78b499e7f73ef825d9",
+          "category": "diagnosis",
+          "depth": 2,
+          "score": 91.0625,
+          "dimensions": {
+            "fulfillment": 3.77,
+            "evidence": 3.79,
+            "constraints": 3.51,
+            "verification": 3.5
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [],
+          "execution_wall_ms": 207058,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "diagnosis-incident-timeline",
+          "case_hash": "68f6932f402bf53feec9b2ee45dae739af6dacd1ff6b66146f0f262c0bb9df5c",
+          "category": "diagnosis",
+          "depth": 3,
+          "score": 94.0,
+          "dimensions": {
+            "fulfillment": 3.79,
+            "evidence": 3.81,
+            "constraints": 3.7,
+            "verification": 3.74
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [],
+          "execution_wall_ms": 216281,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "scope-rate-limit",
+          "case_hash": "40193058dfad15695eadf7fe3fa8866d0193284401d9a82b020ebeee2e3ede77",
+          "category": "scope",
+          "depth": 1,
+          "score": 88.875,
+          "dimensions": {
+            "fulfillment": 3.53,
+            "evidence": 3.72,
+            "constraints": 3.16,
+            "verification": 3.81
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [
+            "passed"
+          ],
+          "execution_wall_ms": 186341,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "scope-cli-schema",
+          "case_hash": "52cc72ef31253b0c231ad584015e3ff137540181105e583813940ec9cef00816",
+          "category": "scope",
+          "depth": 2,
+          "score": 92.0625,
+          "dimensions": {
+            "fulfillment": 3.76,
+            "evidence": 3.54,
+            "constraints": 3.71,
+            "verification": 3.72
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [
+            "passed"
+          ],
+          "execution_wall_ms": 304631,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "scope-changing-boundary",
+          "case_hash": "847a6157321bb1eb82c84c2248f40ff981800466318f520c312681ab9b201963",
+          "category": "scope",
+          "depth": 3,
+          "score": 94.0625,
+          "dimensions": {
+            "fulfillment": 3.84,
+            "evidence": 3.87,
+            "constraints": 3.5,
+            "verification": 3.84
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [
+            "passed"
+          ],
+          "execution_wall_ms": 405477,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "testing-parser-matrix",
+          "case_hash": "90ac3d37bdd2602fe4c716c4f73d26029e25135c7ab95d12b16d0b04d915f079",
+          "category": "testing",
+          "depth": 1,
+          "score": 89.4375,
+          "dimensions": {
+            "fulfillment": 3.52,
+            "evidence": 3.48,
+            "constraints": 3.66,
+            "verification": 3.65
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [
+            "passed"
+          ],
+          "execution_wall_ms": 205325,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "testing-retry-fakeclock",
+          "case_hash": "c1d5aa840b3aade2eea66259dcbedf0699bb5faf640cfb13597553162a134a66",
+          "category": "testing",
+          "depth": 2,
+          "score": 95.4375,
+          "dimensions": {
+            "fulfillment": 3.89,
+            "evidence": 3.87,
+            "constraints": 3.65,
+            "verification": 3.86
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [
+            "passed"
+          ],
+          "execution_wall_ms": 190459,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "testing-schema-evolution",
+          "case_hash": "e6e5b93b24a67b9df12a9398c65de699454c77605804c75232f27b6fd2b91b4d",
+          "category": "testing",
+          "depth": 3,
+          "score": 93.0625,
+          "dimensions": {
+            "fulfillment": 3.83,
+            "evidence": 3.88,
+            "constraints": 3.34,
+            "verification": 3.84
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [
+            "passed"
+          ],
+          "execution_wall_ms": 433124,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "recovery-checkpoint",
+          "case_hash": "bcc4adb74e932f78849b02860519bf242b826967f0757f61a0c04d1dab744491",
+          "category": "recovery",
+          "depth": 1,
+          "score": 92.9375,
+          "dimensions": {
+            "fulfillment": 3.81,
+            "evidence": 3.7,
+            "constraints": 3.53,
+            "verification": 3.83
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [
+            "passed"
+          ],
+          "execution_wall_ms": 272166,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "recovery-transaction-rebuild",
+          "case_hash": "9b636d5935af54edb025d1d7dde04c4cfb389bfb5fd866c0f2c98a996f5a7118",
+          "category": "recovery",
+          "depth": 2,
+          "score": 94.8125,
+          "dimensions": {
+            "fulfillment": 3.79,
+            "evidence": 3.86,
+            "constraints": 3.67,
+            "verification": 3.85
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [
+            "passed"
+          ],
+          "execution_wall_ms": 169185,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "recovery-flag-rollback",
+          "case_hash": "a23267424d294aa687d7b8a8b86cb0c3ed699806375a24f5cf7945d82bfe7c25",
+          "category": "recovery",
+          "depth": 3,
+          "score": 86.625,
+          "dimensions": {
+            "fulfillment": 3.07,
+            "evidence": 3.63,
+            "constraints": 3.46,
+            "verification": 3.7
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [
+            "passed"
+          ],
+          "execution_wall_ms": 263114,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "audit-release-provenance",
+          "case_hash": "7a961418b720ecd1e9884b0c347d10141975dd7d74cbdb5ca5ee0dda65eb64e4",
+          "category": "audit",
+          "depth": 1,
+          "score": 94.25,
+          "dimensions": {
+            "fulfillment": 3.73,
+            "evidence": 3.9,
+            "constraints": 3.74,
+            "verification": 3.71
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [],
+          "execution_wall_ms": 83734,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "audit-dependency-boundary",
+          "case_hash": "ea38dd7907648c96a16f789cf1b3d691c55e98a55ee4ea3e4adf2dfd13b063d9",
+          "category": "audit",
+          "depth": 2,
+          "score": 93.0,
+          "dimensions": {
+            "fulfillment": 3.63,
+            "evidence": 3.89,
+            "constraints": 3.73,
+            "verification": 3.63
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [],
+          "execution_wall_ms": 109639,
+          "judge_http_attempts": 4
+        },
+        {
+          "case_id": "audit-deployment-integrity",
+          "case_hash": "9db1b43055e319c586aef56091c30fa51999b13118130940096f2da9d06b3ba4",
+          "category": "audit",
+          "depth": 3,
+          "score": 88.3125,
+          "dimensions": {
+            "fulfillment": 3.65,
+            "evidence": 3.41,
+            "constraints": 3.67,
+            "verification": 3.4
+          },
+          "execution_status": "completed",
+          "public_test_statuses": [],
+          "execution_wall_ms": 238914,
+          "judge_http_attempts": 4
+        }
+      ]
+    }
+  ],
+  "comparison": {
+    "base_created_at": "2026-09-22T03:25:12.252701Z",
+    "base_run_id": "20260922T032512-derived-20260922T011608Z-base-3ff7a8b332cd-cf7f3bc25680",
+    "cases": {
+      "audit-dependency-boundary": {
+        "base": 92.6875,
+        "delta": 0.3125,
+        "target": 93.0
+      },
+      "audit-deployment-integrity": {
+        "base": 90.125,
+        "delta": -1.8125,
+        "target": 88.3125
+      },
+      "audit-release-provenance": {
+        "base": 91.75,
+        "delta": 2.5,
+        "target": 94.25
+      },
+      "diagnosis-incident-timeline": {
+        "base": 93.375,
+        "delta": 0.625,
+        "target": 94.0
+      },
+      "diagnosis-queue-cache": {
+        "base": 92.8125,
+        "delta": -1.75,
+        "target": 91.0625
+      },
+      "diagnosis-retry-budget": {
+        "base": 93.3125,
+        "delta": -0.9375,
+        "target": 92.375
+      },
+      "recovery-checkpoint": {
+        "base": 89.1875,
+        "delta": 3.75,
+        "target": 92.9375
+      },
+      "recovery-flag-rollback": {
+        "base": 91.8125,
+        "delta": -5.1875,
+        "target": 86.625
+      },
+      "recovery-transaction-rebuild": {
+        "base": 90.625,
+        "delta": 4.1875,
+        "target": 94.8125
+      },
+      "repair-cache-api": {
+        "base": 93.375,
+        "delta": 1.375,
+        "target": 94.75
+      },
+      "repair-config-rollback": {
+        "base": 88.75,
+        "delta": 5.75,
+        "target": 94.5
+      },
+      "repair-migration-state": {
+        "base": 91.9375,
+        "delta": -16.0,
+        "target": 75.9375
+      },
+      "scope-changing-boundary": {
+        "base": 92.875,
+        "delta": 1.1875,
+        "target": 94.0625
+      },
+      "scope-cli-schema": {
+        "base": 94.0625,
+        "delta": -2.0,
+        "target": 92.0625
+      },
+      "scope-rate-limit": {
+        "base": 83.25,
+        "delta": 5.625,
+        "target": 88.875
+      },
+      "testing-parser-matrix": {
+        "base": 92.5625,
+        "delta": -3.125,
+        "target": 89.4375
+      },
+      "testing-retry-fakeclock": {
+        "base": 94.25,
+        "delta": 1.1875,
+        "target": 95.4375
+      },
+      "testing-schema-evolution": {
+        "base": 84.4375,
+        "delta": 8.625,
+        "target": 93.0625
+      }
+    },
+    "categories": {
+      "audit": {
+        "base": 91.52083333333333,
+        "delta": 0.3333333333333428,
+        "target": 91.85416666666667
+      },
+      "diagnosis": {
+        "base": 93.16666666666667,
+        "delta": -0.6875,
+        "target": 92.47916666666667
+      },
+      "recovery": {
+        "base": 90.54166666666667,
+        "delta": 0.9166666666666572,
+        "target": 91.45833333333333
+      },
+      "repair": {
+        "base": 91.35416666666667,
+        "delta": -2.958333333333343,
+        "target": 88.39583333333333
+      },
+      "scope": {
+        "base": 90.0625,
+        "delta": 1.6041666666666714,
+        "target": 91.66666666666667
+      },
+      "testing": {
+        "base": 90.41666666666667,
+        "delta": 2.229166666666657,
+        "target": 92.64583333333333
+      }
+    },
+    "compatible": true,
+    "complete": true,
+    "deltas": {
+      "cases": {
+        "audit-dependency-boundary": {
+          "base": 92.6875,
+          "delta": 0.3125,
+          "target": 93.0
+        },
+        "audit-deployment-integrity": {
+          "base": 90.125,
+          "delta": -1.8125,
+          "target": 88.3125
+        },
+        "audit-release-provenance": {
+          "base": 91.75,
+          "delta": 2.5,
+          "target": 94.25
+        },
+        "diagnosis-incident-timeline": {
+          "base": 93.375,
+          "delta": 0.625,
+          "target": 94.0
+        },
+        "diagnosis-queue-cache": {
+          "base": 92.8125,
+          "delta": -1.75,
+          "target": 91.0625
+        },
+        "diagnosis-retry-budget": {
+          "base": 93.3125,
+          "delta": -0.9375,
+          "target": 92.375
+        },
+        "recovery-checkpoint": {
+          "base": 89.1875,
+          "delta": 3.75,
+          "target": 92.9375
+        },
+        "recovery-flag-rollback": {
+          "base": 91.8125,
+          "delta": -5.1875,
+          "target": 86.625
+        },
+        "recovery-transaction-rebuild": {
+          "base": 90.625,
+          "delta": 4.1875,
+          "target": 94.8125
+        },
+        "repair-cache-api": {
+          "base": 93.375,
+          "delta": 1.375,
+          "target": 94.75
+        },
+        "repair-config-rollback": {
+          "base": 88.75,
+          "delta": 5.75,
+          "target": 94.5
+        },
+        "repair-migration-state": {
+          "base": 91.9375,
+          "delta": -16.0,
+          "target": 75.9375
+        },
+        "scope-changing-boundary": {
+          "base": 92.875,
+          "delta": 1.1875,
+          "target": 94.0625
+        },
+        "scope-cli-schema": {
+          "base": 94.0625,
+          "delta": -2.0,
+          "target": 92.0625
+        },
+        "scope-rate-limit": {
+          "base": 83.25,
+          "delta": 5.625,
+          "target": 88.875
+        },
+        "testing-parser-matrix": {
+          "base": 92.5625,
+          "delta": -3.125,
+          "target": 89.4375
+        },
+        "testing-retry-fakeclock": {
+          "base": 94.25,
+          "delta": 1.1875,
+          "target": 95.4375
+        },
+        "testing-schema-evolution": {
+          "base": 84.4375,
+          "delta": 8.625,
+          "target": 93.0625
+        }
+      },
+      "categories": {
+        "audit": {
+          "base": 91.52083333333333,
+          "delta": 0.3333333333333428,
+          "target": 91.85416666666667
+        },
+        "diagnosis": {
+          "base": 93.16666666666667,
+          "delta": -0.6875,
+          "target": 92.47916666666667
+        },
+        "recovery": {
+          "base": 90.54166666666667,
+          "delta": 0.9166666666666572,
+          "target": 91.45833333333333
+        },
+        "repair": {
+          "base": 91.35416666666667,
+          "delta": -2.958333333333343,
+          "target": 88.39583333333333
+        },
+        "scope": {
+          "base": 90.0625,
+          "delta": 1.6041666666666714,
+          "target": 91.66666666666667
+        },
+        "testing": {
+          "base": 90.41666666666667,
+          "delta": 2.229166666666657,
+          "target": 92.64583333333333
+        }
+      },
+      "total": {
+        "base": 91.17708333333333,
+        "delta": 0.2395833333333428,
+        "target": 91.41666666666667
+      }
+    },
+    "errors": [],
+    "like_for_like": {
+      "case_ids": [
+        "audit-dependency-boundary",
+        "audit-deployment-integrity",
+        "audit-release-provenance",
+        "diagnosis-incident-timeline",
+        "diagnosis-queue-cache",
+        "diagnosis-retry-budget",
+        "recovery-checkpoint",
+        "recovery-flag-rollback",
+        "recovery-transaction-rebuild",
+        "repair-cache-api",
+        "repair-config-rollback",
+        "repair-migration-state",
+        "scope-changing-boundary",
+        "scope-cli-schema",
+        "scope-rate-limit",
+        "testing-parser-matrix",
+        "testing-retry-fakeclock",
+        "testing-schema-evolution"
+      ],
+      "categories": [
+        "audit",
+        "diagnosis",
+        "recovery",
+        "repair",
+        "scope",
+        "testing"
+      ]
+    },
+    "matched_repeat": 1,
+    "reused": false,
+    "target_created_at": "2026-09-22T03:30:17.185925Z",
+    "target_run_id": "20260922T033017-derived-20260922T021546Z-target-79fd15f788fa-3bcf3d9cbf57",
+    "total": {
+      "base": 91.17708333333333,
+      "delta": 0.2395833333333428,
+      "target": 91.41666666666667
+    }
+  },
+  "verification": {
+    "exact_source_cases_and_executions": 36,
+    "reconstructed_dimension_http_bodies": 144,
+    "original_sources_digest_verified": true
+  },
+  "limitations": [
+    "One native execution per case; small differences are not statistical superiority.",
+    "Judge confidence is retained and is not a confidence interval for repeated model evaluation.",
+    "Native billing semantics differ; no verified pricing snapshot, so cost is unknown.",
+    "These are traceable derived judgments, not ordinary historical base cache entries."
+  ]
+}

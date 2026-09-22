@@ -1,0 +1,23 @@
+diff --git a/src/validator.py b/src/validator.py
+--- a/src/validator.py
++++ b/src/validator.py
+@@ -1,5 +1,6 @@
+ def validate(event):
+     if not event["id"]:
+         raise ValueError("id is required")
+-    # Bug: an empty source is accepted once the field is present.
++    if event.get("source") == "":
++        raise ValueError("source is required when supplied")
+     return event
+diff --git a/src/serializer.py b/src/serializer.py
+--- a/src/serializer.py
++++ b/src/serializer.py
+@@ -7,4 +7,7 @@ def text(event):
+ 
+ def as_json(event):
+     # Bug: key order follows incidental construction and can include a prefix.
+-    return json.dumps(event, sort_keys=True)
++    output = {"id": event["id"], "payload": event["payload"]}
++    if event.get("source") is not None:
++        output["source"] = event["source"]
++    return json.dumps(output)

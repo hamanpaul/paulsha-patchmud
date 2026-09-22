@@ -1,0 +1,1 @@
+The correct diagnosis distinguishes transport attempts from confirmed deliveries. The timeout change explains two attempts for two requests, while unique delivery ids and the summary show no duplicate delivery. No code change is justified; collect one bounded broker receipt correlation if the incident recurs.

@@ -1,0 +1,13 @@
+diff --git a/src/projection.py b/src/projection.py
+--- a/src/projection.py
++++ b/src/projection.py
+@@ -4,7 +4,8 @@
+         self.applied = []
+ 
+     def apply(self, txid, operations):
+-        # Bug: a replay applies the same transaction's deltas again.
++        if txid in self.applied:
++            return
+         for operation in operations:
+             account = operation["account"]
+             self.balances[account] = self.balances.get(account, 0) + operation["delta"]

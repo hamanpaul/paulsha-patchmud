@@ -1,0 +1,11 @@
+{
+  "run_id": "ci-742",
+  "workflow": "release-verification",
+  "source_commit": "8f31c0d9b7e4",
+  "artifact_digest": "sha256:artifact-44b7",
+  "test_suite": "widget-api-public-184",
+  "status": "passed",
+  "tests_total": 184,
+  "tests_failed": 0,
+  "completed_at": "2026-09-21T08:17:14Z"
+}

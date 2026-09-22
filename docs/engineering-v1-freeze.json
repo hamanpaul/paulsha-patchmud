@@ -1,0 +1,315 @@
+{
+  "schema_version": 1,
+  "status": "frozen",
+  "frozen_at": "2026-09-22T01:15:57.121435+00:00",
+  "suite": {
+    "id": "engineering-v1",
+    "version": "1.1.0",
+    "suite_hash": "77c5913af8725ae584c9e8c0a73220b77eb1e107293c4d51578dceea24a4bca4",
+    "rubric_version": "jev-1.13.0"
+  },
+  "judge_model": "jev-1.13.0",
+  "engine_digest": "0ab4c023b6c9c4c769c154fef8aa43fb713f15459766df5974cf53fcaaaeb22b",
+  "execution_policy": {
+    "protocol": "native-engineering-v1",
+    "tools": "native-cli",
+    "network": "provider-and-native-tools",
+    "home": "isolated-auth-only",
+    "phases": "sequential-native-conversation-equal-wall-shares-v1",
+    "turn_limit": null,
+    "validation_reserve_seconds": 30
+  },
+  "cases": [
+    {
+      "id": "repair-config-rollback",
+      "category": "repair",
+      "depth": 1,
+      "case_hash": "8482b4a6c09a768b6a014d65294fba67189f44d79cf02f1cdebf35ba350ca647",
+      "wall_seconds": 600,
+      "phases": 1
+    },
+    {
+      "id": "repair-cache-api",
+      "category": "repair",
+      "depth": 2,
+      "case_hash": "719e0c33b1d10a2e3694c96e44dbaaa91cbe23ed3f07ff3a4fb712f88d6aad07",
+      "wall_seconds": 1200,
+      "phases": 1
+    },
+    {
+      "id": "repair-migration-state",
+      "category": "repair",
+      "depth": 3,
+      "case_hash": "4b38024bfcced7f30e7ef129894019a606933fd5a9b7fefea094f55a8d64136c",
+      "wall_seconds": 1800,
+      "phases": 3
+    },
+    {
+      "id": "diagnosis-retry-budget",
+      "category": "diagnosis",
+      "depth": 1,
+      "case_hash": "a56a9fd81ee4b2504c0d99bc71fe6470d98519c3926e874ea0387c056dc4bb99",
+      "wall_seconds": 600,
+      "phases": 1
+    },
+    {
+      "id": "diagnosis-queue-cache",
+      "category": "diagnosis",
+      "depth": 2,
+      "case_hash": "9fc21e06bcaf5a129bce5b6be8088e5fa12d1c40ef407a78b499e7f73ef825d9",
+      "wall_seconds": 1200,
+      "phases": 1
+    },
+    {
+      "id": "diagnosis-incident-timeline",
+      "category": "diagnosis",
+      "depth": 3,
+      "case_hash": "68f6932f402bf53feec9b2ee45dae739af6dacd1ff6b66146f0f262c0bb9df5c",
+      "wall_seconds": 1800,
+      "phases": 3
+    },
+    {
+      "id": "scope-rate-limit",
+      "category": "scope",
+      "depth": 1,
+      "case_hash": "40193058dfad15695eadf7fe3fa8866d0193284401d9a82b020ebeee2e3ede77",
+      "wall_seconds": 600,
+      "phases": 1
+    },
+    {
+      "id": "scope-cli-schema",
+      "category": "scope",
+      "depth": 2,
+      "case_hash": "52cc72ef31253b0c231ad584015e3ff137540181105e583813940ec9cef00816",
+      "wall_seconds": 1200,
+      "phases": 1
+    },
+    {
+      "id": "scope-changing-boundary",
+      "category": "scope",
+      "depth": 3,
+      "case_hash": "847a6157321bb1eb82c84c2248f40ff981800466318f520c312681ab9b201963",
+      "wall_seconds": 1800,
+      "phases": 3
+    },
+    {
+      "id": "testing-parser-matrix",
+      "category": "testing",
+      "depth": 1,
+      "case_hash": "90ac3d37bdd2602fe4c716c4f73d26029e25135c7ab95d12b16d0b04d915f079",
+      "wall_seconds": 600,
+      "phases": 1
+    },
+    {
+      "id": "testing-retry-fakeclock",
+      "category": "testing",
+      "depth": 2,
+      "case_hash": "c1d5aa840b3aade2eea66259dcbedf0699bb5faf640cfb13597553162a134a66",
+      "wall_seconds": 1200,
+      "phases": 1
+    },
+    {
+      "id": "testing-schema-evolution",
+      "category": "testing",
+      "depth": 3,
+      "case_hash": "e6e5b93b24a67b9df12a9398c65de699454c77605804c75232f27b6fd2b91b4d",
+      "wall_seconds": 1800,
+      "phases": 3
+    },
+    {
+      "id": "recovery-checkpoint",
+      "category": "recovery",
+      "depth": 1,
+      "case_hash": "bcc4adb74e932f78849b02860519bf242b826967f0757f61a0c04d1dab744491",
+      "wall_seconds": 600,
+      "phases": 1
+    },
+    {
+      "id": "recovery-transaction-rebuild",
+      "category": "recovery",
+      "depth": 2,
+      "case_hash": "9b636d5935af54edb025d1d7dde04c4cfb389bfb5fd866c0f2c98a996f5a7118",
+      "wall_seconds": 1200,
+      "phases": 1
+    },
+    {
+      "id": "recovery-flag-rollback",
+      "category": "recovery",
+      "depth": 3,
+      "case_hash": "a23267424d294aa687d7b8a8b86cb0c3ed699806375a24f5cf7945d82bfe7c25",
+      "wall_seconds": 1800,
+      "phases": 3
+    },
+    {
+      "id": "audit-release-provenance",
+      "category": "audit",
+      "depth": 1,
+      "case_hash": "7a961418b720ecd1e9884b0c347d10141975dd7d74cbdb5ca5ee0dda65eb64e4",
+      "wall_seconds": 600,
+      "phases": 1
+    },
+    {
+      "id": "audit-dependency-boundary",
+      "category": "audit",
+      "depth": 2,
+      "case_hash": "ea38dd7907648c96a16f789cf1b3d691c55e98a55ee4ea3e4adf2dfd13b063d9",
+      "wall_seconds": 1200,
+      "phases": 1
+    },
+    {
+      "id": "audit-deployment-integrity",
+      "category": "audit",
+      "depth": 3,
+      "case_hash": "9db1b43055e319c586aef56091c30fa51999b13118130940096f2da9d06b3ba4",
+      "wall_seconds": 1800,
+      "phases": 3
+    }
+  ],
+  "calibrations": [
+    {
+      "artifact": "calibration-native-live-shared.json",
+      "sha256": "d6de8ca90013e6ba8bbed46a91fc69e4fafaa6d08f8577de14d4e5a681f1f4b2",
+      "coverage": {
+        "expected": 18,
+        "selected": 18
+      },
+      "status": "passed",
+      "live_judge_status": "complete",
+      "ordering_passed": true
+    },
+    {
+      "artifact": "calibration-native-staged-phases.json",
+      "sha256": "d96edf711c36a82b9dc4d59d02dce8fe53b63ca3b7f7a2f8b90b0a1d31bfcdeb",
+      "coverage": {
+        "expected": 18,
+        "selected": 6
+      },
+      "status": "partial",
+      "live_judge_status": "complete",
+      "ordering_passed": true
+    }
+  ],
+  "pilots": [
+    {
+      "run_id": "20260922T002335Z-base-cc59d8cd0178",
+      "archive_sha256": "75afb17b43bf56f5de018fedde8c4aaa7a2ebbfd61a42d56ce241b75a11ae172",
+      "profile": {
+        "requested": {
+          "effort": "high",
+          "harness": "agy",
+          "model": "gemini-3.8-flash"
+        },
+        "resolved": {
+          "effort": "high",
+          "harness": "agy",
+          "model": "gemini-3.8-flash-high"
+        },
+        "harness_version": "agy-cli-native-v1:1.2.7"
+      },
+      "engine_digest": "ead4e56e5d2ffa4cf161cd1c0ad3a0ab1fe54c8f235d2633578dd961aa2e25d0",
+      "coverage": {
+        "selected": 6,
+        "scored": 6
+      },
+      "cases": [
+        {
+          "id": "repair-config-rollback",
+          "score": 92.3125,
+          "wall_ms": 252891
+        },
+        {
+          "id": "diagnosis-queue-cache",
+          "score": 92.25,
+          "wall_ms": 81761
+        },
+        {
+          "id": "scope-changing-boundary",
+          "score": 91.9375,
+          "wall_ms": 310514
+        },
+        {
+          "id": "testing-parser-matrix",
+          "score": 94.5,
+          "wall_ms": 227933
+        },
+        {
+          "id": "recovery-transaction-rebuild",
+          "score": 94.4375,
+          "wall_ms": 216099
+        },
+        {
+          "id": "audit-deployment-integrity",
+          "score": 92.25,
+          "wall_ms": 146542
+        }
+      ]
+    },
+    {
+      "run_id": "20260922T004244Z-target-60a6f7f6ba49",
+      "archive_sha256": "bbf18f55c5c3d43801f3bed5525359a5730b9caf0919a1ec5a5c4018b5b0460c",
+      "profile": {
+        "requested": {
+          "effort": "max",
+          "harness": "codex",
+          "model": "gpt-5.6-luna"
+        },
+        "resolved": {
+          "effort": "max",
+          "harness": "codex",
+          "model": "gpt-5.6-luna"
+        },
+        "harness_version": "codex-cli-native-v1:codex-cli 0.155.1"
+      },
+      "engine_digest": "ead4e56e5d2ffa4cf161cd1c0ad3a0ab1fe54c8f235d2633578dd961aa2e25d0",
+      "coverage": {
+        "selected": 6,
+        "scored": 6
+      },
+      "cases": [
+        {
+          "id": "repair-config-rollback",
+          "score": 93.0,
+          "wall_ms": 249710
+        },
+        {
+          "id": "diagnosis-queue-cache",
+          "score": 90.5625,
+          "wall_ms": 278696
+        },
+        {
+          "id": "scope-changing-boundary",
+          "score": 95.0,
+          "wall_ms": 500845
+        },
+        {
+          "id": "testing-parser-matrix",
+          "score": 92.5,
+          "wall_ms": 199485
+        },
+        {
+          "id": "recovery-transaction-rebuild",
+          "score": 94.4375,
+          "wall_ms": 241050
+        },
+        {
+          "id": "audit-deployment-integrity",
+          "score": 89.5625,
+          "wall_ms": 416425
+        }
+      ]
+    }
+  ],
+  "inspection": {
+    "all_12_scored": true,
+    "all_8_coding_public_tests_passed": true,
+    "outside_allowed_paths": 0,
+    "final_parser_replay_phases": 20,
+    "parser_status_changes": 0,
+    "score_range": [
+      89.5625,
+      95.0
+    ],
+    "decision": "Retain all cases and rubric; no tuning to force model separation. Scores cluster high, so small differences have limited discriminatory value. One observation per case does not establish statistical superiority.",
+    "code_provenance": "Pilot process retained its initial engine digest. Final code adds stricter timeout terminal validation and corrects follow-up phase labels to 2/3. Replaying all 20 pilot phases with the final parser preserved their completed status; all six affected staged cases passed targeted live judge recalibration. Case/rubric hashes and score arithmetic did not change."
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "fast_path": {"enabled": true, "rollout_percent": 10, "owner": "payments"},
+  "fallback": {"enabled": true},
+  "updated_at": "2026-09-21T10:58:00Z"
+}

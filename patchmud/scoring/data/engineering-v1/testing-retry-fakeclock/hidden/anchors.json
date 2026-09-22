@@ -1,0 +1,19 @@
+{
+  "kind": "patch",
+  "outcome_class": "code_change",
+  "reference": {
+    "final_report": "The dispatcher now treats the injected clock and cancellation token as observable boundaries. A successful attempt returns immediately with no sleep, a permanent error returns immediately, and a transient failure checks cancellation before scheduling its next delay. Request ids and attempt records remain unchanged. The public deterministic suite verifies 0.5/1.0 backoff progression, success short-circuit, cancellation between attempts, permanent-error no-retry, and the exact attempt log; tests/agent/test_retry_contract.py independently verifies success/permanent no-sleep and cancellation before delay without network or wall-clock waits.",
+    "patch_file": "hidden/reference.patch",
+    "expected_quality": {"fulfillment": 4, "evidence": 4, "constraints": 4, "verification": 4}
+  },
+  "partial": {
+    "final_report": "Removed the success sleep but left cancellation checked after the next delay is scheduled. Timing for successful dispatch is fixed while the cancellation test still records an unnecessary wait.",
+    "patch_file": "hidden/partial.patch",
+    "expected_quality": {"fulfillment": 2, "evidence": 2, "constraints": 4, "verification": 1}
+  },
+  "wrong": {
+    "final_report": "Replaced the fake clock with a real sleep and loosened the attempt-log assertion. The dispatcher remains timing-dependent and the reported green result does not prove cancellation or request identity.",
+    "patch_file": "hidden/wrong.patch",
+    "expected_quality": {"fulfillment": 0, "evidence": 0, "constraints": 0, "verification": 0}
+  }
+}

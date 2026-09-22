@@ -1,0 +1,25 @@
+{
+  "id": "diagnosis-queue-cache",
+  "category": "diagnosis",
+  "depth": 2,
+  "title": "Diagnose queue latency at a cache boundary",
+  "prompt": "A queue consumer has a bounded prefetch, a cache of decoded jobs, and a metrics exporter. Latency increased after a deployment, and one dashboard says the queue is empty while the consumer log shows work waiting. Compare the source, versioned configuration, metric definitions, and paired traces. Decide whether a code change is justified now, identify the boundary that creates the misleading dashboard, and report the smallest evidence collection that would discriminate cache delay from broker delay. The correct result may be no change.",
+  "requirements": [
+    "Trace one job from broker receipt through cache decode, handler start, and metric emission.",
+    "Explain why queue depth and consumer lag disagree using the metric definitions and trace timestamps.",
+    "Compare the deployed prefetch/cache settings with the previous version.",
+    "Decide whether the evidence supports a code change or a no-op diagnosis.",
+    "Give one discriminating measurement with a clear expected result for each competing cause."
+  ],
+  "allowed_paths": [],
+  "max_turns": 16,
+  "wall_seconds": 1200,
+  "rubric": {
+    "fulfillment": {"instructions": "Score ordered 0..4 cross-component diagnosis completeness, including the justified action decision and discriminating measurement.", "criteria": ["0: Gives an unsupported latency theory or patch.", "1: Describes queue or cache behavior but cannot reconcile the dashboard and trace.", "2: Finds one boundary but omits deployment comparison or competing-cause measurement.", "3: Reconciles the main boundary and makes a no-op/code-change decision with one limited gap.", "4: Traces broker/cache/handler/metric flow, explains the dashboard mismatch, compares versions, decides action, and defines discriminating results."]},
+    "evidence": {"instructions": "Score ordered 0..4 quality of evidence links across code, config, logs, trace, and release notes.", "criteria": ["0: No artifact evidence supports the diagnosis.", "1: Uses a single dashboard or log claim.", "2: Uses two artifacts but leaves metric semantics or version timing unsupported.", "3: Links source, config, logs, trace, and release evidence with one small inference gap.", "4: Cites exact metric definition, prefetch/cache values, trace timestamps, log events, and release delta, labeling inference."]},
+    "constraints": {"instructions": "Score ordered 0..4 discipline in preserving the read-only diagnosis scope and avoiding a premature cache or broker rewrite.", "criteria": ["0: Edits the repository or asserts a speculative fix as complete.", "1: Proposes changing multiple components without a discriminator.", "2: Remains read-only but overstates one competing cause.", "3: Preserves no-op scope and bounded next step with one unnecessary remediation detail.", "4: Makes no change, separates observation from hypothesis, and gives one minimal discriminating measurement."]},
+    "verification": {"instructions": "Score ordered 0..4 verification of timestamps, metric windows, configuration, and cache/broker alternatives.", "criteria": ["0: Does not check the evidence chain.", "1: Checks only queue depth or only a trace.", "2: Checks timestamps or settings but not metric window semantics.", "3: Reconciles timing, settings, metric definitions, and logs with one missing alternative check.", "4: Replays the job timeline, validates metric windows, compares config versions, and predicts both discriminator outcomes."]}
+  },
+  "stages": [],
+  "test_argv": []
+}

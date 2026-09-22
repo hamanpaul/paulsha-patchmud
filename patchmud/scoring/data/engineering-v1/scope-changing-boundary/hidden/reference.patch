@@ -1,0 +1,29 @@
+diff --git a/src/cursor.py b/src/cursor.py
+--- a/src/cursor.py
++++ b/src/cursor.py
+@@ -1,7 +1,11 @@
+ def encode(offset, tenant=None):
+-    # Initial implementation exposes an offset with no tenant binding.
+-    return str(offset)
++    return str(offset) if tenant is None else f"{tenant}|{offset}"
+ 
+ 
+-def decode(token):
+-    return int(token)
++def decode(token, tenant=None):
++    if "|" not in token:
++        return int(token)  # legacy token format
++    token_tenant, raw_offset = token.split("|", 1)
++    if token_tenant != tenant or not token_tenant:
++        raise ValueError("cursor tenant mismatch")
++    return int(raw_offset)
+diff --git a/src/export.py b/src/export.py
+--- a/src/export.py
++++ b/src/export.py
+@@ -7,5 +7,5 @@ def export(principal, tenant, token=None, size=2):
+     if not can_read(principal, tenant):
+         raise PermissionError("forbidden")
+-    offset = decode(token) if token else 0
++    offset = decode(token, tenant) if token else 0
+     rows, more = page(tenant, offset, size)
+     return {"records": rows, "next": encode(offset + len(rows), tenant) if more else None}

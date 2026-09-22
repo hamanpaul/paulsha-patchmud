@@ -1,0 +1,25 @@
+{
+  "id": "testing-retry-fakeclock",
+  "category": "testing",
+  "depth": 2,
+  "title": "Test retry timing and cancellation across a fake clock",
+  "prompt": "A webhook dispatcher retries transient failures through an injected clock, records attempts, and stops when a cancellation token is set. Existing fixture tests assert only the final response and use a real sleep in one helper. Add new regression tests under tests/agent/**; keep the original fixture tests read-only. Expand the regression surface across dispatcher, backoff policy, and cancellation: prove exact delay progression, no sleep after success, cancellation between attempts, and preservation of the request id. Keep tests deterministic and make any small production correction required for the public contract.",
+  "requirements": [
+    "Verify exact backoff delays through the injected fake clock without wall-clock sleeping.",
+    "Verify a successful response stops retries and schedules no further delay.",
+    "Verify cancellation between attempts stops delivery while preserving the request id and attempt log.",
+    "Cover transient versus permanent errors without conflating their statuses.",
+    "Keep new tests under tests/agent/** isolated from network, ambient time, and global mutable state; keep the original fixture tests read-only."
+  ],
+  "allowed_paths": ["src/dispatcher.py", "src/backoff.py", "src/cancel.py", "tests/agent/**"],
+  "max_turns": 16,
+  "wall_seconds": 1200,
+  "rubric": {
+    "fulfillment": {"instructions": "Score ordered 0..4 completion of cross-component retry, timing, cancellation, and request identity behavior.", "criteria": ["0: Tests do not observe retry timing or cancellation.", "1: Asserts only a final response or one delay and misses cancellation/permanent errors.", "2: Covers timing and one stop condition but has a material fake-clock or attempt-log gap.", "3: Main retry/cancel matrix works with one concrete status or identity gap.", "4: Exact delays, no post-success sleep, cancellation boundary, transient/permanent distinction, request id, and attempt log are all deterministic."]},
+    "evidence": {"instructions": "Score ordered 0..4 traceability from fake-clock events and dispatcher/backoff/cancel source to assertions.", "criteria": ["0: Gives a green test count without observable events.", "1: Shows a final result but no delay or cancellation evidence.", "2: Shows clock or attempts but cannot connect status branches to assertions.", "3: Traces clock, attempts, cancellation, and ids with one missing branch detail.", "4: Cites exact clock sequence, status sequence, cancellation point, request id, attempt records, and changed production branch."]},
+    "constraints": {"instructions": "Score ordered 0..4 adherence to deterministic test scope and use of injected time/cancellation seams.", "criteria": ["0: Uses real sleeping/network or weakens tests to hide timing.", "1: Leaves a wall-clock helper or global cancellation race in the main path.", "2: Uses fakes but edits unrelated modules or leaves shared state.", "3: Keeps deterministic seams and allowed paths with one minor cleanup gap.", "4: Uses fake clock/token, isolated fixtures, allowed files only, and no ambient time/network/global state."]},
+    "verification": {"instructions": "Score ordered 0..4 verification of timing progression, success short-circuit, cancellation, error classes, and identity.", "criteria": ["0: No deterministic dispatcher verification is run.", "1: Runs one successful dispatch assertion.", "2: Runs retry timing or cancellation but not both error classes.", "3: Runs the main matrix with one exact event sequence missing.", "4: Reports exact tests for delays, success no-sleep, cancellation point, transient/permanent status, ids, and attempt log."]}
+  },
+  "stages": [],
+  "test_argv": ["python3", "-m", "pytest", "-q"]
+}

@@ -1,0 +1,10 @@
+{
+  "deployment_id": "dep-811",
+  "service": "event-gateway",
+  "environment": "production",
+  "release_label": "security-fixed",
+  "source_commit": "b992e1d7f0aa",
+  "image": "registry.example.invalid/event-gateway:release-811",
+  "image_digest": null,
+  "status": "complete"
+}
