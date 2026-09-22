@@ -46,12 +46,12 @@ def test_native_options_allow_network_explicit_mounts_and_env() -> None:
         [Path("/usr")],
         ["native-agent"],
         network_access=True,
-        ro_bindings=[(Path("/auth"), Path("/home/agent/.codex"))],
-        rw_bindings=[(Path("/state"), Path("/home/agent/.state"))],
+        ro_bindings=[(Path("/auth"), Path("/sandbox-home/.codex"))],
+        rw_bindings=[(Path("/state"), Path("/sandbox-home/.state"))],
         sandbox_env={
-            "HOME": "/home/agent",
-            "CODEX_HOME": "/home/agent/.codex",
-            "XDG_CONFIG_HOME": "/home/agent/.config",
+            "HOME": "/sandbox-home",
+            "CODEX_HOME": "/sandbox-home/.codex",
+            "XDG_CONFIG_HOME": "/sandbox-home/.config",
             "PATH": "/usr/bin:/bin",
             "GIT_CONFIG_GLOBAL": "/dev/null",
             "GIT_CONFIG_SYSTEM": "/dev/null",
@@ -62,12 +62,12 @@ def test_native_options_allow_network_explicit_mounts_and_env() -> None:
     assert "--unshare-net" not in argv
     assert "--unshare-pid" in argv
     assert command == ["native-agent"]
-    assert ("--ro-bind", ("/auth", "/home/agent/.codex")) in ops
-    assert ("--bind", ("/state", "/home/agent/.state")) in ops
+    assert ("--ro-bind", ("/auth", "/sandbox-home/.codex")) in ops
+    assert ("--bind", ("/state", "/sandbox-home/.state")) in ops
     setenv = {args[0]: args[1] for flag, args in ops if flag == "--setenv"}
-    assert setenv["HOME"] == "/home/agent"
-    assert setenv["CODEX_HOME"] == "/home/agent/.codex"
-    assert setenv["XDG_CONFIG_HOME"] == "/home/agent/.config"
+    assert setenv["HOME"] == "/sandbox-home"
+    assert setenv["CODEX_HOME"] == "/sandbox-home/.codex"
+    assert setenv["XDG_CONFIG_HOME"] == "/sandbox-home/.config"
     assert setenv["GIT_CONFIG_GLOBAL"] == "/dev/null"
     assert setenv["GIT_CONFIG_SYSTEM"] == "/dev/null"
 

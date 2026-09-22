@@ -138,6 +138,13 @@ tests: PASS 297.48s (exit=0)
 PREFLIGHT PASS
 ```
 
+The final post-staging policy check also used CI's exact engine
+`9e7fabbf0b5eea9ad933fa6798764b723934a0b7` with final PR metadata and
+public visibility: 25 passed, zero failures, one R-22 advisory for output/doc
+references. Synthetic isolation-test home paths use `/sandbox-home`; all nine
+affected isolation tests passed. This test-only correction does not change the
+engine digest, installed wheel or evaluated evidence.
+
 Earlier immutable startup, transport, context and archive-recovery failures
 remain in the local history. No hidden answers, private calibration artifacts,
 or credentials are included in the public result summary. The detailed local
