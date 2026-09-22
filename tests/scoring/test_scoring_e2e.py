@@ -37,8 +37,8 @@ def _suite():
 def _profile(**requested):
     return {'requested': requested, 'resolved': deepcopy(requested),
             'observed': {'model': None, 'effort': None},
-            'harness_version': 'test-runtime-1', 'protocol_version': 'controlled-engineering-v1',
-            'execution_mode': 'completion-only', 'capability': {'cacheable': True}}
+            'harness_version': 'test-runtime-1', 'protocol_version': 'native-engineering-v1',
+            'execution_mode': 'native-coding-agent', 'capability': {'cacheable': True, 'native_supported': True}}
 
 
 class FakeJudge:
@@ -191,18 +191,34 @@ def test_unknown_runtime_identity_cannot_reuse_a_baseline(tmp_path):
     assert second[-1]['comparison']['reused'] is False
 
 
-def test_unsupported_controlled_harness_stops_before_any_model_call(tmp_path):
+def test_unsupported_native_harness_stops_before_any_model_call(tmp_path):
     calls = []
     deps = _dependencies(calls)
     def unsupported(**requested):
         profile = _profile(**requested)
-        profile['capability']['controlled_supported'] = requested['harness'] != 'codex'
+        profile['capability']['native_supported'] = requested['harness'] != 'codex'
         return profile
     deps['profile_resolver'] = unsupported
-    with pytest.raises(ValueError, match='controlled'):
+    with pytest.raises(ValueError, match='native'):
         run_scoring(_options(tmp_path), **deps)
     assert calls == []
     assert not (tmp_path/'runs').exists()
+
+
+def test_native_judging_and_report_do_not_claim_controlled_turn_budget(tmp_path):
+    calls=[]
+    deps=_dependencies(calls)
+    class NativeJudge(FakeJudge):
+        def evaluate(self, case, execution):
+            assert case['max_turns'] is None
+            assert case['execution_policy']['tools'] == 'native-cli'
+            return super().evaluate(case, execution)
+    deps['judge_factory']=NativeJudge
+    records=run_scoring(_options(tmp_path, base=False), **deps)
+    assert records[0]['status'] == 'complete'
+    assert records[0]['budget']['repair-1']['turn_limit'] is None
+    assert records[0]['tool_cohort']['tools'] == 'native-cli'
+    assert 'None turns' not in (tmp_path/'models-score.md').read_text()
 
 
 def test_missing_sandbox_pytest_stops_before_any_model_call(tmp_path, monkeypatch):

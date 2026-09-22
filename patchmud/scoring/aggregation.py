@@ -12,6 +12,8 @@ import math
 from collections.abc import Iterable, Mapping
 from typing import Any
 
+from .judge import PROBABILITY_SUM_TOLERANCE, SCORE_PROBABILITY_TOLERANCE
+
 __all__ = ["aggregate_results", "compare_results"]
 
 _DIMENSIONS = ("fulfillment", "evidence", "constraints", "verification")
@@ -90,13 +92,18 @@ def _valid_judgment(
             if not _finite_number(probability, low=0.0, high=1.0):
                 return False, None, f"invalid {dimension} probability"
             probability_values.append(float(probability))
-        if not math.isclose(sum(probability_values), 1.0, rel_tol=0.0, abs_tol=1e-6):
+        if not math.isclose(
+            sum(probability_values),
+            1.0,
+            rel_tol=0.0,
+            abs_tol=PROBABILITY_SUM_TOLERANCE + 1e-12,
+        ):
             return False, None, f"{dimension} probabilities do not sum to one"
         if not math.isclose(
             float(answer["score"]),
             sum(index * probability_values[index] for index in range(5)),
             rel_tol=0.0,
-            abs_tol=1e-5,
+            abs_tol=SCORE_PROBABILITY_TOLERANCE + 1e-12,
         ):
             return False, None, f"{dimension} score disagrees with probabilities"
         legend = answer.get("legend")
@@ -283,6 +290,25 @@ def _compatibility_errors(target: Mapping[str, Any], base: Mapping[str, Any]) ->
     """
 
     errors: list[str] = []
+    target_provenance = target.get("provenance")
+    base_provenance = base.get("provenance")
+    target_derived = isinstance(target_provenance, Mapping) and target_provenance.get("kind") == "derived-rejudgment-v1"
+    base_derived = isinstance(base_provenance, Mapping) and base_provenance.get("kind") == "derived-rejudgment-v1"
+    if target_derived != base_derived:
+        errors.append("derived and ordinary runs cannot be compared")
+    elif target_derived and base_derived:
+        target_source_engine = target_provenance.get("source_engine_digest")
+        base_source_engine = base_provenance.get("source_engine_digest")
+        if not isinstance(target_source_engine, str) or not isinstance(base_source_engine, str):
+            errors.append("source execution engine digest missing")
+        elif target_source_engine != base_source_engine:
+            errors.append("source execution engine mismatch")
+        target_judge_engine = target.get("judge_engine_digest", target_provenance.get("judge_engine_digest"))
+        base_judge_engine = base.get("judge_engine_digest", base_provenance.get("judge_engine_digest"))
+        if not isinstance(target_judge_engine, str) or not isinstance(base_judge_engine, str):
+            errors.append("judge engine digest missing")
+        elif target_judge_engine != base_judge_engine:
+            errors.append("judge engine mismatch")
     # A plain aggregate summary has no identity metadata and remains useful to
     # callers doing offline arithmetic.  Full run records, however, must carry
     # the cohort contract before a comparison is publishable.
@@ -340,6 +366,13 @@ def _compatibility_errors(target: Mapping[str, Any], base: Mapping[str, Any]) ->
             errors.append(f"{key} metadata missing")
         elif target_has and base_has and target_value != base_value:
             errors.append(f"{key} mismatch")
+    # Legacy records predate explicit judge protocol metadata.  They can still
+    # compare with each other, but cannot cross a changed evidence contract.
+    if "judge_protocol_version" in target or "judge_protocol_version" in base:
+        if not target.get("judge_protocol_version") or not base.get("judge_protocol_version"):
+            errors.append("judge_protocol_version metadata missing")
+        elif target["judge_protocol_version"] != base["judge_protocol_version"]:
+            errors.append("judge_protocol_version mismatch")
     return errors
 
 

@@ -3,7 +3,7 @@
   "category": "scope",
   "depth": 3,
   "title": "Keep a changing feature request inside an explicit boundary",
-  "prompt": "The repository adds a batch export endpoint over an existing query service. The initial request permits changing the export handler and query adapter, while preserving pagination and authorization. After turn eight, a product note requires resumable cursors and says a cursor must never expose records from a later tenant. After turn sixteen, compatibility evidence requires accepting old cursor tokens for one release. Work only within the named boundary, incorporate staged requirements when they arrive, and report any requirement that cannot be verified from the fixture.",
+  "prompt": "The repository adds a batch export endpoint over an existing query service. The initial request permits changing the export handler and query adapter, while preserving pagination and authorization. In the first follow-up, a product note requires resumable cursors and says a cursor must never expose records from a later tenant. In the second follow-up, compatibility evidence requires accepting old cursor tokens for one release. Work only within the named boundary, incorporate follow-up requirements when they arrive, and report any requirement that cannot be verified from the fixture.",
   "requirements": [
     "Keep tenant authorization and pagination semantics intact while adding batch export.",
     "Make cursors resumable and bind them to the requesting tenant.",
@@ -22,8 +22,8 @@
     "verification": {"instructions": "Score ordered 0..4 verification of evolving requirements, especially tenant isolation, malformed tokens, and legacy compatibility.", "criteria": ["0: No export verification is reported.", "1: Checks one page for one tenant only.", "2: Checks pagination or tenant binding but not malformed and legacy tokens.", "3: Checks all main paths with one staged compatibility assertion missing.", "4: Reports deterministic multi-page, cross-tenant, malformed, authorization, old-token, new-token, and unchanged-endpoint checks."]}
   },
   "stages": [
-    {"after_turn": 8, "message": "Product clarification: export cursors must be resumable and cryptographically or structurally bound to the requesting tenant; a cross-tenant cursor must fail without revealing whether its records exist."},
-    {"after_turn": 16, "message": "Compatibility note: old cursor tokens remain valid for one release. Accept the old format, but emit the new tenant-bound format for new responses and document the observed behavior in the final report."}
+    {"after_turn": 8, "native_phase": 1, "message": "Product clarification: export cursors must be resumable and cryptographically or structurally bound to the requesting tenant; a cross-tenant cursor must fail without revealing whether its records exist."},
+    {"after_turn": 16, "native_phase": 2, "message": "Compatibility note: old cursor tokens remain valid for one release. Accept the old format, but emit the new tenant-bound format for new responses and document the observed behavior in the final report."}
   ],
   "test_argv": ["python3", "-m", "pytest", "-q"]
 }

@@ -76,3 +76,4 @@ R-14（agent symlink 單一真檔）與 R-20（workflow policy_version 同步）
 - 校準參數只能由 `analysis/registered/estimators.yaml` 的 estimator 產出；凍結後拒絕覆寫。
 - deck `hidden/` 內容不得出現在任何 sandbox 可見路徑、log render 或公開封存。
 - JEV 評分必須保留原生分布、confidence、實際裁判版本與證據；服務錯誤不算零分，缺題不發布完整總分。requested／resolved 設定不冒充 observed model identity。
+- 新 `engineering-v1` 評的是原生 coding agent：允許 CLI 自帶工具，整個 CLI 仍經 `IsolationRunner`；隔離 HOME 僅帶入必要登入資料。同題使用原生對話續跑，以 wall time 限制預算，不把各 CLI 內部回合數當成可互換的上限。原始 fixture tests/config 唯讀，`tests/agent` 與 disposable Git 可寫；controller 以檔案快照產生 diff，不執行 candidate 改過的 Git metadata。

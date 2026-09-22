@@ -3,15 +3,15 @@
   "category": "testing",
   "depth": 2,
   "title": "Test retry timing and cancellation across a fake clock",
-  "prompt": "A webhook dispatcher retries transient failures through an injected clock, records attempts, and stops when a cancellation token is set. Existing tests assert only the final response and use a real sleep in one helper. Expand the regression surface across dispatcher, backoff policy, and cancellation: prove exact delay progression, no sleep after success, cancellation between attempts, and preservation of the request id. Keep tests deterministic and make any small production correction required for the public contract.",
+  "prompt": "A webhook dispatcher retries transient failures through an injected clock, records attempts, and stops when a cancellation token is set. Existing fixture tests assert only the final response and use a real sleep in one helper. Add new regression tests under tests/agent/**; keep the original fixture tests read-only. Expand the regression surface across dispatcher, backoff policy, and cancellation: prove exact delay progression, no sleep after success, cancellation between attempts, and preservation of the request id. Keep tests deterministic and make any small production correction required for the public contract.",
   "requirements": [
     "Verify exact backoff delays through the injected fake clock without wall-clock sleeping.",
     "Verify a successful response stops retries and schedules no further delay.",
     "Verify cancellation between attempts stops delivery while preserving the request id and attempt log.",
     "Cover transient versus permanent errors without conflating their statuses.",
-    "Keep tests isolated from network, ambient time, and global mutable state."
+    "Keep new tests under tests/agent/** isolated from network, ambient time, and global mutable state; keep the original fixture tests read-only."
   ],
-  "allowed_paths": ["src/dispatcher.py", "src/backoff.py", "src/cancel.py", "tests/test_dispatcher.py"],
+  "allowed_paths": ["src/dispatcher.py", "src/backoff.py", "src/cancel.py", "tests/agent/**"],
   "max_turns": 16,
   "wall_seconds": 1200,
   "rubric": {

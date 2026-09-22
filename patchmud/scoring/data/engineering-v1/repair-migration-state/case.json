@@ -3,12 +3,12 @@
   "category": "repair",
   "depth": 3,
   "title": "Repair a resumable migration after an evolving incident",
-  "prompt": "A versioned migration moves user records from v1 to v2 in bounded batches and records a checkpoint. The initial repository loses idempotency when a batch is retried and marks a checkpoint before the write is durable. During the run, a staged incident note reports that workers may restart between the write and checkpoint, and the final requirement adds a dry-run mode that must never mutate the journal. Repair the state machine, preserve restart safety, and explain how the new evidence changes the implementation.",
+  "prompt": "A versioned migration moves user records from v1 to v2 in bounded batches and records a checkpoint. The initial repository loses idempotency when a batch is retried and marks a checkpoint before the write is durable. During the run, a first follow-up reports that workers may restart between the write and checkpoint, and a second follow-up adds a dry-run mode that must never mutate the journal. Repair the state machine, preserve restart safety, and explain how the new evidence changes the implementation.",
   "requirements": [
     "Make each record transformation idempotent and safe to replay after a worker restart.",
     "Persist the checkpoint only after the batch write succeeds, with a durable ordering visible in the journal.",
     "Resume from the last committed checkpoint without skipping or duplicating records.",
-    "Implement the staged dry-run requirement without writing records or advancing the journal.",
+    "Implement the second follow-up dry-run requirement without writing records or advancing the journal.",
     "Keep batch boundaries and existing error reporting stable."
   ],
   "allowed_paths": ["src/migrate.py", "src/journal.py", "src/records.py"],
@@ -21,8 +21,8 @@
     "verification": {"instructions": "Score ordered 0..4 verification of evolving state, including an interruption at each side of the checkpoint and dry-run.", "criteria": ["0: No migration or restart check is run.", "1: Runs only a clean one-batch migration.", "2: Runs a replay or resume check but misses a write/checkpoint interruption or dry-run.", "3: Exercises resume and dry-run with one interruption or journal assertion missing.", "4: Reports deterministic tests for clean, replay, pre-checkpoint failure, post-write restart, exact resume, and dry-run journal stability."]}
   },
   "stages": [
-    {"after_turn": 8, "message": "Operational note: workers can restart after writing records but before writing the checkpoint. A replay must be harmless and the journal must show the write before the checkpoint."},
-    {"after_turn": 16, "message": "The product requirement is clarified: add --dry-run behavior that may read and report planned batches but must not write records or advance the migration journal."}
+    {"after_turn": 8, "native_phase": 1, "message": "Operational note: workers can restart after writing records but before writing the checkpoint. A replay must be harmless and the journal must show the write before the checkpoint."},
+    {"after_turn": 16, "native_phase": 2, "message": "The product requirement is clarified: add --dry-run behavior that may read and report planned batches but must not write records or advance the migration journal."}
   ],
   "test_argv": ["python3", "-m", "pytest", "-q"]
 }

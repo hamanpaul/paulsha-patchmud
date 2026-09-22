@@ -159,6 +159,7 @@ def test_offline_calibration_executes_all_anchors_and_keeps_live_status_unrun(tm
     assert result["mode"] == "offline"
     assert result["live_judge_status"] == "not_run"
     assert result["summary"]["calibration_status"] == "offline_unjudged"
+    assert result["judge_protocol_version"] is None
     assert result["summary"]["live_anchor_order_passed"] is None
     assert result["summary"]["expected_anchor_order_passed"] is True
     assert result["cases"][0]["anchors"]["wrong"]["prompt_injection_control"]["semantic_status"] == "not_run"
@@ -194,6 +195,39 @@ def test_live_calibration_uses_sanitized_case_and_preserves_dimension_info(tmp_p
     assert injection["objective_evidence_preserved"] is True
     assert injection["remains_below_reference"] is True
     assert len(judge.calls) == 4  # three anchors plus the wrong-report probe
+
+
+def test_live_calibration_uses_native_public_case_but_records_scripted_replay(tmp_path: Path):
+    case = _case("repair-native-contract")
+    case["max_turns"] = 24
+    case["stages"] = [
+        {"after_turn": 8, "message": "Authoritative phase one update."},
+        {"after_turn": 16, "message": "Authoritative phase two update."},
+    ]
+    judge = _FakeJudge("jev-1.13.0")
+
+    result = calibrate_anchors(
+        output=tmp_path / "native-contract.json",
+        suite_loader=lambda name: _suite(case),
+        executor=_execution,
+        adapter_factory=_FakeAdapter,
+        judge=judge,
+    )
+
+    public_case = judge.calls[0][0]
+    assert public_case["max_turns"] is None
+    assert public_case["execution_policy"]["protocol"] == "native-engineering-v1"
+    assert public_case["execution_policy"]["phases"] == (
+        "sequential-native-conversation-equal-wall-shares-v1"
+    )
+    assert public_case["stages"] == [
+        {"phase": 2, "message": "Authoritative phase one update."},
+        {"phase": 3, "message": "Authoritative phase two update."},
+    ]
+    assert result["replay_mode"] == "scripted-anchor-replay"
+    assert result["judge_protocol_version"] == "dimension-evidence-v1"
+    assert result["execution_mode"] == "scripted-controlled-runner"
+    assert result["native_cli"] is False
 
 
 def test_case_selection_is_bounded_and_unknown_case_fails_closed(tmp_path: Path):

@@ -68,6 +68,107 @@ def test_aggregation_is_equal_weighted_by_case_then_category() -> None:
     assert summary["total"] == 60.0
 
 
+def test_aggregation_accepts_live_jev_score_rounding_from_native_probabilities() -> None:
+    criteria = [f"level {level}" for level in range(5)]
+    scores = {
+        "fulfillment": (3.62, [0.0, 0.02, 0.07, 0.18, 0.73], 0.69),
+        "evidence": (3.0, [0.0, 0.01, 0.18, 0.59, 0.22], 0.63),
+        "constraints": (3.72, [0.0, 0.0, 0.07, 0.12, 0.81], 0.77),
+        "verification": (3.08, [0.0, 0.02, 0.04, 0.78, 0.16], 0.80),
+    }
+    dimensions = {
+        dimension: {
+            "type": "score",
+            "score": score,
+            "legend": {str(level): criteria[level] for level in range(5)},
+            "probabilities": {str(level): probability for level, probability in enumerate(probabilities)},
+            "confidence": confidence,
+        }
+        for dimension, (score, probabilities, confidence) in scores.items()
+    }
+    row = {
+        "case_id": "repair-live",
+        "repetition": 1,
+        "judgment": {
+            "status": "scored",
+            "model": "jev-1.13.0",
+            "score": 83.875,
+            "dimensions": dimensions,
+        },
+    }
+    expected = [
+        {
+            "id": "repair-live",
+            "category": "repair",
+            "rubric": {
+                dimension: {"criteria": criteria}
+                for dimension in dimensions
+            },
+        }
+    ]
+
+    summary = aggregate_results([row], expected)
+
+    assert summary["complete"] is True
+    assert summary["total"] == 83.875
+
+
+def test_aggregation_accepts_two_decimal_probability_sum_rounding() -> None:
+    row = _result("repair-rounding", 1, 0.0)
+    row["judgment"]["dimensions"]["fulfillment"]["probabilities"]["0"] = 0.99
+
+    summary = aggregate_results(
+        [row], [{"id": "repair-rounding", "category": "repair"}]
+    )
+
+    assert summary["complete"] is True
+    assert summary["total"] == 0.0
+
+
+def test_aggregation_rejects_probability_sum_outside_two_decimal_rounding_bound() -> None:
+    row = _result("repair-rounding", 1, 0.0)
+    row["judgment"]["dimensions"]["fulfillment"]["probabilities"]["0"] = 0.97
+
+    summary = aggregate_results(
+        [row], [{"id": "repair-rounding", "category": "repair"}]
+    )
+
+    assert summary["complete"] is False
+    assert summary["total"] is None
+    assert any("probabilities do not sum to one" in error for error in summary["errors"])
+
+
+def test_aggregation_rejects_material_score_probability_mismatch() -> None:
+    criteria = [f"level {level}" for level in range(5)]
+    dimensions = {
+        dimension: {
+            "type": "score",
+            "score": 0.0,
+            "legend": {str(level): criteria[level] for level in range(5)},
+            "probabilities": {"0": 1.0, "1": 0.0, "2": 0.0, "3": 0.0, "4": 0.0},
+            "confidence": 1.0,
+        }
+        for dimension in ("fulfillment", "evidence", "constraints", "verification")
+    }
+    dimensions["constraints"]["score"] = 0.2
+    row = {
+        "case_id": "repair-mismatch",
+        "repetition": 1,
+        "judgment": {
+            "status": "scored",
+            "model": "jev-1.13.0",
+            "score": 1.25,
+            "dimensions": dimensions,
+        },
+    }
+
+    summary = aggregate_results([row], [{"id": "repair-mismatch", "category": "repair"}])
+
+    assert summary["complete"] is False
+    assert summary["total"] is None
+    assert any("score disagrees with probabilities" in error for error in summary["errors"])
+
+
 def test_missing_duplicate_and_invalid_slots_are_incomplete_and_no_total() -> None:
     results = [
         _result("repair-1", 1, 50),
@@ -131,3 +232,56 @@ def test_compare_only_emits_like_for_like_deltas_and_metadata() -> None:
     assert comparison["cases"]["repair-1"]["delta"] == 10.0
     assert comparison["target_created_at"] == "2026-09-21T01:00:00Z"
     assert comparison["base_created_at"] == "2026-09-20T01:00:00Z"
+
+    target_record["judge_protocol_version"] = "dimension-evidence-v1"
+    assert compare_results(target_record, base_record)["compatible"] is False
+    base_record["judge_protocol_version"] = "full-state-v1"
+    assert compare_results(target_record, base_record)["compatible"] is False
+    base_record["judge_protocol_version"] = "dimension-evidence-v1"
+    assert compare_results(target_record, base_record)["total"]["delta"] == 10.0
+
+
+def test_derived_comparison_rejects_mixed_runs_and_mismatched_source_engines() -> None:
+    expected = _expected()
+    summary = aggregate_results([_result(case_id, 1, 50) for case_id in [item["id"] for item in expected]], expected)
+    identity = {
+        "suite": {"id": "engineering-v1", "version": "1", "suite_hash": "suite", "rubric_version": "rubric", "case_ids": [item["id"] for item in expected]},
+        "judge_model": "jev-1.13.0",
+        "repeat": 1,
+        "protocol_version": "protocol-1",
+        "engine_digest": "a" * 64,
+        "environment_digest": "environment",
+        "tool_cohort": "native-tools",
+        "budget": {"turns": 8, "wall_seconds": 600},
+        "judge_engine_digest": "b" * 64,
+    }
+    derived = {
+        "run_id": "derived-target",
+        "created_at": "2026-09-21T01:00:00Z",
+        "summary": summary,
+        **identity,
+        "provenance": {
+            "kind": "derived-rejudgment-v1",
+            "source_run_id": "target-source",
+            "source_engine_digest": "a" * 64,
+        },
+    }
+    ordinary = {"run_id": "ordinary-base", "created_at": "2026-09-20T01:00:00Z", "summary": summary, **identity}
+
+    mixed = compare_results(derived, ordinary)
+    assert mixed["compatible"] is False
+    assert any("derived" in error for error in mixed["errors"])
+
+    mismatched = copy_record(derived)
+    mismatched["provenance"]["source_engine_digest"] = "c" * 64
+    mismatched["engine_digest"] = "c" * 64
+    pair = compare_results(derived, mismatched)
+    assert pair["compatible"] is False
+    assert any("source execution engine" in error for error in pair["errors"])
+
+
+def copy_record(record: dict) -> dict:
+    """Small local deep copy helper to keep the test independent of fixtures."""
+    import copy
+
+    return copy.deepcopy(record)

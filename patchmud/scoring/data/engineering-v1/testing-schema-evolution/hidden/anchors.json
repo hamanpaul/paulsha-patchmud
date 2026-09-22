@@ -2,17 +2,17 @@
   "kind": "patch",
   "outcome_class": "code_change",
   "reference": {
-    "final_report": "The migration matrix now has a real source-side replay guard. normalize records the source envelope version alongside normalized state and ignores an older replay for the same event id, while v1 and v2 parsing, unknown fields, tenant rejection, and version-marker errors remain covered by the public tests. The staged requirements are represented by deterministic v1-after-v2 ordering and explicit malformed-input assertions; no storage or transport module changed, and the test fixtures require no clock or network.",
+    "final_report": "The migration matrix now has a real source-side replay guard. normalize records the source envelope version alongside normalized state and ignores an older replay for the same event id, while v1 and v2 parsing, unknown fields, tenant rejection, and version-marker errors remain covered by the public tests. tests/agent/test_schema_replay_regression.py adds deterministic v1-after-v2 and malformed-marker regression checks. The staged requirements are represented by deterministic replay ordering and explicit malformed-input assertions; no storage or transport module changed, and the test fixtures require no clock or network.",
     "patch_file": "hidden/reference.patch",
     "expected_quality": {"fulfillment": 4, "evidence": 4, "constraints": 4, "verification": 4}
   },
   "partial": {
-    "final_report": "Added a replay check to the test suite but did not prevent an older event from overwriting newer state. Version and tenant errors are covered, yet the central evolving-state regression remains red.",
+    "final_report": "Added tests/agent/test_schema_replay_partial.py to exercise v1-after-v2 ordering, but made no source change, so the older event still overwrites newer state and the new regression remains red. Existing version and tenant checks are untouched; the partial result does not claim replay correctness.",
     "patch_file": "hidden/partial.patch",
     "expected_quality": {"fulfillment": 2, "evidence": 2, "constraints": 4, "verification": 1}
   },
   "wrong": {
-    "final_report": "Removed the v1 replay assertion and accepted any version marker. The suite can pass by dropping the staged compatibility and input-error requirements, so no meaningful evolution evidence exists.",
+    "final_report": "Changed src/envelope.py to accept every integer version marker, which is an incorrect compatibility broadening. The protected malformed-marker test fails, so this source-only result does not establish the staged input-error contract or replay safety.",
     "patch_file": "hidden/wrong.patch",
     "expected_quality": {"fulfillment": 0, "evidence": 0, "constraints": 0, "verification": 0}
   }

@@ -3,16 +3,16 @@
   "category": "testing",
   "depth": 3,
   "title": "Test schema evolution while a compatibility rule changes",
-  "prompt": "The event envelope is migrating from version 1 to version 2. The parser accepts both, the normalizer adds a tenant field, and the sink rejects incompatible combinations. Build a staged regression suite that protects old producers, new producers, unknown optional fields, and a tenant mismatch. After turn eight, an operational note says replay may deliver a v1 envelope after a v2 envelope; after turn sixteen, the compatibility window is shortened and malformed version markers must be classified as input errors. Adapt the tests and any minimal source fix without broadening scope.",
+  "prompt": "The event envelope is migrating from version 1 to version 2. The parser accepts both, the normalizer adds a tenant field, and the sink rejects incompatible combinations. Build a staged regression suite with new regression tests and fixtures under tests/agent/**; keep the original fixture tests read-only. Protect old producers, new producers, unknown optional fields, and a tenant mismatch. In the first follow-up, an operational note says replay may deliver a v1 envelope after a v2 envelope; in the second follow-up, the compatibility window is shortened and malformed version markers must be classified as input errors. Adapt the tests and any minimal source fix without broadening scope.",
   "requirements": [
     "Cover v1 and v2 envelopes, normalization, and sink acceptance as separate assertions.",
     "Preserve unknown optional fields while rejecting tenant mismatch and malformed version markers.",
     "Verify replay order v1-after-v2 is idempotent and does not erase newer data.",
-    "Use the staged compatibility window and classify malformed markers as input errors.",
-    "Keep tests deterministic and do not edit storage or unrelated transport code.",
+    "Use the first and second follow-up compatibility rules and classify malformed markers as input errors.",
+    "Keep new regression tests and fixtures under tests/agent/** deterministic; do not edit the original fixture tests, storage, or unrelated transport code.",
     "以繁體中文列出 v1-after-v2 replay 的驗證證據與仍未覆蓋的限制。"
   ],
-  "allowed_paths": ["src/envelope.py", "src/normalizer.py", "src/sink.py", "tests/test_envelope.py"],
+  "allowed_paths": ["src/envelope.py", "src/normalizer.py", "src/sink.py", "tests/agent/**"],
   "max_turns": 24,
   "wall_seconds": 1800,
   "rubric": {
@@ -22,8 +22,8 @@
     "verification": {"instructions": "Score ordered 0..4 verification of the evolving envelope matrix, replay order, malformed input, and compatibility cutoff.", "criteria": ["0: No migration test is run.", "1: Checks only v2 happy path.", "2: Checks v1/v2 but misses replay or malformed markers.", "3: Checks replay, errors, and versions with one cutoff assertion missing.", "4: Reports exact tests for all versions, fields, tenant mismatch, malformed marker class, replay order, and shortened window."]}
   },
   "stages": [
-    {"after_turn": 8, "message": "Operational note: replay can deliver a v1 envelope after a v2 envelope for the same event id. The older replay must not erase the newer normalized state."},
-    {"after_turn": 16, "message": "Compatibility window is shortened to one release: malformed version markers must be reported as input errors, while valid v1 and v2 envelopes remain covered during the window. Include this in the final test report."}
+    {"after_turn": 8, "native_phase": 1, "message": "Operational note: replay can deliver a v1 envelope after a v2 envelope for the same event id. The older replay must not erase the newer normalized state."},
+    {"after_turn": 16, "native_phase": 2, "message": "Compatibility window is shortened to one release: malformed version markers must be reported as input errors, while valid v1 and v2 envelopes remain covered during the window. Include this in the final test report."}
   ],
   "test_argv": ["python3", "-m", "pytest", "-q"]
 }

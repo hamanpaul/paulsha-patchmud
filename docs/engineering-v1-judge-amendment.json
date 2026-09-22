@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "status": "frozen",
+  "recorded_at": "2026-09-22T03:26:47.630395+00:00",
+  "amendment_scope": "judge-evidence-only",
+  "user_decision": "Separate four dimensions using relevant complete evidence; preserve raw archives and recalibrate.",
+  "original_freeze": {
+    "artifact": "engineering-v1-freeze.json",
+    "sha256": "681ab403e7ddd5bb9fb91d38e356c934529b3a1901a7c32ac30b00ba3d48f71b"
+  },
+  "suite": {
+    "id": "engineering-v1",
+    "version": "1.1.0",
+    "suite_hash": "77c5913af8725ae584c9e8c0a73220b77eb1e107293c4d51578dceea24a4bca4",
+    "rubric_version": "jev-1.13.0"
+  },
+  "cases_and_rubrics_changed": false,
+  "execution_policy": {
+    "protocol": "native-engineering-v1",
+    "tools": "native-cli",
+    "network": "provider-and-native-tools",
+    "home": "isolated-auth-only",
+    "phases": "sequential-native-conversation-equal-wall-shares-v1",
+    "turn_limit": null,
+    "validation_reserve_seconds": 30
+  },
+  "source_execution_engine_digest": "0ab4c023b6c9c4c769c154fef8aa43fb713f15459766df5974cf53fcaaaeb22b",
+  "judge_engine_digest": "f0411bf9af0cbd18ce603c0984d8fd0c3ececb33c451b577996ab731d671e3a1",
+  "previous_judge_protocol_version": "full-state-v1",
+  "judge_protocol_version": "dimension-evidence-v1",
+  "judge_model": "jev-1.13.0",
+  "views": {
+    "evidence": {
+      "omit": [
+        "final_diff"
+      ]
+    },
+    "fulfillment": {
+      "omit": [
+        "transcript"
+      ]
+    },
+    "constraints": {
+      "omit": [
+        "transcript"
+      ]
+    },
+    "verification": {
+      "omit": [
+        "transcript"
+      ]
+    }
+  },
+  "view_policy": {
+    "complete_public_case": true,
+    "complete_tool_events": true,
+    "output_truncation": false,
+    "tool_name_filtering": false,
+    "raw_archives_preserved": true,
+    "agy_output_wrapper_omissions": [
+      "conversation_id",
+      "step_index",
+      "step_type",
+      "tool_name",
+      "duration_seconds"
+    ]
+  },
+  "arithmetic": "25 * mean(four native scores); any failed dimension yields error/null",
+  "request_hash_kind": "ordered-dimension-manifest-sha256",
+  "calibration": {
+    "artifact": "calibration-dimension-evidence-v1.json",
+    "sha256": "5e1f2edc873895c56622981c384abe8cd40e0b6a8f9a76978abf5f9aa24b555a",
+    "completed_at": "2026-09-22T03:22:35.514224+00:00",
+    "status": "passed",
+    "cases": 18,
+    "composite_judgments": 72,
+    "dimension_judgments": 288,
+    "http_attempts": 288,
+    "ordering_passed": 18,
+    "false_completion_controls_passed": 18,
+    "injection_controls_passed": 18,
+    "structural_failures": 0,
+    "execution_mode": "scripted-controlled-runner",
+    "native_cli": false
+  },
+  "rejudgment_policy": {
+    "reuse_exact_source_case_and_execution": true,
+    "overwrite_source": false,
+    "ordinary_baseline_eligible": false,
+    "same_source_execution_engine_required": true,
+    "same_current_judge_engine_and_protocol_required": true
+  },
+  "limits": [
+    "One observation per native case does not establish statistical superiority.",
+    "Provider token limits can still reject larger future evidence; errors remain null.",
+    "Old and new judge protocol scores cannot be compared directly."
+  ]
+}

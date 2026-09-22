@@ -5,7 +5,7 @@
 
 ## 2. Execution and judging
 
-- [x] 2.1 Implement explicit profiles and controlled bounded runner with public evidence.
+- [x] 2.1 Implement explicit profiles and native bounded runner with public evidence.
 - [x] 2.2 Implement pinned JEV validation and complete-coverage aggregation.
 
 ## 3. CLI and persistence
@@ -15,7 +15,7 @@
 
 ## 4. Verification and delivery
 
-- [x] 4.1 Complete offline tests, wheel validation, root review and independent review.
-- [ ] 4.2 Validate anchors and run six-case paired pilot.
-- [ ] 4.3 Freeze suite and run formal eighteen-case paired evaluation.
-- [ ] 4.4 Update docs/changelog/policy, pass local preflight, archive OpenSpec and open PR.
+- [x] 4.1 Complete native-mode tests, wheel validation, root review and independent review.
+- [x] 4.2 Validate anchors and run six-case paired pilot.
+- [x] 4.3 Freeze suite and run formal eighteen-case paired evaluation.
+- [x] 4.4 Update docs/changelog/policy, pass local preflight, archive OpenSpec and open PR.

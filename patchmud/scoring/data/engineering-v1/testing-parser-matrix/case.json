@@ -3,15 +3,15 @@
   "category": "testing",
   "depth": 1,
   "title": "Build a parser regression matrix around real input boundaries",
-  "prompt": "The import tool parses a small CSV-like format used by two producers. The current tests cover only a single row, while production evidence includes quoted commas, escaped quotes, blank optional fields, and a duplicate header that must be rejected. Add or repair the focused test matrix in the allowed parser/test surface, keep fixtures deterministic, and make the implementation satisfy the public contract. A green happy path alone is insufficient: report which input boundaries are covered and which malformed input remains outside the contract.",
+  "prompt": "The import tool parses a small CSV-like format used by two producers. The current tests cover only a single row, while production evidence includes quoted commas, escaped quotes, blank optional fields, and a duplicate header that must be rejected. Add focused regression tests and any deterministic fixtures under tests/agent/**; keep the original fixture tests read-only. Make the implementation satisfy the public contract. A green happy path alone is insufficient: report which input boundaries are covered and which malformed input remains outside the contract.",
   "requirements": [
     "Parse quoted commas and escaped quotes without splitting the field incorrectly.",
     "Preserve blank optional fields as empty strings and reject duplicate headers deterministically.",
     "Keep row-width errors distinct from header errors.",
-    "Add focused regression coverage without weakening or deleting the existing public tests.",
-    "Keep test data local and deterministic, with no network or clock dependency."
+    "Add focused regression coverage under tests/agent/** without weakening, deleting, or editing the existing fixture tests.",
+    "Keep new test data under tests/agent/** local and deterministic, with no network or clock dependency."
   ],
-  "allowed_paths": ["src/parser.py", "tests/test_parser.py", "tests/fixtures/parser.csv"],
+  "allowed_paths": ["src/parser.py", "tests/agent/**"],
   "max_turns": 8,
   "wall_seconds": 600,
   "rubric": {

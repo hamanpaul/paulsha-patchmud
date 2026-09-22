@@ -13,3 +13,25 @@ diff --git a/src/normalizer.py b/src/normalizer.py
 +    normalized["_source_version"] = event["version"]
      state[event["id"]] = normalized
      return normalized
+diff --git a/tests/agent/test_schema_replay_regression.py b/tests/agent/test_schema_replay_regression.py
+new file mode 100644
+--- /dev/null
++++ b/tests/agent/test_schema_replay_regression.py
+@@ -0,0 +1,17 @@
++import pytest
++
++from src.envelope import parse
++from src.normalizer import normalize
++
++
++def test_agent_v1_replay_cannot_erase_v2_state():
++    state = {}
++    normalize(parse({"id": "agent-e1", "version": 2, "tenant": "a", "payload": {"n": 2}}), state)
++    normalize(parse({"id": "agent-e1", "version": 1, "tenant": "a", "payload": {"n": 1}}), state)
++    assert state["agent-e1"]["payload"] == {"n": 2}
++    assert state["agent-e1"]["_source_version"] == 2
++
++
++def test_agent_matrix_keeps_malformed_markers_as_input_errors():
++    with pytest.raises(ValueError, match="version"):
++        parse({"id": "agent-e2", "version": "unknown", "tenant": "a", "payload": {}})

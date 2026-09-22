@@ -53,6 +53,7 @@ def test_fingerprint_changes_with_all_scientifically_relevant_inputs():
     assert original != fp(suite={**suite, 'cases': [{'id': 'one', 'max_turns': 9, 'wall_seconds': 600}]})
     assert original != fp(repeat=3)
     assert original != fp(judge_model='jev-2')
+    assert original != fp(judge_protocol_version='dimension-evidence-v2')
     assert original != fp(engine_digest='engine2')
     assert original != fp(environment={'python': '3.12'})
     assert original == fp(profile=dict(reversed(list(profile.items()))))

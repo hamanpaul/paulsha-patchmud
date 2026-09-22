@@ -3,13 +3,13 @@
   "category": "recovery",
   "depth": 3,
   "title": "Recover a feature-flag rollout while the policy changes",
-  "prompt": "A feature-flag rollout enabled search_v2 for a tenant cohort, then stalled during an incident. The recovery helper currently restores a captured tenant snapshot, but the control plane can publish unrelated flags after the rollout starts and an acknowledged tenant may no longer be eligible for compensation. Investigate the flag store, rollout record, audit trail, and rollback helper. Start with the original cohort and preserve the existing APIs; incorporate the two operational notes that arrive during the run. The final recovery must be safe to repeat, must not erase newer unrelated flag values, and must report which tenants were restored versus intentionally retained.",
+  "prompt": "A feature-flag rollout enabled search_v2 for a tenant cohort, then stalled during an incident. The recovery helper currently restores a captured tenant snapshot, but the control plane can publish unrelated flags after the rollout starts and an acknowledged tenant may no longer be eligible for compensation. Investigate the flag store, rollout record, audit trail, and rollback helper. Start with the original cohort and preserve the existing APIs; incorporate the first and second follow-up operational notes that arrive during the run. The final recovery must be safe to repeat, must not erase newer unrelated flag values, and must report which tenants were restored versus intentionally retained.",
   "requirements": [
     "Restore only the rollout-owned flag for an applied, unacknowledged tenant and preserve unrelated newer flags and revisions.",
-    "Honor the staged acknowledgement policy by retaining an acknowledged tenant and reporting a partial rollback when necessary.",
+    "Honor the second follow-up acknowledgement policy by retaining an acknowledged tenant and reporting a partial rollback when necessary.",
     "Keep tenants outside the rollout and flags outside the rollout unchanged while preserving the existing audit record shape.",
     "Make the recovery idempotent: a repeated call must not create another state mutation or audit entry.",
-    "Use the final staged state in the report, distinguish restored and skipped tenants, and verify the concurrent publication scenario."
+    "Use the final follow-up state in the report, distinguish restored and skipped tenants, and verify the concurrent publication scenario."
   ],
   "allowed_paths": ["src/**", "tests/agent/**"],
   "max_turns": 24,
@@ -59,10 +59,12 @@
   "stages": [
     {
       "after_turn": 8,
+      "native_phase": 1,
       "message": "Control-plane evidence arrived: after rollout-42 began, revision 4 published billing_v2=true for acme and globex. Preserve this unrelated newer flag while compensating search_v2. Do not restore a stale whole-tenant snapshot."
     },
     {
       "after_turn": 16,
+      "native_phase": 2,
       "message": "Incident policy changed: acme acknowledged search_v2 before recovery. Keep acknowledged tenants enabled and compensate only applied, unacknowledged tenants; report a partial rollback and make a repeated recovery call produce no new mutation."
     }
   ],

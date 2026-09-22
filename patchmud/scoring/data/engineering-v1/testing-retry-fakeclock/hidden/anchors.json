@@ -2,7 +2,7 @@
   "kind": "patch",
   "outcome_class": "code_change",
   "reference": {
-    "final_report": "The dispatcher now treats the injected clock and cancellation token as observable boundaries. A successful attempt returns immediately with no sleep, a permanent error returns immediately, and a transient failure checks cancellation before scheduling its next delay. Request ids and attempt records remain unchanged. The public deterministic suite verifies 0.5/1.0 backoff progression, success short-circuit, cancellation between attempts, permanent-error no-retry, and the exact attempt log without network or wall-clock waits.",
+    "final_report": "The dispatcher now treats the injected clock and cancellation token as observable boundaries. A successful attempt returns immediately with no sleep, a permanent error returns immediately, and a transient failure checks cancellation before scheduling its next delay. Request ids and attempt records remain unchanged. The public deterministic suite verifies 0.5/1.0 backoff progression, success short-circuit, cancellation between attempts, permanent-error no-retry, and the exact attempt log; tests/agent/test_retry_contract.py independently verifies success/permanent no-sleep and cancellation before delay without network or wall-clock waits.",
     "patch_file": "hidden/reference.patch",
     "expected_quality": {"fulfillment": 4, "evidence": 4, "constraints": 4, "verification": 4}
   },

@@ -2,7 +2,7 @@
   "kind": "patch",
   "outcome_class": "code_change",
   "reference": {
-    "final_report": "Replaced the split-based parser with the standard csv reader and added deterministic duplicate-header validation while retaining the existing row-width error class. Quoted commas and doubled quotes now round-trip, blank optional values remain empty strings, and a duplicate header fails before row processing. The focused public matrix keeps the original single-row test and adds valid quoting, escaped quotes, blank fields, duplicate-header, and row-width cases; all data is local and deterministic.",
+    "final_report": "Replaced the split-based parser with the standard csv reader and added deterministic duplicate-header validation while retaining the existing row-width error class. Quoted commas and doubled quotes now round-trip, blank optional values remain empty strings, and a duplicate header fails before row processing. The focused public matrix keeps the original single-row test, while tests/agent/test_parser_regression.py adds valid quoting, escaped quotes, blank fields, duplicate-header, row-width, and blank-line cases; all data is local and deterministic.",
     "patch_file": "hidden/reference.patch",
     "expected_quality": {"fulfillment": 4, "evidence": 4, "constraints": 4, "verification": 4}
   },

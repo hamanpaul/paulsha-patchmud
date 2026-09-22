@@ -30,6 +30,7 @@ import uuid
 import sys
 from typing import Any
 
+from .evidence_views import JUDGE_PROTOCOL_VERSION
 __all__ = [
     "ANCHOR_NAMES",
     "CalibrationError",
@@ -45,6 +46,8 @@ DEFAULT_SUITE = "engineering-v1"
 JEV_MODEL = "jev-1.13.0"
 ANCHOR_NAMES = ("reference", "partial", "wrong")
 DIMENSIONS = ("fulfillment", "evidence", "constraints", "verification")
+CALIBRATION_REPLAY_MODE = "scripted-anchor-replay"
+CALIBRATION_EXECUTION_MODE = "scripted-controlled-runner"
 
 
 class CalibrationError(ValueError):
@@ -930,7 +933,21 @@ def _build_result(
         "coverage": {"expected": expected_cases, "selected": len(selected_ids)},
         "mode": "offline" if offline else "live",
         "status": calibration_status,
+        # Anchor execution is intentionally a trusted scripted replay through
+        # the controlled runner.  Native model execution belongs to the public
+        # scoring CLI; keeping this metadata explicit prevents a private
+        # calibration archive from being mistaken for native-agent evidence.
+        "calibration_metadata": {
+            "replay_mode": CALIBRATION_REPLAY_MODE,
+            "execution_mode": CALIBRATION_EXECUTION_MODE,
+            "native_cli": False,
+            "judge_case_contract": "native_public_case",
+        },
+        "replay_mode": CALIBRATION_REPLAY_MODE,
+        "execution_mode": CALIBRATION_EXECUTION_MODE,
+        "native_cli": False,
         "live_judge_model": None if offline else JEV_MODEL,
+        "judge_protocol_version": None if offline else JUDGE_PROTOCOL_VERSION,
         "live_judge_status": live_status,
         "cases": [_json_safe(dict(row)) for row in case_results],
         "summary": {
@@ -988,28 +1005,32 @@ def _runner_case(case: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _public_case(case: Mapping[str, Any]) -> dict[str, Any]:
-    try:
-        from .cases import public_case_snapshot
+    # Loaded engineering-v1 cases have the complete public snapshot contract;
+    # JEV must see the native phase policy even though the private anchors are
+    # replayed by the controlled scripted runner.  Synthetic unit fixtures
+    # may intentionally omit fields, so preserve the old allowlist fallback
+    # for those test-only mappings.
+    required = (
+        "id",
+        "category",
+        "depth",
+        "title",
+        "prompt",
+        "requirements",
+        "allowed_paths",
+        "max_turns",
+        "wall_seconds",
+        "rubric",
+        "stages",
+        "test_argv",
+        "public_files",
+        "case_hash",
+    )
+    if set(required).issubset(case):
+        from .native_runner import native_public_case
 
-        return public_case_snapshot(dict(case))
-    except Exception:
-        allowed = (
-            "id",
-            "category",
-            "depth",
-            "title",
-            "prompt",
-            "requirements",
-            "allowed_paths",
-            "max_turns",
-            "wall_seconds",
-            "rubric",
-            "stages",
-            "test_argv",
-            "public_files",
-            "case_hash",
-        )
-        return {key: deepcopy(case[key]) for key in allowed if key in case}
+        return native_public_case(dict(case))
+    return {key: deepcopy(case[key]) for key in required if key in case}
 
 
 def _invoke_executor(

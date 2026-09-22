@@ -31,7 +31,7 @@ python -m pip install -e ".[test]"
 
 先在執行環境設定 `TYPESAFE_API_KEY`，並完成 Codex／agy 各自的登入。不要將憑證寫入題庫、命令紀錄或報告。
 
-目前為尚未完成 live 驗證的實作：已查核的 Codex 0.155.1／agy 1.2.7 無法保證關閉原生工具，嚴格統一工具模式會在模型呼叫前拒絕執行。待確認可行的執行契約後，才能完成實際評分；詳見 [驗證紀錄](docs/jev-validation.md)。
+工程評分現在採原生 coding-agent 契約：Codex 與 agy 在 `IsolationRunner` 內執行各自 CLI，模型可使用該 CLI 自己的工具。JEV 憑證只留在評測控制端，不會傳入受測 CLI；provider 認證則以隔離的 auth-only home 提供（Codex `.codex`、agy `.gemini`）。每題由 `jev-1.13.0` 按四個維度各自判決，完整封存保留。native CLI、namespace、JEV 校準與正式評分的實際結果見 [驗證紀錄](docs/jev-validation.md)。
 
 ```bash
 paulsha-patchmud --list-cases
@@ -40,9 +40,11 @@ paulsha-patchmud --base --harness agy --model gemini-3.8-flash --effort high \
   --target --harness codex --model gpt-5.6-luna --effort max
 ```
 
-預設題庫涵蓋修正、診斷、範圍遵守、測試設計、失敗恢復與成果查核，六類各三題；三種深度分別最多 8／16／24 回合與 10／20／30 分鐘。模型使用 PatchMUD 統一工具，評測單位為 harness × model × effort。品質分數由 JEV 決定，耗時、原生用量與已知費用另列。
+預設題庫涵蓋修正、診斷、範圍遵守、測試設計、失敗恢復與成果查核，六類各三題；三種深度只有 600／1200／1800 秒 wall budget，沒有 portable turn cap。含 staged requirement 的題目在同一 native conversation 中依序送出各 phase，模型預算保留最後 30 秒給獨立 public tests 與證據擷取。評測單位為 harness × model × effort，品質分數由 JEV 決定，耗時、原生用量與已知費用另列。
 
-結果與使用的公開 case 詳細內容存於 `~/.config/paulsha-patchmud/models-score.md`，原始結果保存在同目錄 `runs/`。相符的完整歷史 base 可重用並標示日期；`--refresh-base` 強制重跑。`--repeat N` 重複測量，`--pilot` 取六題試跑，`--case ID` 選題；部分評測不產生正式總分。可用 `--output-dir DIR` 指定儲存位置。
+結果、公開 case 與每題 public execution 結果存於 `~/.config/paulsha-patchmud/models-score.md`，原始結果保存在同目錄 `runs/`。native protocol 與舊 controlled protocol 使用不同 fingerprint 與 cache，不能互相重用。相符的完整歷史 base 可重用並標示日期；`--refresh-base` 強制重跑。`--repeat N` 重複測量，`--pilot` 取六題試跑，`--case ID` 選題；部分評測不產生正式總分。可用 `--output-dir DIR` 指定儲存位置。
+
+native workspace 只公開 case 的 `repo/`。原 fixture tests、pytest／harness 設定檔與其他唯讀路徑受保護；`tests/agent/**` 與 disposable Git metadata 可供模型建立測試、checkpoint 與 rollback。最後的 public tests 由控制器獨立執行。控制器以一般公開檔案計算 diff，不執行受測 Git metadata，也不把 hidden answers、score store 或 `TYPESAFE_API_KEY` 放進 workspace。
 
 評分規則、歷史重用與失敗語義見 [JEV 評分指南](docs/model-scoring.md)。實測與題庫凍結狀態須依交付證據判斷，程式存在不代表已完成 live 評分。
 
@@ -74,7 +76,7 @@ patchmud report --runs "runs/*"                # 多榜研究報告（模型比�
 
   跨家對戰：`patchmud versus input-validation-v1 --models sonnet,sol,flash`。
 - Anthropic 認證兩選一：`export ANTHROPIC_API_KEY=…`，**或** 用 Claude 帳號 OAuth——`ant auth login` 後 `set -a; eval "$(ant auth print-credentials --env)"; set +a`（設定 `ANTHROPIC_AUTH_TOKEN`，不必管 API key）。codex 與 agy 別名走各自 CLI 的登入態，不需要任何 API key 環境變數。
-- CLI-based adapter（`claude` / `codex` / `agy`）一律以**純補全模式**執行：工具寫入能力全關、在臨時空目錄執行，執行 candidate code 的唯一 seam 仍是 `IsolationRunner`；`codex` / `agy` 的 reasoning effort 固定 `high`，不隨使用者的 CLI 設定漂移。代價是 CLI 自帶的 system prompt 與 skill 目錄會產生每回合固定的 input token overhead（實測 codex ≈17k、agy ≈18k），跨家比較 economy 維度時需知悉。
+- 舊 ranked／pilot 流程與 frozen pilot-v1 仍保留原本的 controlled adapter 契約；工程評分則使用 native Codex／agy CLI，允許各自的原生工具與 provider network。兩者的 transcript、protocol、fingerprint 與 cache 不混用；執行 candidate code 的唯一 seam 仍是 `IsolationRunner`。
 - 出題（把已解決的 closed bug 結構化凍結成新關卡、含 bug/fix 品質閘）見 [`docs/authoring/README.md`](docs/authoring/README.md)。
 
 ## Version

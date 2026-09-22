@@ -3,11 +3,11 @@
   "category": "audit",
   "depth": 3,
   "title": "Audit fleet deployment integrity as staged evidence arrives",
-  "prompt": "Audit a reconstructed two-node deployment whose manifest and dashboard use a production-complete label while the initial packet contains only a mutable image tag and a tested source identity. The audit must preserve competing assumptions until timestamped evidence arrives after turn eight and turn sixteen. The first addition identifies one node's admitted digest; the second maps the tag and a pull request but still has a limited runtime observation. Reconcile the source, test, control-plane, registry, and node identities at each stage, revise confidence when the evidence changes, and state whether fleet-wide integrity is established. If one node remains unobserved, the correct result is insufficient evidence and a bounded attestation request with no speculative patch or invented test result.",
+  "prompt": "Audit a reconstructed two-node deployment whose manifest and dashboard use a production-complete label while the initial packet contains only a mutable image tag and a tested source identity. The audit must preserve competing assumptions until timestamped evidence arrives in the first and second follow-ups. The first addition identifies one node's admitted digest; the second maps the tag and a pull request but still has a limited runtime observation. Reconcile the source, test, control-plane, registry, and node identities at each stage, revise confidence when the evidence changes, and state whether fleet-wide integrity is established. If one node remains unobserved, the correct result is insufficient evidence and a bounded attestation request with no speculative patch or invented test result.",
   "requirements": [
     "Build a stage-aware hypothesis table for the dashboard label, expected artifact, node-a identity, and fleet-wide deployment claim.",
     "Reconcile exact source commit, tested digest, mutable tag, control-plane status, node receipt, and registry timing without using later evidence early.",
-    "Update the conclusion after each staged message and distinguish image selection or pull acceptance from a post-start runtime observation.",
+    "Update the conclusion after each follow-up message and distinguish image selection or pull acceptance from a post-start runtime observation.",
     "State insufficient evidence when node-b runtime identity remains unobserved, and do not turn the gap into a code fix or a passing test.",
     "Specify one bounded node-b attestation containing the fields needed to confirm or reject the expected deployment identity."
   ],
@@ -59,11 +59,13 @@
   "stages": [
     {
       "after_turn": 8,
-      "message": "New evidence after turn 8: node-a admission receipt node-a-921 records image_digest=sha256:image-921, source_commit=9d4e11c2a0f8, and signature=valid. This confirms node-a's admitted image, but the receipt contains no node-b runtime observation. Keep the fleet-wide claim open."
+      "native_phase": 1,
+      "message": "First follow-up evidence: node-a admission receipt node-a-921 records image_digest=sha256:image-921, source_commit=9d4e11c2a0f8, and signature=valid. This confirms node-a's admitted image, but the receipt contains no node-b runtime observation. Keep the fleet-wide claim open."
     },
     {
       "after_turn": 16,
-      "message": "New evidence after turn 16: registry audit reg-921 maps the mutable tag registry.example.invalid/payments:stable to sha256:image-921 from 2026-09-21T09:03:00Z through 09:18:00Z and records node-b pull request pull-b-771 as accepted. It still has no post-start node-b attestation or signed source binding in that receipt. Treat pull acceptance as image selection evidence, not proof of the running process."
+      "native_phase": 2,
+      "message": "Second follow-up evidence: registry audit reg-921 maps the mutable tag registry.example.invalid/payments:stable to sha256:image-921 from 2026-09-21T09:03:00Z through 09:18:00Z and records node-b pull request pull-b-771 as accepted. It still has no post-start node-b attestation or signed source binding in that receipt. Treat pull acceptance as image selection evidence, not proof of the running process."
     }
   ],
   "test_argv": []

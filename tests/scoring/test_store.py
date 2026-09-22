@@ -105,6 +105,21 @@ def test_save_run_adds_digest_and_refuses_overwrite_or_tampering(tmp_path: Path)
         store.load_run(path)
 
 
+def test_native_file_change_paths_are_public_event_content(tmp_path: Path) -> None:
+    record = _record()
+    event = {'type':'item.completed','item':{'type':'file_change',
+             'changes':[{'path':'/tmp/public-worktree/src/parser.py','kind':'update'}]}}
+    execution = record['cases'][0]['execution']
+    execution['events'].append({'kind':'native_tool','output':event['item']})
+    execution['native_events'] = [event]
+    execution['phase_results'] = [{'native_events':[event]}]
+    store = ScoreStore(tmp_path)
+    path = store.save_run(record)
+    saved = store.load_run(path)
+    assert saved['cases'][0]['execution']['native_events'] == [event]
+    assert store.render_report().is_file()
+
+
 def test_baseline_requires_complete_verified_full_coverage(tmp_path: Path) -> None:
     store = ScoreStore(tmp_path)
     store.save_run(_record(run_id="partial", status="partial", fingerprint="fp"))
@@ -123,6 +138,33 @@ def test_baseline_recomputes_summary_and_rejects_forged_total(tmp_path: Path) ->
     store.save_run(record)
 
     assert store.find_baseline("fp") is None
+
+
+def test_derived_rejudgment_is_excluded_from_baseline_and_rendered_with_provenance(tmp_path: Path) -> None:
+    store = ScoreStore(tmp_path)
+    record = _record(run_id="derived", fingerprint="fp")
+    record.update({
+        "engine_digest": "a" * 64,
+        "judge_engine_digest": "b" * 64,
+        "provenance": {
+            "kind": "derived-rejudgment-v1",
+            "source_run_id": "source",
+            "source_created_at": "2026-09-20T01:02:03Z",
+            "source_content_digest": "c" * 64,
+            "source_engine_digest": "a" * 64,
+            "judge_engine_digest": "b" * 64,
+            "reused_execution": True,
+            "baseline_eligible": False,
+        },
+    })
+    store.save_run(record)
+
+    assert store.find_baseline("fp") is None
+    report = store.render_report().read_text(encoding="utf-8")
+    assert "Derived rejudgment" in report
+    assert "source" in report
+    assert "Reused execution" in report
+    assert "Baseline eligible" in report
 
 
 def test_store_rejects_absolute_fixture_and_private_case_data(tmp_path: Path) -> None:

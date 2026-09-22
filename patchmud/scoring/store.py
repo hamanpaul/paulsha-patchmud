@@ -57,6 +57,7 @@ _PUBLIC_CONTENT_FIELDS = frozenset(
         "public_repo",
         "transcript",
         "events",
+        "native_events",
         "test_results",
         "final_report",
         "final_diff",
@@ -159,7 +160,7 @@ def _assert_public(value: Any, *, path: str = "record", _content: bool = False) 
         return
     if isinstance(value, (list, tuple)):
         for index, child in enumerate(value):
-            _assert_public(child, path=f"{path}[{index}]")
+            _assert_public(child, path=f"{path}[{index}]", _content=_content)
         return
     if isinstance(value, str):
         return
@@ -239,6 +240,45 @@ def _validate_record(record: Any, *, verify_digest: bool = True) -> dict[str, An
         raise ScoreStoreError("cases must be a list")
     if not isinstance(result["summary"], Mapping):
         raise ScoreStoreError("summary must be an object")
+    provenance = result.get("provenance")
+    if provenance is not None:
+        if not isinstance(provenance, Mapping):
+            raise ScoreStoreError("provenance must be an object")
+        if provenance.get("kind") == "derived-rejudgment-v1":
+            required_provenance = {
+                "source_run_id",
+                "source_created_at",
+                "source_content_digest",
+                "source_engine_digest",
+                "judge_engine_digest",
+                "reused_execution",
+                "baseline_eligible",
+            }
+            missing_provenance = sorted(required_provenance - provenance.keys())
+            if missing_provenance:
+                raise ScoreStoreError(
+                    "derived provenance missing fields: " + ", ".join(missing_provenance)
+                )
+            _safe_run_id(provenance["source_run_id"])
+            _validate_created_at(provenance["source_created_at"])
+            if not isinstance(provenance["source_content_digest"], str) or len(provenance["source_content_digest"]) != 64:
+                raise ScoreStoreError("derived source_content_digest is malformed")
+            source_engine = provenance["source_engine_digest"]
+            if source_engine is not None and (not isinstance(source_engine, str) or len(source_engine) != 64):
+                raise ScoreStoreError("derived source_engine_digest is malformed")
+            if result.get("engine_digest") != source_engine:
+                raise ScoreStoreError("derived engine_digest disagrees with source engine")
+            if not isinstance(provenance["judge_engine_digest"], str) or len(provenance["judge_engine_digest"]) != 64:
+                raise ScoreStoreError("derived judge_engine_digest is malformed")
+            if result.get("judge_engine_digest") != provenance["judge_engine_digest"]:
+                raise ScoreStoreError("derived judge_engine_digest disagrees with record")
+            if "judge_protocol_version" in result or "judge_protocol_version" in provenance:
+                if not result.get("judge_protocol_version") or result.get("judge_protocol_version") != provenance.get("judge_protocol_version"):
+                    raise ScoreStoreError("derived judge_protocol_version disagrees with record")
+            if provenance["reused_execution"] is not True:
+                raise ScoreStoreError("derived reused_execution must be true")
+            if provenance["baseline_eligible"] is not False:
+                raise ScoreStoreError("derived baseline_eligible must be false")
     # Billing provenance is validated only in the fields whose schemas carry
     # provider/pricing data.  Public case files and transcripts are arbitrary
     # evidence and may contain application values called ``cost`` or
@@ -483,6 +523,12 @@ class ScoreStore:
                 record = self.load_run(path)
             except ScoreStoreError:
                 continue
+            provenance = record.get("provenance")
+            if isinstance(provenance, Mapping) and (
+                provenance.get("kind") == "derived-rejudgment-v1"
+                or provenance.get("baseline_eligible") is False
+            ):
+                continue
             if record.get("fingerprint") == fingerprint and _full_coverage(record):
                 matches.append(record)
         if not matches:
@@ -586,12 +632,28 @@ class ScoreStore:
                     f"- Fingerprint: `{inline(record['fingerprint'])}`",
                     f"- Suite: `{inline(json_text(record.get('suite', {})))}`",
                     f"- Judge: `{inline(record['judge_model'])}`",
+                    f"- Judge protocol: `{inline(record.get('judge_protocol_version', 'full-state-v1'))}`",
                     f"- Repetitions: `{inline(record['repeat'])}`",
                     f"- Total: `{inline(summary.get('total') if isinstance(summary, Mapping) else None)}`",
                     f"- Coverage: `{inline(json_text(summary.get('coverage', {}) if isinstance(summary, Mapping) else {}))}`",
                 ]
             )
             lines.extend(profile_lines(record.get("profile", {})))
+            provenance = record.get("provenance")
+            if isinstance(provenance, Mapping) and provenance.get("kind") == "derived-rejudgment-v1":
+                lines.extend(
+                    [
+                        "- Derived rejudgment: `derived-rejudgment-v1`",
+                        f"- Source run: `{inline(provenance.get('source_run_id'))}`",
+                        f"- Source date: `{inline(provenance.get('source_created_at'))}`",
+                        f"- Source content digest: `{inline(provenance.get('source_content_digest'))}`",
+                        f"- Source engine digest: `{inline(provenance.get('source_engine_digest'))}`",
+                        f"- Judge engine digest: `{inline(provenance.get('judge_engine_digest'))}`",
+                        f"- Source judge protocol: `{inline(provenance.get('source_judge_protocol_version', 'full-state-v1'))}`",
+                        f"- Reused execution: `{inline(provenance.get('reused_execution'))}`",
+                        f"- Baseline eligible: `{inline(provenance.get('baseline_eligible'))}`",
+                    ]
+                )
             cost = record.get("cost")
             if cost is None and isinstance(summary, Mapping):
                 cost = summary.get("cost")
@@ -623,12 +685,14 @@ class ScoreStore:
                 title = case.get("title", "") if isinstance(case, Mapping) else ""
                 max_turns = case.get("max_turns", "?") if isinstance(case, Mapping) else "?"
                 wall_seconds = case.get("wall_seconds", "?") if isinstance(case, Mapping) else "?"
+                budget_label = (f"{inline(wall_seconds)} seconds (native tool turns are not capped)"
+                                if max_turns is None else f"{inline(max_turns)} turns / {inline(wall_seconds)} seconds")
                 lines.extend(
                     [
                         f"#### `{inline(case_id)}` — {inline(title)}",
                         "",
                         f"- Repetition: `{inline(repetition)}`",
-                        f"- Budget: `{inline(max_turns)} turns / {inline(wall_seconds)} seconds`",
+                        f"- Budget: `{budget_label}`",
                         f"- Prompt: {inline(case.get('prompt', '') if isinstance(case, Mapping) else '')}",
                         "- Requirements:",
                     ]

@@ -1,18 +1,15 @@
-diff --git a/tests/test_envelope.py b/tests/test_envelope.py
-index f124263..46bd7c9 100644
---- a/tests/test_envelope.py
-+++ b/tests/test_envelope.py
-@@ -14,6 +14,13 @@ def test_v1_and_v2_normalize_and_preserve_unknown_fields():
-     assert state["e1"]["payload"] == {"n": 2}
- 
- 
-+def test_old_replay_is_observed():
+diff --git a/tests/agent/test_schema_replay_partial.py b/tests/agent/test_schema_replay_partial.py
+new file mode 100644
+--- /dev/null
++++ b/tests/agent/test_schema_replay_partial.py
+@@ -0,0 +1,10 @@
++from src.envelope import parse
++from src.normalizer import normalize
++
++
++def test_agent_replay_regression_exposes_current_ordering_bug():
 +    state = {}
-+    normalize(parse({"id": "e2", "version": 2, "tenant": "a", "payload": {"n": 2}}), state)
-+    normalize(parse({"id": "e2", "version": 1, "tenant": "a", "payload": {"n": 1}}), state)
-+    assert state["e2"]["payload"] == {"n": 2}
-+
-+
- def test_old_replay_does_not_erase_newer_state():
-     state = {}
-     normalize(parse({"id": "e2", "version": 2, "tenant": "a", "payload": {"n": 2}}), state)
++    normalize(parse({"id": "agent-partial", "version": 2, "tenant": "a", "payload": {"n": 2}}), state)
++    normalize(parse({"id": "agent-partial", "version": 1, "tenant": "a", "payload": {"n": 1}}), state)
++    # This documents the intended invariant; the unpatched source currently fails it.
++    assert state["agent-partial"]["payload"] == {"n": 2}

@@ -1,4 +1,4 @@
-"""Command-line orchestration for controlled, JEV-judged model scoring."""
+"""Command-line orchestration for native coding agents judged by JEV."""
 
 from __future__ import annotations
 
@@ -17,9 +17,10 @@ import tempfile
 from typing import Callable
 import uuid
 
+from .evidence_views import JUDGE_PROTOCOL_VERSION
 
 JUDGE_MODEL = 'jev-1.13.0'
-PROTOCOL_VERSION = 'controlled-engineering-v1'
+PROTOCOL_VERSION = 'native-engineering-v1'
 CATEGORIES = ('repair', 'diagnosis', 'scope', 'testing', 'recovery', 'audit')
 PILOT_DEPTHS = dict(zip(CATEGORIES, (1, 2, 3, 1, 2, 3)))
 
@@ -37,7 +38,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         prog='paulsha-patchmud',
         usage='%(prog)s [options] [--base --harness H --model M --effort E] '
               '--target --harness H --model M --effort E',
-        description='用固定工程情境及 JEV 為 harness × model × effort 評分。',
+        description='用固定工程情境及 JEV 為原生 coding agent 的 harness × model × effort 評分。',
         epilog='每個 --base / --target 群組必須各自包含 --harness、--model、--effort。',
         allow_abbrev=False,
     )
@@ -138,13 +139,15 @@ def execution_environment() -> dict:
 
 
 def profile_fingerprint(*, profile: dict, suite: dict, repeat: int,
-                        judge_model: str, engine_digest: str, environment: dict) -> str:
+                        judge_model: str, engine_digest: str, environment: dict,
+                        judge_protocol_version: str = JUDGE_PROTOCOL_VERSION) -> str:
     return _digest({
         'schema_version': 1, 'profile': profile, 'suite_id': suite['id'],
         'suite_hash': suite['suite_hash'], 'rubric_version': suite['rubric_version'],
         'cases': [{'id': c['id'], 'max_turns': c['max_turns'], 'wall_seconds': c['wall_seconds']}
                   for c in suite['cases']],
         'repeat': repeat, 'judge_model': judge_model, 'protocol': PROTOCOL_VERSION,
+        'judge_protocol_version': judge_protocol_version,
         'engine_digest': engine_digest, 'environment': environment,
     })
 
@@ -176,9 +179,10 @@ def run_scoring(options: argparse.Namespace, *, suite_loader=None, profile_resol
                 store_factory=None, progress: Callable[[str], None] = print) -> list[dict]:
     """Injectable application seam; unit tests never spawn a model or call JEV."""
     from .aggregation import aggregate_results, compare_results
-    from .cases import load_suite, public_case_snapshot
+    from .cases import load_suite
     from .judge import JevJudge
-    from .runner import build_scoring_adapter, execute_case, resolve_profile
+    from .native_runner import (NATIVE_POLICY, build_native_adapter, execute_native_case,
+                                native_public_case, resolve_native_profile)
     from .store import ScoreStore
 
     suite = (suite_loader or load_suite)(options.suite)
@@ -196,18 +200,17 @@ def run_scoring(options: argparse.Namespace, *, suite_loader=None, profile_resol
     if not selected:
         raise ValueError('題庫或選取結果不可為空')
     phase = 'pilot' if options.pilot else 'partial' if options.case else 'formal'
-    resolver = profile_resolver or resolve_profile
+    resolver = profile_resolver or resolve_native_profile
     # Validate both requested profiles before any billable model execution.
     profiles = {role: resolver(**getattr(options, role)) for role in ('base', 'target')
                 if getattr(options, role) is not None}
     for role, profile in profiles.items():
-        if profile.get('capability', {}).get('controlled_supported') is False:
+        if profile.get('capability', {}).get('native_supported') is not True:
             raise ValueError(
-                f'{role}: {profile["requested"]["harness"]} 不支援已驗證的 controlled '
-                '統一工具模式；尚未呼叫受測模型。CLI read-only／sandbox 旗標無法保證關閉原生工具。'
+                f'{role}: {profile["requested"]["harness"]} 的 native CLI 能力或認證不可用；尚未呼叫受測模型。'
             )
-    factory = adapter_factory or build_scoring_adapter
-    executor = case_executor or execute_case
+    factory = adapter_factory or build_native_adapter
+    executor = case_executor or execute_native_case
     environment = execution_environment()
     if not environment.get('sandbox_runtime'):
         raise ValueError('沙箱 /usr/bin/python3 無法載入 pytest；尚未呼叫受測模型。')
@@ -242,11 +245,13 @@ def run_scoring(options: argparse.Namespace, *, suite_loader=None, profile_resol
             'phase': phase, 'profile': profile, 'fingerprint': fingerprint,
             'suite': {key: suite[key] for key in ('id', 'version', 'suite_hash', 'rubric_version')},
             'judge_model': JUDGE_MODEL, 'repeat': options.repeat, 'status': 'partial',
+            'judge_protocol_version': JUDGE_PROTOCOL_VERSION,
             'engine_digest': source_hash, 'environment': environment,
             'protocol_version': profile['protocol_version'],
-            'tool_cohort': {'protocol': profile['protocol_version'],
+            'tool_cohort': {**NATIVE_POLICY, 'protocol': profile['protocol_version'],
                             'execution_mode': profile['execution_mode']},
-            'budget': {c['id']: {'max_turns': c['max_turns'], 'wall_seconds': c['wall_seconds']}
+            'budget': {c['id']: {'turn_limit': None, 'wall_seconds': c['wall_seconds'],
+                                'phases': len(c.get('stages', []))+1}
                        for c in all_cases},
             'cases': [], 'summary': {'total': None, 'complete': False},
             'actual_model_snapshot': None,
@@ -279,7 +284,7 @@ def run_scoring(options: argparse.Namespace, *, suite_loader=None, profile_resol
                                     'model': JUDGE_MODEL, 'error': execution.get('error'), 'usage': None}
                     else:
                         try:
-                            judgment = judge.evaluate(case, execution)
+                            judgment = judge.evaluate(native_public_case(case), execution)
                         except KeyboardInterrupt:
                             interrupted = True
                             judgment = {'status': 'error', 'score': None, 'dimensions': {},
@@ -288,7 +293,7 @@ def run_scoring(options: argparse.Namespace, *, suite_loader=None, profile_resol
                         except Exception as exc:
                             judgment = {'status': 'error', 'score': None, 'dimensions': {},
                                         'model': JUDGE_MODEL, 'error': _safe_error(exc), 'usage': None}
-                    record['cases'].append({'case_id': case['id'], 'case': public_case_snapshot(case),
+                    record['cases'].append({'case_id': case['id'], 'case': native_public_case(case),
                                             'execution': execution, 'judgment': judgment,
                                             'repetition': repetition})
                     record['summary'] = aggregate_results(record['cases'], all_cases, options.repeat)
@@ -336,7 +341,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f'{suite["id"]} / {suite["suite_hash"]}')
         for case in suite['cases']:
             print(f'{case["id"]}\t{case["category"]}\tdepth={case["depth"]}\t'
-                  f'{case["max_turns"]} turns / {case["wall_seconds"]}s\t{case["title"]}')
+                  f'{case["wall_seconds"]}s / {len(case.get("stages", []))+1} phases\t{case["title"]}')
         return 0
     if not os.environ.get('TYPESAFE_API_KEY'):
         print('JEV 認證缺少 TYPESAFE_API_KEY；尚未呼叫受測模型。請由執行環境提供憑證。', file=sys.stderr)
