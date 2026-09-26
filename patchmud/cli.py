@@ -1500,7 +1500,9 @@ def _build_adapter(
     tool_mode: str | None = None,
 ) -> ModelAdapter:
     """依 adapter descriptor 驗證設定後建 adapter；憑證仍只從環境讀取。"""
-    normalized = normalize_model_spec(spec)
+    # 完整 `anthropic:<model>` 缺憑證且有 claude CLI 時改走 CLI（維持 #37 前的行為）；
+    # 在解析 profile 前決定，讓 execution profile 記錄實際使用的 adapter。
+    normalized = _fallback_to_claude_cli(normalize_model_spec(spec))
     try:
         return build_registered_adapter(
             normalized,

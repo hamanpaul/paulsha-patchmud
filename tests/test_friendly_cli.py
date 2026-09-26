@@ -150,6 +150,27 @@ class TestAnthropicCredentialCheck:
         assert isinstance(adapter, ClaudeCliAdapter)
 
 
+    def test_full_anthropic_spec_falls_back_to_claude_cli_without_credentials(self, monkeypatch):
+        """完整 `anthropic:<model>`（非別名）缺憑證且有 claude CLI 時，同樣改走 CLI。"""
+        from patchmud.adapters.claude_cli import ClaudeCliAdapter
+        from patchmud.cli import _build_adapter, normalize_model_spec
+
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+        monkeypatch.setattr("patchmud.cli.has_claude_cli", lambda: True)
+
+        assert isinstance(_build_adapter("anthropic:claude-sonnet-5"), ClaudeCliAdapter)
+
+    def test_full_anthropic_spec_keeps_http_adapter_with_credentials(self, monkeypatch):
+        from patchmud.adapters.anthropic import AnthropicAdapter
+        from patchmud.cli import _build_adapter
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        monkeypatch.setattr("patchmud.cli.has_claude_cli", lambda: True)
+
+        assert isinstance(_build_adapter("anthropic:claude-sonnet-5"), AnthropicAdapter)
+
+
 class TestCodexAndAgyAdapterBuild:
     """codex / agy spec → adapter（CLI 不在 PATH 時 fail-closed）。"""
 
