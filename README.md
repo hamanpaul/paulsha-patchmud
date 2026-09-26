@@ -14,6 +14,7 @@
 - 研究報告：`docs/PatchMUD_research_report_zh-TW_v0.2.md`
 - Spec（v1.1，經 codex gpt-5.6-sol 對抗審查）：`docs/superpowers/specs/2026-07-16-patchmud-mvp-design.md`
 - 實作計劃（21 tasks）：`docs/superpowers/plans/2026-07-16-patchmud-mvp.md`
+- report v2 檔案契約：[`docs/report-contract-v2.md`](docs/report-contract-v2.md)
 - 跨 provider adapter 設計（codex / agy OAuth headless）：`docs/superpowers/specs/2026-08-11-multi-provider-adapters-design.md`
 - 玩家與旁觀者指南：[`docs/user-manual.md`](docs/user-manual.md)
 
@@ -39,7 +40,7 @@ patchmud author-encounter <source.yaml> --into <deck_dir>   # 出題：closed bu
 patchmud score-diff --encounter <dir> --diff <file>   # 離線評分（milestone A）
 patchmud pilot --deck pilot-v1 --models models.yaml --seed 42   # forced loadout 矩陣（跑 benchmark）
 patchmud replay <run_dir> [--l2]               # 兩級重播驗證
-patchmud report --runs "runs/*"                # 多榜研究報告（模型比較）
+patchmud report --runs "runs/*"                # report v2：JSON/YAML/CSV 多榜研究報告
 ```
 
 - 關卡可只打名字（自動找 `decks/pilot-v1/<名字>`），`--loadout` 預設 `P0T0R0`（SOLO）。最短：`patchmud play input-validation-v1`。
@@ -52,6 +53,7 @@ patchmud report --runs "runs/*"                # 多榜研究報告（模型比�
   | Google | `flash` / `pro` | `agy:gemini-3.6-flash` / `agy:gemini-3.1-pro` | `agy` CLI 登入態（`~/.antigravitycli`） |
 
   跨家對戰：`patchmud versus input-validation-v1 --models sonnet,sol,flash`。
+- `patchmud report` 只輸出 schema v2；JSON/YAML 共用同一 canonical report，另產每榜 CSV、`runs.csv` 與欄位級 `usage.csv`。usage 每欄保留 observed／estimated／unknown provenance，unknown 不帶數值；profile、role、benchmark type、deck digest 與 evaluator revision 分 cohort 排名。舊 run v1 封存可重建為 v2，缺少 provenance 的欄位會標成 legacy/unknown。契約詳見 [`docs/report-contract-v2.md`](docs/report-contract-v2.md)。
 - Anthropic 認證兩選一：`export ANTHROPIC_API_KEY=…`，**或** 用 Claude 帳號 OAuth——`ant auth login` 後 `set -a; eval "$(ant auth print-credentials --env)"; set +a`（設定 `ANTHROPIC_AUTH_TOKEN`，不必管 API key）。codex 與 agy 別名走各自 CLI 的登入態，不需要任何 API key 環境變數。
 - CLI-based adapter（`claude` / `codex` / `agy`）一律以**純補全模式**執行：工具寫入能力全關，執行 candidate code 的唯一 seam 仍是 `IsolationRunner`。`codex` / `agy` 的 `patchmud run` 可用 `--effort` 指定 adapter 原生 effort；省略時沿用 descriptor 明示的 `high`，不讀 ambient CLI 預設。`--tool-mode` 目前只接受 `none`。unsupported effort／工具模式會在建立 adapter 前拒絕。`run.yaml` 會封存 execution-profile v1 的 descriptor、requested／resolved／observed 三個 plane 及各自 profile key；provider 未回報實際 model／effort 時標成 unknown，`actual_condition_key` 留空。CLI 自帶的 system prompt 與 skill 目錄會產生每回合固定的 input token overhead（實測 codex ≈17k、agy ≈18k），跨家比較 economy 維度時需知悉。
 - 出題（把已解決的 closed bug 結構化凍結成新關卡、含 bug/fix 品質閘）見 [`docs/authoring/README.md`](docs/authoring/README.md)。

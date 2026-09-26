@@ -31,10 +31,15 @@ from patchmud.store.schemas import (
     validate_run_record,
     validate_stored_event,
 )
+from patchmud.usage_provenance import (
+    UsageEvidenceError,
+    validate_usage_evidence,
+)
 
 __all__ = ["RunStore"]
 
 _EVENTS_FILE = "events.jsonl"
+_USAGE_FILE = "usage_evidence.jsonl"
 _RUN_FILE = "run.yaml"
 _RESULT_FILE = "result.yaml"
 _BUNDLE_DIR = "evaluator_bundle"
@@ -128,6 +133,51 @@ class RunStore:
             validate_stored_event(event, expected_seq=len(events) + 1)
             events.append(event)
         return events
+
+    # -- usage evidence ----------------------------------------------------
+
+    def append_usage_evidence(self, evidence: dict) -> None:
+        """append-only 保存正規化 usage 與 provenance，不接受 provider payload。"""
+        try:
+            validate_usage_evidence(evidence, require_seq=False)
+        except UsageEvidenceError as exc:
+            raise StoreError(f"usage evidence 契約違反：{exc}") from exc
+        record = {
+            "schema_version": evidence["schema_version"],
+            "seq": len(self.load_usage_evidence()) + 1,
+            **evidence,
+        }
+        try:
+            line = json.dumps(record, ensure_ascii=False, sort_keys=True)
+        except (TypeError, ValueError) as exc:
+            raise StoreError(f"usage evidence 無法 JSON 序列化：{exc}") from exc
+        with (self.run_dir / _USAGE_FILE).open("a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+
+    def load_usage_evidence(self) -> list[dict]:
+        """載入並驗證 usage evidence；缺檔表示舊封存，回傳空清單。"""
+        path = self.run_dir / _USAGE_FILE
+        if not path.is_file():
+            return []
+        records: list[dict] = []
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+                validate_usage_evidence(record, require_seq=True)
+            except (json.JSONDecodeError, UsageEvidenceError) as exc:
+                raise StoreError(
+                    f"usage_evidence.jsonl 第 {lineno} 行契約違反：{exc}"
+                ) from exc
+            expected_seq = len(records) + 1
+            if record["seq"] != expected_seq:
+                raise StoreError(
+                    f"usage_evidence.jsonl seq 不連續：期望 {expected_seq}、"
+                    f"實得 {record['seq']!r}"
+                )
+            records.append(record)
+        return records
 
     # -- result ------------------------------------------------------------
 

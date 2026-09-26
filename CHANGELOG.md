@@ -8,7 +8,8 @@
 ## [Unreleased]
 
 ### Added
-- **Execution profile descriptor 與 CLI 驗證**（issue #37，PR 1）——新增獨立 execution-profile v1 schema、typed canonical JSON 與 domain-separated profile／actual-condition key；adapter capability registry 宣告原生 effort、工具模式、sandbox 與權限。`patchmud run` 可指定 `--effort`／`--tool-mode`，不支援的設定在建立 adapter 前拒絕；省略 effort 時 codex／agy 保留明示的 `high` 預設。`run.yaml` 封存 requested／resolved／observed profile 與 `profile_id`，未經 provider 確認的實際 model／effort 保持 unknown；report schema 與 usage provenance 留待後續 PR。
+- **Execution profile descriptor 與 CLI 驗證**（issue #37，PR 1）——新增獨立 execution-profile v1 schema、typed canonical JSON 與 domain-separated profile／actual-condition key；adapter capability registry 宣告原生 effort、工具模式、sandbox 與權限。`patchmud run` 可指定 `--effort`／`--tool-mode`，不支援的設定在建立 adapter 前拒絕；省略 effort 時 codex／agy 保留明示的 `high` 預設。`run.yaml` 封存 requested／resolved／observed profile 與 `profile_id`，未經 provider 確認的實際 model／effort 保持 unknown。
+- **Usage provenance 與舊封存讀取**（issue #37，PR 2）——ledger 每欄保留 observed／estimated／unknown、method、token unit、provider/schema/adapter 版本、計算與 subset/total 語意；append-only `usage_evidence.jsonl` 只存正規化值，不保存 provider payload。失敗前的用量先封存；缺欄位和估算不會變成 observed 或 0。讀取舊 run v1 目錄／tar 時，缺 provenance 標 `legacy/unknown`，report rebuild 不改原封存。
 - **report 同步落盤 `report.json` 機器契約**（issue #26）——與 `report.yaml` 同一個 report dict、`json.dumps(ensure_ascii=False, sort_keys=True, allow_nan=False)`。YAML 供人讀、JSON 供下游程式讀：PyYAML 的 indentless sequence 與長 scalar 折行（cortex#466 實跑驗證中零依賴 parser 連踩兩例）不該成為檔案契約的解析門檻；`allow_nan=False` 斷言原始 inf/nan 不得進 report（現行值皆已由 `_num()` 字串化，此為防回歸斷言）。
 - **report `runs[]` 逐列增列 `encounter`／`end_reason`／`protocol_failed`**（issue #24）——三者皆為封存既有事實（`run.yaml` 的 `encounter_dir`、`result.yaml` 的終局欄位）的透傳，report 層 fail-closed 驗證值域後照錄。動機：下游（paulsha-cortex #452 的 model profile 巷道）需要在 report 層做 deck 全覆蓋的精確驗證（原本只能用 `runs >= encounter_count` 的必要非充分判準），並把「未通關因協定失敗」與「未通關因修不好」分開——#21 的盤點顯示 cost-smoke3 的 4 場失敗全是 unified diff 解析失敗，這種格式噪音不得被下游誤讀成能力缺陷。`schema_version` 維持 1：純加欄，既有欄位與八榜結構不動（下游對 `schema_version != 1` 是 fail-closed 拒絕，bump 反而把相容加欄變成破壞性變更）。
 - **跨 provider adapter：codex（OpenAI）與 agy（Google Gemini）headless 純補全**（issue #14）——新增 `CodexCliAdapter`（`patchmud/adapters/codex_cli.py`）與 `AgyCliAdapter`（`patchmud/adapters/agy_cli.py`），兩者共用新的 `patchmud/adapters/cli_base.py` 骨架（prompt 攤平、注入式 runner、計時）。認證一律走各 CLI 自帶的 OAuth 登入態（`~/.codex/auth.json`、`~/.antigravitycli`），不需 `OPENAI_API_KEY` 或任何 Gemini key。
@@ -19,6 +20,7 @@
   - **計量特性（已知且刻意不扣除）**：CLI 自帶 system prompt 與 skill 目錄，每回合有固定的 input overhead（實測 codex ≈17k、agy ≈18k tokens），且每次呼叫都重新計入。這屬於該 provider 的既有成本結構，跨家比較 economy 維度時需知悉其存在；既有的 `ClaudeCliAdapter` 同樣具此特性。
 
 ### Changed
+- **report v2 cohort 與可重建性**（issue #37，PR 2）——report JSON/YAML/CSV 只輸出 schema v2，並在落盤前驗證結構與穩定 fingerprint；JSON/YAML 同源，另產 `runs.csv`、欄位級 `usage.csv`。每場列附 role、benchmark type、profile、deck/evaluator identity、coverage、run/artifact digests 與失敗來源；榜列以 `(role, benchmark_type, profile_id, deck_digest, evaluator_revision)` 分組，identity 不完整的 run 不合併排名。見 `docs/report-contract-v2.md`。
 - **`opus` 別名更新到 `claude-opus-5`**（原 `claude-opus-4-8`）——兩者同為 1M context、同為 $5/$25 per MTok，是 drop-in 升級。`AnthropicAdapter` 的 `effort`／`thinking` 本次不動：Opus 5 thinking 預設開啟且 `max_tokens` 是 thinking 與回覆的共用上限（目前 4096），要調需連同 `max_tokens` 一起評估，屬獨立的一批改動。
 
 ### Fixed

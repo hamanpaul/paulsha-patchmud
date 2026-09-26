@@ -48,12 +48,18 @@ class ScriptedRepliesExhausted(AdapterError):
 class AdapterResponse:
     """一次模型呼叫的觀測結果。
 
-    ``usage_raw``：provider usage metadata 原樣透傳（mapping 是 ledger 的事）。
+    ``usage_raw``：provider usage metadata 原樣透傳（mapping 是 ledger 的事）；
+    ``usage_annotations`` 標記 adapter 衍生的估算欄位。兩者只在記憶體內使用，
+    run archive 只落盤 mapping 後的正規化 usage 與 provenance。
     """
 
     text: str
     usage_raw: dict
     wall_ms: int
+    #: 欄位級估算標記；只供 mapper 使用，不落盤 provider payload。
+    usage_annotations: dict = field(default_factory=dict)
+    #: delta 可加總；cumulative totals 未提供事件 identity 時不可直接相加。
+    usage_quantity_kind: str = "usage_delta"
 
 
 @dataclass(frozen=True)

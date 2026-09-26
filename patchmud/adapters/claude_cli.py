@@ -6,8 +6,8 @@
   ``IsolationRunner``，spec §2）。
 - ``usage_raw`` 原樣透傳 `--output-format json` 回報的 usage（anthropic schema，
   由 ledger 的 ``map_usage("anthropic", …)`` 拆分）。CLI 未回報可用數值時，以
-  prompt／回覆的字元數估算 input/output tokens 補齊，讓 ledger 有可計費的量而
-  不致崩潰——估算值是 degraded 量測，精度不等同 API 直接回報的 usage。
+  prompt／回覆的字元數估算 input/output tokens 補齊，並以
+  ``usage_annotations`` 標為 estimated，不冒稱 provider observed usage。
 """
 
 from __future__ import annotations
@@ -99,10 +99,28 @@ class ClaudeCliAdapter(ModelAdapter):
         except (json.JSONDecodeError, ValueError):
             text = str(out).strip()
 
-        # 確保 usage_raw 必定具備 input_tokens 與 output_tokens（避免 ledger map_usage 崩潰）
+        # 缺少 provider 欄位時保留既有字元估算，但明確標記來源與算法。
+        usage_annotations: dict[str, dict[str, str]] = {}
         if "input_tokens" not in usage_raw or not isinstance(usage_raw["input_tokens"], int):
             usage_raw["input_tokens"] = max(1, len(prompt_text) // 4)
+            usage_annotations["input_tokens"] = {
+                "state": "estimated",
+                "method": "estimate",
+                "calculation": "prompt_characters_div_4_min_1",
+                "reason": "provider-usage-missing",
+            }
         if "output_tokens" not in usage_raw or not isinstance(usage_raw["output_tokens"], int):
             usage_raw["output_tokens"] = max(1, len(text) // 4)
+            usage_annotations["output_tokens"] = {
+                "state": "estimated",
+                "method": "estimate",
+                "calculation": "response_characters_div_4_min_1",
+                "reason": "provider-usage-missing",
+            }
 
-        return AdapterResponse(text=text, usage_raw=usage_raw, wall_ms=elapsed_ms)
+        return AdapterResponse(
+            text=text,
+            usage_raw=usage_raw,
+            wall_ms=elapsed_ms,
+            usage_annotations=usage_annotations,
+        )

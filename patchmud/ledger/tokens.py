@@ -39,7 +39,7 @@ class LedgerEntry:
     #: billed totals：model provider 必為 int；human run 無計費事實 → None（NA）。
     billed_input_total: int | None
     billed_output_total: int | None
-    unallocated: int
+    unallocated: int | None
     api_calls: int = 1
     tool_calls: int = 0
     wall_clock_ms: int = 0
@@ -50,11 +50,19 @@ class LedgerEntry:
     def __post_init__(self) -> None:
         if self.role not in VALID_ROLES:
             raise LedgerError(f"role 非法：{self.role!r}")
-        for name in ("unallocated", "api_calls", "tool_calls", "wall_clock_ms",
+        for name in ("api_calls", "tool_calls", "wall_clock_ms",
                      "prompt_bytes", "generated_bytes", "turn"):
             value = getattr(self, name)
             if not isinstance(value, int) or isinstance(value, bool) or value < 0:
                 raise LedgerError(f"{name} 必須是非負整數：{value!r}")
+        if self.unallocated is not None and (
+            not isinstance(self.unallocated, int)
+            or isinstance(self.unallocated, bool)
+            or self.unallocated < 0
+        ):
+            raise LedgerError(
+                f"unallocated 必須是非負整數或 None（NA）：{self.unallocated!r}"
+            )
         for name in ("input_uncached", "input_cached", "output_visible", "reasoning",
                      "billed_input_total", "billed_output_total"):
             value = getattr(self, name)
@@ -82,6 +90,11 @@ def _require_token(usage: dict, key: str) -> int:
     return value
 
 
+def _reported_token(usage: dict, key: str) -> int | None:
+    """欄位缺席代表未知；欄位存在時仍嚴格驗證其值。"""
+    return _optional_token(usage, key)
+
+
 def _optional_token(container: dict, key: str) -> int | None:
     """provider 未揭露 → None（NA）；揭露則必須是非負整數。"""
     if key not in container:
@@ -93,50 +106,54 @@ def _optional_token(container: dict, key: str) -> int | None:
 
 
 def _map_anthropic(usage: dict) -> dict:
-    input_tokens = _require_token(usage, "input_tokens")
-    output_tokens = _require_token(usage, "output_tokens")
+    input_tokens = _reported_token(usage, "input_tokens")
+    output_tokens = _reported_token(usage, "output_tokens")
     cache_read = _optional_token(usage, "cache_read_input_tokens")
     cache_creation = _optional_token(usage, "cache_creation_input_tokens")
-    billed_input = input_tokens + (cache_read or 0) + (cache_creation or 0)
+    billed_input = (
+        None
+        if input_tokens is None or cache_read is None or cache_creation is None
+        else input_tokens + cache_read + cache_creation
+    )
     return dict(
         input_uncached=input_tokens,
         input_cached=cache_read,
-        output_visible=output_tokens,
-        # anthropic usage 不拆 reasoning（thinking 併入 output）→ NA。
+        # Anthropic 的 output_tokens 未拆 reasoning，不能冒稱全是可見輸出。
+        output_visible=None,
         reasoning=None,
         billed_input_total=billed_input,
         billed_output_total=output_tokens,
-        # cache 寫入 tokens 有計價但不屬互斥欄位 → 殘差。
-        unallocated=cache_creation or 0,
+        # cache 寫入 tokens 有計價但不屬互斥欄位 → 殘差；缺欄位保持未知。
+        unallocated=cache_creation,
     )
 
 
 def _map_openai(usage: dict) -> dict:
-    prompt_tokens = _require_token(usage, "prompt_tokens")
-    completion_tokens = _require_token(usage, "completion_tokens")
+    prompt_tokens = _reported_token(usage, "prompt_tokens")
+    completion_tokens = _reported_token(usage, "completion_tokens")
     prompt_details = usage.get("prompt_tokens_details") or {}
     completion_details = usage.get("completion_tokens_details") or {}
     cached = _optional_token(prompt_details, "cached_tokens")
     reasoning = _optional_token(completion_details, "reasoning_tokens")
 
-    if cached is None:
-        input_uncached = prompt_tokens
-    else:
+    if cached is not None and prompt_tokens is not None:
         if cached > prompt_tokens:
             raise LedgerError(
                 f"cached_tokens 超過 prompt_tokens：{cached} > {prompt_tokens}"
             )
         input_uncached = prompt_tokens - cached
-
-    if reasoning is None:
-        output_visible = completion_tokens
     else:
+        input_uncached = None
+
+    if reasoning is not None and completion_tokens is not None:
         if reasoning > completion_tokens:
             raise LedgerError(
                 f"reasoning_tokens 超過 completion_tokens："
                 f"{reasoning} > {completion_tokens}"
             )
         output_visible = completion_tokens - reasoning
+    else:
+        output_visible = None
 
     return dict(
         input_uncached=input_uncached,
@@ -145,14 +162,16 @@ def _map_openai(usage: dict) -> dict:
         reasoning=reasoning,
         billed_input_total=prompt_tokens,
         billed_output_total=completion_tokens,
-        unallocated=0,
+        unallocated=None,
     )
 
 
-def _split_subset(total: int, part: int | None, *, whole: str, name: str) -> int:
+def _split_subset(
+    total: int | None, part: int | None, *, whole: str, name: str
+) -> int | None:
     """``part ⊆ total`` 的差集；part 超出 total 代表 provider 資料不一致 → 拒收。"""
-    if part is None:
-        return total
+    if total is None or part is None:
+        return None
     if part > total:
         raise LedgerError(f"{name} 超過 {whole}：{part} > {total}")
     return total - part
@@ -167,8 +186,8 @@ def _map_codex(usage: dict) -> dict:
     ``reasoning_output_tokens ⊆ output_tokens``。
     ``cache_write_input_tokens`` 有計價但不屬互斥欄位 → 殘差。
     """
-    input_tokens = _require_token(usage, "input_tokens")
-    output_tokens = _require_token(usage, "output_tokens")
+    input_tokens = _reported_token(usage, "input_tokens")
+    output_tokens = _reported_token(usage, "output_tokens")
     cached = _optional_token(usage, "cached_input_tokens")
     reasoning = _optional_token(usage, "reasoning_output_tokens")
     cache_write = _optional_token(usage, "cache_write_input_tokens")
@@ -186,7 +205,7 @@ def _map_codex(usage: dict) -> dict:
         reasoning=reasoning,
         billed_input_total=input_tokens,
         billed_output_total=output_tokens,
-        unallocated=cache_write or 0,
+        unallocated=cache_write,
     )
 
 
@@ -200,13 +219,18 @@ def _map_agy(usage: dict) -> dict:
     ``total_tokens`` 是 ``input + output`` 的重述而非獨立計價量，故不進
     ledger；provider 若給出對不上的值，代表資料不一致 → fail-closed。
     """
-    input_tokens = _require_token(usage, "input_tokens")
-    output_tokens = _require_token(usage, "output_tokens")
+    input_tokens = _reported_token(usage, "input_tokens")
+    output_tokens = _reported_token(usage, "output_tokens")
     cached = _optional_token(usage, "cache_read_tokens")
     thinking = _optional_token(usage, "thinking_tokens")
 
     total = _optional_token(usage, "total_tokens")
-    if total is not None and total != input_tokens + output_tokens:
+    if (
+        total is not None
+        and input_tokens is not None
+        and output_tokens is not None
+        and total != input_tokens + output_tokens
+    ):
         raise LedgerError(
             f"total_tokens 與 input+output 不一致：{total} != "
             f"{input_tokens} + {output_tokens}"
@@ -223,7 +247,7 @@ def _map_agy(usage: dict) -> dict:
         reasoning=thinking,
         billed_input_total=input_tokens,
         billed_output_total=output_tokens,
-        unallocated=0,
+        unallocated=None,
     )
 
 
@@ -244,7 +268,7 @@ def _map_human(usage: dict) -> dict:
         reasoning=None,
         billed_input_total=None,
         billed_output_total=None,
-        unallocated=0,
+        unallocated=None,
     )
 
 

@@ -25,12 +25,16 @@
 from __future__ import annotations
 
 import csv
+import copy
+import hashlib
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
 import yaml
 
 from patchmud.adapters.scripted import ScriptedAdapter
+from patchmud.adapters.base import AdapterResponse
 from patchmud.cli import main
 from patchmud.deck.loader import load_card
 from patchmud.deck.materialize import materialize_repo
@@ -41,6 +45,7 @@ from patchmud.evaluator.evaluate import FinalEvaluation
 from patchmud.evaluator.gates import apply_power_cap, evaluate_gates
 from patchmud.evaluator.power import FileChange, score_power
 from patchmud.ledger.pricing import PricingSnapshot
+from patchmud.report_provenance import build_run_report_metadata
 from patchmud.sandbox.probes import ProbeResults, smoke_probe_id
 from patchmud.sandbox.workspace import Workspace
 from patchmud.store.run_store import RunStore
@@ -128,6 +133,22 @@ class ConsistentEvaluate:
         return FinalEvaluation(probe_outcomes=outcomes, power=power, gates=gates)
 
 
+class ObservedReportAdapter:
+    """離線 fake：回傳完整 provider-shaped 欄位以測試 observed 報告路徑。"""
+
+    usage_provider = "openai"
+
+    def __init__(self, replies: list[str]) -> None:
+        self._script = ScriptedAdapter(replies)
+
+    def complete(self, messages: list[dict]) -> AdapterResponse:
+        response = self._script.complete(messages)
+        usage = dict(response.usage_raw)
+        usage["prompt_tokens_details"] = {"cached_tokens": 0}
+        usage["completion_tokens_details"] = {"reasoning_tokens": 0}
+        return AdapterResponse(response.text, usage, response.wall_ms)
+
+
 # ---------------------------------------------------------------------------
 # 佈線 helpers
 # ---------------------------------------------------------------------------
@@ -165,6 +186,9 @@ def make_run(
             "schedule_ref": "NA",
             "encounter_dir": str(FIXTURE),
             "model": model,
+            "profile_id": "epk:v1:resolved:" + hashlib.sha256(model.encode()).hexdigest(),
+            "measured_at": "2026-09-26T00:00:00Z",
+            **build_run_report_metadata(FIXTURE),
         },
         runs_root,
     )
@@ -175,7 +199,7 @@ def make_run(
             CARD, evaluator_statuses, file_changes=file_changes
         ),
     )
-    result = run_encounter(CARD, ScriptedAdapter(replies), SOLO, config, store)
+    result = run_encounter(CARD, ObservedReportAdapter(replies), SOLO, config, store)
     assert result.clear == expected_clear  # 前提：劇本行為固定
     return store.run_dir
 
@@ -218,17 +242,29 @@ def run_report(runs_root: Path, out_dir: Path, *extra: str) -> dict:
 
 
 def make_mixed_cohort_runs(tmp_path: Path) -> Path:
-    """兩場 run 分屬不同 disclosure cohort（F17 的現實情境：anthropic
-    mapper reasoning 恆 NA → observable、openai 揭露 reasoning_tokens →
-    full）。scripted run 的 T^work 皆 NA，這裡把 fixer 的封存改寫成
-    full-disclosure（ledger.work_tokens 為正整數）製造 mixed cohort。"""
+    """cache 子集缺值使 fixer 進 observable cohort，quitter 保持 full。"""
     runs_root = make_fixture_runs(tmp_path)
-    result_path = runs_root / "report-fixer" / "result.yaml"
-    data = yaml.safe_load(result_path.read_text(encoding="utf-8"))
-    assert data["ledger"]["work_tokens"] == "NA"  # 前提：scripted → NA
-    data["ledger"]["work_tokens"] = 4321
-    result_path.write_text(
-        yaml.safe_dump(data, sort_keys=True, allow_unicode=True),
+    import json as jsonmod
+
+    evidence_path = runs_root / "report-fixer" / "usage_evidence.jsonl"
+    records = [
+        jsonmod.loads(line)
+        for line in evidence_path.read_text(encoding="utf-8").splitlines()
+    ]
+    for record in records:
+        field = record["fields"]["input_cached"]
+        field.pop("value")
+        field["state"] = "unknown"
+        field["reason"] = "cache-subset-not-reported"
+        record["coverage"]["state"] = "partial"
+        record["coverage"]["gaps"].append(
+            {"scope": "input_cached", "reason": "cache-subset-not-reported"}
+        )
+    evidence_path.write_text(
+        "".join(
+            jsonmod.dumps(record, ensure_ascii=False, sort_keys=True) + "\n"
+            for record in records
+        ),
         encoding="utf-8",
     )
     return runs_root
@@ -268,7 +304,7 @@ class TestReportLeaderboards:
         out = tmp_path / "out"
         report = run_report(runs_root, out, "--pricing", str(PRICING_PATH))
 
-        assert report["schema_version"] == 1
+        assert report["schema_version"] == 2
         assert report["runs_included"] == 2
         assert report["runs_skipped"] == []
         boards = report["leaderboards"]
@@ -289,15 +325,14 @@ class TestReportLeaderboards:
         assert row_of(cost, "scripted:quitter")["value"] == "inf"
         assert cost["rows"][0]["model"] == "scripted:fixer"
 
-        # tokens per clear：scripted run 的 T^work NA → value "NA"、
-        # observable 雙欄照算（§10.1／F17）；零 clear → observable "inf"
+        # 完整 fake usage 的互斥欄位可計 T^work；零 clear → "inf"。
         tokens = boards["tokens_per_clear"]
         fixer_tokens = row_of(tokens, "scripted:fixer")
-        assert fixer_tokens["value"] == "NA"
+        assert fixer_tokens["value"] > 0
         assert fixer_tokens["observable"] > 0
-        assert fixer_tokens["disclosure_cohort"] == "observable"
+        assert fixer_tokens["disclosure_cohort"] == "full"
         quitter_tokens = row_of(tokens, "scripted:quitter")
-        assert quitter_tokens["value"] == "NA"
+        assert quitter_tokens["value"] == "inf"
         assert quitter_tokens["observable"] == "inf"
         assert tokens["rows"][0]["model"] == "scripted:fixer"
 
@@ -371,7 +406,7 @@ class TestReportLeaderboards:
         eutb = report["leaderboards"]["eutb"]
         assert eutb["status"] == "ok"
         fixer = row_of(eutb, "scripted:fixer")
-        assert fixer["value"] == "NA"  # T^work NA → 雙欄傳染
+        assert 0 < fixer["value"] <= 1
         assert 0 < fixer["observable"] <= 1
         assert row_of(eutb, "scripted:quitter")["observable"] == 0.0
 
@@ -437,11 +472,10 @@ class TestMixedCohortPublication:
             assert board["status"] == "ok", name
             assert board["non_ranking"] is True, name
             assert "F17" in board["note"], name
-            # 列序退為群組名稱字典序（不構成排名）
-            assert [row["model"] for row in board["rows"]] == [
-                "scripted:fixer",
-                "scripted:quitter",
-            ], name
+            # 列序使用穩定 cohort key，不構成排名。
+            assert [row["cohort_id"] for row in board["rows"]] == sorted(
+                row["cohort_id"] for row in board["rows"]
+            ), name
             for row in board["rows"]:
                 # cohort 依賴的 value 欄不得出現在發布產物
                 assert "value" not in row, (name, row)
@@ -511,13 +545,11 @@ class TestMixedCohortPublication:
         report = run_report(runs_root, tmp_path / "out")
 
         assert calls, "report 層未呼叫 rank_efficiency"
-        # 真排名會把 fixer（有限 observable）排在 quitter（inf）前；
-        # stub 反字典序 → quitter 在前 ⟺ 列序確實來自 rank_efficiency
+        # stub 反 cohort-id 字典序；列序須跟著 rank_efficiency 回傳走。
         board = report["leaderboards"]["tokens_per_clear"]
-        assert [row["model"] for row in board["rows"]] == [
-            "scripted:quitter",
-            "scripted:fixer",
-        ]
+        assert [row["cohort_id"] for row in board["rows"]] == sorted(
+            calls[-1], reverse=True
+        )
 
 
 class TestReportJsonContract:
@@ -538,22 +570,22 @@ class TestReportJsonContract:
             (out / "report.json").read_text(encoding="utf-8")
         )
         assert json_payload == report  # 與 report.yaml 同一個 dict，無另設 schema
-        assert json_payload["schema_version"] == 1
+        assert json_payload["schema_version"] == 2
 
 
 class TestReportRunProvenanceFields:
-    """runs[] 逐列透傳 encounter／end_reason／protocol_failed（issue #24）。
+    """runs[] 逐列透傳 run 事實與 v2 profile/cohort provenance（issue #24/#37）。
 
     下游（cortex #452 profile 巷道）要能從 report 層做全覆蓋精確驗證，並把
     「未通關因協定失敗」與「未通關因修不好」分開——後者才是能力訊號
-    （#21：格式噪音不得被誤讀成能力缺陷）。schema_version 維持 1（純加欄）。
+    （#21：格式噪音不得被誤讀成能力缺陷）。report schema 以 v2 明確切換。
     """
 
     def test_runs_rows_carry_encounter_and_end_reason(self, tmp_path) -> None:
         runs_root = make_fixture_runs(tmp_path)
         report = run_report(runs_root, tmp_path / "out")
 
-        assert report["schema_version"] == 1  # 加欄不 bump（下游 fail-closed 鎖 1）
+        assert report["schema_version"] == 2
         rows = {row["run_id"]: row for row in report["runs"]}
         for run_id in ("report-fixer", "report-quitter"):
             assert rows[run_id]["encounter"] == FIXTURE.name
@@ -582,3 +614,273 @@ class TestReportRunProvenanceFields:
         assert row["clear"] == 0
         assert row["end_reason"] == "failed:protocol"
         assert row["protocol_failed"] is True
+
+
+class TestReportV2Contract:
+    def test_report_schema_validator_accepts_v2_and_rejects_invalid_records(
+        self, tmp_path
+    ) -> None:
+        from patchmud.report_schema import ReportSchemaError, validate_report_v2
+
+        runs_root = make_fixture_runs(tmp_path)
+        report = run_report(runs_root, tmp_path / "out")
+        validate_report_v2(report)
+
+        wrong_version = dict(report, schema_version=1)
+        with pytest.raises(ReportSchemaError, match="schema_version"):
+            validate_report_v2(wrong_version)
+
+        unknown_as_zero = copy.deepcopy(report)
+        unknown_field = unknown_as_zero["runs"][0]["usage_provenance"]["fields"][
+            "unallocated"
+        ]
+        unknown_field["value"] = 0
+        from patchmud.cli import _report_fingerprint
+
+        unknown_as_zero["report_fingerprint"] = _report_fingerprint(unknown_as_zero)
+        with pytest.raises(ReportSchemaError, match="unknown.*value"):
+            validate_report_v2(unknown_as_zero)
+
+    def test_report_v2_is_reproducible_and_csv_preserves_usage_provenance(
+        self, tmp_path
+    ) -> None:
+        import json as jsonmod
+
+        runs_root = make_fixture_runs(tmp_path)
+        out = tmp_path / "out"
+        first = run_report(runs_root, out)
+        first_generated = first["generated_at"]
+        second = run_report(runs_root, out)
+
+        assert first["schema_version"] == 2
+        assert first["producer"]["name"] == "paulsha-patchmud"
+        assert first["report_fingerprint"] == second["report_fingerprint"]
+        assert first_generated
+        assert jsonmod.loads((out / "report.json").read_text(encoding="utf-8")) == second
+        assert yaml.safe_load((out / "report.yaml").read_text(encoding="utf-8")) == second
+
+        usage_rows = read_csv_rows(out / "usage.csv")
+        assert usage_rows
+        row = next(row for row in usage_rows if row["field"] == "billed_input_total")
+        assert row["state"] == "observed"
+        assert int(row["value"]) > 0
+        assert row["method"] == "executor_usage"
+        unknown_row = next(row for row in usage_rows if row["field"] == "unallocated")
+        assert unknown_row["state"] == "unknown"
+        assert unknown_row["value"] == ""
+
+        with (out / "runs.csv").open(encoding="utf-8", newline="") as fh:
+            runs_csv_row = next(csv.DictReader(fh))
+        assert "artifact_digests" in runs_csv_row
+        assert yaml.safe_load(runs_csv_row["artifact_digests"])["run.yaml"].startswith(
+            "sha256:"
+        )
+
+        run_row = first["runs"][0]
+        assert run_row["run_digest"].startswith("sha256:")
+        assert run_row["artifact_digests"]["run.yaml"].startswith("sha256:")
+        assert run_row["failure_source"] in (None, "capability", "protocol")
+
+    def test_distinct_profiles_do_not_merge_and_role_coverage_stays_explicit(
+        self, tmp_path
+    ) -> None:
+        runs_root = make_fixture_runs(tmp_path)
+        for run_id, profile_id in (
+            ("report-fixer", "epk:v1:resolved:" + "a" * 64),
+            ("report-quitter", "epk:v1:resolved:" + "b" * 64),
+        ):
+            run_path = runs_root / run_id / "run.yaml"
+            record = yaml.safe_load(run_path.read_text(encoding="utf-8"))
+            record.update(
+                {
+                    "model": "scripted:same-model",
+                    "role": "builder",
+                    "benchmark_type": "issue-resolution",
+                    "profile_id": profile_id,
+                    "deck_id": "frozen-deck",
+                    "deck_digest": "sha256:" + "c" * 64,
+                    "deck_encounters": ["mini_encounter", "second-encounter"],
+                    "evaluator_revision": "sha256:" + "d" * 64,
+                    "measured_dimensions": ["clear", "power", "protocol"],
+                    "unmeasured_dimensions": {
+                        "planner": {"state": "unknown", "reason": "role-not-assessed"},
+                        "reviewer": {"state": "unknown", "reason": "role-not-assessed"},
+                    },
+                }
+            )
+            run_path.write_text(
+                yaml.safe_dump(record, sort_keys=True, allow_unicode=True),
+                encoding="utf-8",
+            )
+
+        report = run_report(runs_root, tmp_path / "out")
+        rows = report["leaderboards"]["clear_rate"]["rows"]
+        assert len(rows) == 2
+        assert {row["profile_id"] for row in rows} == {
+            "epk:v1:resolved:" + "a" * 64,
+            "epk:v1:resolved:" + "b" * 64,
+        }
+        report_rows = {row["run_id"]: row for row in report["runs"]}
+        builder = report_rows["report-fixer"]
+        assert builder["role"] == "builder"
+        assert builder["benchmark_type"] == "issue-resolution"
+        assert builder["measured_dimensions"] == ["clear", "power", "protocol"]
+        assert builder["unmeasured_dimensions"]["planner"]["state"] == "unknown"
+        assert builder["deck_coverage"]["observed_encounters"] == ["mini_encounter"]
+        assert builder["deck_coverage"]["expected_encounters"] == [
+            "mini_encounter",
+            "second-encounter",
+        ]
+        assert builder["deck_coverage"]["complete"] is False
+
+    def test_v1_run_without_usage_evidence_rebuilds_only_as_legacy_unknown(
+        self, tmp_path
+    ) -> None:
+        runs_root = make_fixture_runs(tmp_path)
+        original_ledgers = {}
+        for run_id in ("report-fixer", "report-quitter"):
+            run_dir = runs_root / run_id
+            original_ledgers[run_id] = (run_dir / "ledger.jsonl").read_bytes()
+            evidence = run_dir / "usage_evidence.jsonl"
+            if evidence.exists():
+                evidence.unlink()
+
+        report = run_report(runs_root, tmp_path / "out")
+        assert report["schema_version"] == 2
+        for row in report["runs"]:
+            assert row["usage_provenance"]["source"]["source_id"] == "legacy"
+            for field in row["usage_provenance"]["fields"].values():
+                assert field["state"] == "unknown"
+                assert field["method"] == "legacy"
+                assert "value" not in field
+        for run_id, original in original_ledgers.items():
+            assert (runs_root / run_id / "ledger.jsonl").read_bytes() == original
+
+    def test_v1_tar_archive_rebuilds_without_mutating_archive(self, tmp_path) -> None:
+        runs_root = make_fixture_runs(tmp_path)
+        run_dir = runs_root / "report-fixer"
+        evidence_path = run_dir / "usage_evidence.jsonl"
+        evidence_path.unlink()
+        run_path = run_dir / "run.yaml"
+        run_record = yaml.safe_load(run_path.read_text(encoding="utf-8"))
+        for key in (
+            "execution_profile",
+            "profile_id",
+            "role",
+            "benchmark_type",
+            "deck_id",
+            "deck_digest",
+            "deck_encounters",
+            "evaluator_revision",
+            "measured_dimensions",
+            "unmeasured_dimensions",
+            "measured_at",
+        ):
+            run_record.pop(key, None)
+        run_path.write_text(
+            yaml.safe_dump(run_record, sort_keys=True, allow_unicode=True),
+            encoding="utf-8",
+        )
+        archive_root = tmp_path / "archives"
+        archive_root.mkdir()
+        archive_path = archive_root / "report-fixer.tar"
+        RunStore.open(run_dir).archive_private(archive_path)
+        before = archive_path.read_bytes()
+
+        report = run_report(archive_root, tmp_path / "out")
+
+        assert len(report["runs"]) == 1
+        row = report["runs"][0]
+        assert row["usage_provenance"]["source"]["source_id"] == "legacy"
+        assert row["usage_provenance"]["fields"]["billed_input_total"]["state"] == (
+            "unknown"
+        )
+        assert row["profile_id"] == "legacy/unknown"
+        assert row["role"] == "legacy/unknown"
+        assert report["leaderboards"]["clear_rate"]["rows"][0]["ranked"] is False
+        assert archive_path.read_bytes() == before
+
+    def test_cumulative_usage_is_retained_per_call_but_not_summed(self, tmp_path) -> None:
+        import json as jsonmod
+
+        runs_root = make_fixture_runs(tmp_path)
+        for run_id in ("report-fixer", "report-quitter"):
+            path = runs_root / run_id / "usage_evidence.jsonl"
+            records = [jsonmod.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+            for record in records:
+                record["quantity_kind"] = "usage_total"
+            path.write_text(
+                "".join(
+                    jsonmod.dumps(record, ensure_ascii=False, sort_keys=True) + "\n"
+                    for record in records
+                ),
+                encoding="utf-8",
+            )
+
+        report = run_report(runs_root, tmp_path / "out")
+        row = report["runs"][0]
+        aggregate = row["usage_provenance"]["fields"]["billed_input_total"]
+        assert aggregate["state"] == "unknown"
+        assert "value" not in aggregate
+        assert aggregate["reason"] == "cumulative-usage-not-deduplicated"
+        call = row["usage_provenance"]["calls"][0]
+        assert call["quantity_kind"] == "usage_total"
+        assert call["fields"]["billed_input_total"]["state"] == "observed"
+        assert call["fields"]["billed_input_total"]["value"] > 0
+
+    def test_different_usage_semantics_make_efficiency_unavailable(self, tmp_path) -> None:
+        import json as jsonmod
+
+        runs_root = make_fixture_runs(tmp_path)
+        common_profile = "epk:v1:resolved:" + "e" * 64
+        for run_id in ("report-fixer", "report-quitter"):
+            run_path = runs_root / run_id / "run.yaml"
+            metadata = yaml.safe_load(run_path.read_text(encoding="utf-8"))
+            metadata["model"] = "scripted:same-profile"
+            metadata["profile_id"] = common_profile
+            run_path.write_text(
+                yaml.safe_dump(metadata, sort_keys=True, allow_unicode=True),
+                encoding="utf-8",
+            )
+        path = runs_root / "report-fixer" / "usage_evidence.jsonl"
+        records = [jsonmod.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+        for record in records:
+            record["quantity_kind"] = "usage_total"
+        path.write_text(
+            "".join(
+                jsonmod.dumps(record, ensure_ascii=False, sort_keys=True) + "\n"
+                for record in records
+            ),
+            encoding="utf-8",
+        )
+
+        report = run_report(runs_root, tmp_path / "out")
+        clear_rows = report["leaderboards"]["clear_rate"]["rows"]
+        assert len(clear_rows) == 1
+        assert clear_rows[0]["runs"] == 2
+        board = report["leaderboards"]["tokens_per_clear"]
+        assert board["status"] == "unavailable"
+        assert board["reason"] == "usage_semantics_incompatible"
+        assert "value" not in board["rows"][0]
+
+    def test_protocol_failure_keeps_usage_recorded_before_failure(self, tmp_path) -> None:
+        runs_root = tmp_path / "runs"
+        run_dir = make_run(
+            tmp_path,
+            runs_root,
+            run_id="report-jibberish-v2",
+            model="scripted:jibberish",
+            replies=["這不是合法指令", "這不是合法指令", "這不是合法指令"],
+            suite_results=[BASE],
+            evaluator_statuses={HIDDEN: "passed", COMPAT: "passed"},
+            file_changes=(),
+            expected_clear=0,
+        )
+
+        assert (run_dir / "usage_evidence.jsonl").is_file()
+        report = run_report(runs_root, tmp_path / "out")
+        row = report["runs"][0]
+        assert row["protocol_failed"] is True
+        assert row["failure_source"] == "protocol"
+        evidence = (run_dir / "usage_evidence.jsonl").read_text(encoding="utf-8")
+        assert evidence.count("\n") == 3

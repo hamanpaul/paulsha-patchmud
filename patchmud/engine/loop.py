@@ -66,8 +66,8 @@ from patchmud.ledger.tokens import (
     LedgerEntry,
     aggregate_billed_totals,
     aggregate_work_tokens,
-    map_usage,
 )
+from patchmud.usage_provenance import map_usage_with_provenance
 from patchmud.sandbox.isolate import Execution
 from patchmud.sandbox.probes import (
     DEFAULT_PYTEST_ARGV,
@@ -95,6 +95,18 @@ END_PROTOCOL = "failed:protocol"
 
 #: 互斥資源欄位不可得記 NA、不記 0（§10.1）；result.yaml 序列化用。
 _NA = "NA"
+
+
+def _usage_adapter_version(adapter: ModelAdapter) -> str:
+    """從已解析 descriptor 取 adapter 版本；fake/legacy adapter 明示 unknown。"""
+    capabilities = getattr(adapter, "execution_profile_capabilities", None)
+    version = getattr(capabilities, "runtime_version", None)
+    if isinstance(version, str) and version:
+        return version
+    explicit = getattr(adapter, "usage_adapter_version", None)
+    if isinstance(explicit, str) and explicit:
+        return explicit
+    return "unknown"
 
 _INSPECT_LIMIT_BYTES = 64 * 1024
 _LOOK_DEPTH = 3
@@ -269,9 +281,12 @@ class _Session:
         response = self.adapter.complete(messages)
         self.turns_used = turn
         self.transcript.append({"role": "assistant", "content": response.text})
-        author_entry = map_usage(
+        author_entry, author_usage = map_usage_with_provenance(
             self.adapter.usage_provider,
             response.usage_raw,
+            annotations=response.usage_annotations,
+            adapter_version=_usage_adapter_version(self.adapter),
+            quantity_kind=response.usage_quantity_kind,
             turn=turn,
             role="author",
             wall_clock_ms=response.wall_ms,
@@ -280,7 +295,7 @@ class _Session:
             ),
             generated_bytes=len(response.text.encode("utf-8")),
         )
-        self._record_ledger(author_entry)
+        self._record_ledger(author_entry, author_usage)
 
         outcome = self._dispatch(turn, parse_reply(response.text))
 
@@ -473,9 +488,12 @@ class _Session:
             claims=tuple(self.claims),
         )
         response = reviewer.complete(messages)
-        entry = map_usage(
+        entry, usage_evidence = map_usage_with_provenance(
             reviewer.usage_provider,
             response.usage_raw,
+            annotations=response.usage_annotations,
+            adapter_version=_usage_adapter_version(reviewer),
+            quantity_kind=response.usage_quantity_kind,
             turn=turn,
             role="reviewer",
             wall_clock_ms=response.wall_ms,
@@ -484,7 +502,7 @@ class _Session:
             ),
             generated_bytes=len(response.text.encode("utf-8")),
         )
-        self._record_ledger(entry)
+        self._record_ledger(entry, usage_evidence)
 
         findings = parse_findings(response.text)
         valid = findings is not None
@@ -699,13 +717,14 @@ class _Session:
             return ProbeResults({})
         return self.config.run_agent_tests(self.workspace)
 
-    def _record_ledger(self, entry: LedgerEntry) -> None:
+    def _record_ledger(self, entry: LedgerEntry, usage_evidence: dict) -> None:
         self.ledger.append(entry)
         record = {"schema_version": _LEDGER_SCHEMA_VERSION, **_entry_dict(entry)}
         with (self.store.run_dir / _LEDGER_FILE).open(
             "a", encoding="utf-8"
         ) as fh:
             fh.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+        self.store.append_usage_evidence(usage_evidence)
 
 
 @dataclass(frozen=True)

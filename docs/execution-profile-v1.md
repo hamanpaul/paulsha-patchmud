@@ -22,7 +22,9 @@ tagged object 表達；只有 effort grammar 為 `none` 時 effort 可用
 `patchmud run` 將 descriptor、三個 plane、`profile_id` 及每個 plane 的 key
 放在 `run.yaml` 的 `execution_profile` 欄位。`profile_id` 等於 resolved
 profile key。Observed 資料不足以確認所有條件時，`actual_condition_key` 為
-`null`。目前報告 schema 與 report 聚合不在此變更範圍。
+`null`。report v2 逐 run 輸出 `profile_id`，並以 profile、role、benchmark type、
+deck content digest 與 evaluator revision 分 cohort；詳見
+[`report-contract-v2.md`](report-contract-v2.md)。
 
 ## Canonical key
 
