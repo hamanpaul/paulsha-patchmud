@@ -2,4 +2,4 @@
 type: feat
 scope: adapters
 ---
-codex / agy OAuth headless adapter 與 opus 別名更新到 claude-opus-5——新增 `CodexCliAdapter`（gpt-5.3-codex-spark / gpt-5.6-luna / gpt-5.6-terra / gpt-5.6-sol）與 `AgyCliAdapter`（gemini-3.6-flash / gemini-3.1-pro），兩者以純補全模式執行（工具寫入全關、臨時空目錄、effort 固定 high），執行 candidate code 的唯一 seam 仍是 IsolationRunner；ledger 新增 codex / agy 兩個 usage mapper（欄位名各自成一格但語意同 openai，已以真 CLI 實測佐證）。
+codex / agy OAuth headless adapter 與 opus 別名更新到 claude-opus-5——新增 `CodexCliAdapter`（gpt-5.3-codex-spark / gpt-5.6-luna / gpt-5.6-terra / gpt-5.6-sol）與 `AgyCliAdapter`（gemini-3.6-flash / gemini-3.1-pro），兩者以純補全模式執行（工具寫入全關、臨時空目錄、effort 預設 high；PatchMUD #37 後 `run --effort` 可指定 descriptor 接受的原生值），執行 candidate code 的唯一 seam 仍是 IsolationRunner；ledger 新增 codex / agy 兩個 usage mapper（欄位名各自成一格但語意同 openai，已以真 CLI 實測佐證）。

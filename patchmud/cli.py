@@ -1,6 +1,6 @@
 """patchmud CLI 進入點。
 
-子命令（validate-deck / score-diff / run / play / pilot / replay / report）依
+子命令（schema / validate-deck / score-diff / run / play / pilot / replay / report）依
 docs/superpowers/plans/2026-07-16-patchmud-mvp.md 逐 task 落地。
 
 `validate-deck`（Task 20，spec §4.2）：`patchmud validate-deck <deck_dir>`——
@@ -50,9 +50,11 @@ fail——再走 L1。
 
 `report`（Task 17，milestone C 收口；spec §10.3、§13、報告 §11.2）：
 `patchmud report --runs <glob> [--out <dir>] [--pricing <snapshot>]
-[--registered <dir>]`——只讀多場 run 的落盤封存（run.yaml／result.yaml／
-events.jsonl／ledger.jsonl）＋ deck card，逐 (model, loadout) 群組輸出多榜
-YAML/CSV：clear rate、cost per clear（run pin 的 pricing snapshot 計價；
+[--registered <dir>]`——只讀多場 run 目錄或 RunStore tar 封存
+（run.yaml／result.yaml／events.jsonl／ledger.jsonl／usage_evidence.jsonl），
+輸出 report schema v2 JSON/YAML、榜單 CSV、runs.csv 與逐欄位 usage.csv；榜列
+按 role、benchmark、profile、deck digest
+與 evaluator revision 分組：clear rate、cost per clear（run pin 的 pricing snapshot 計價；
 未 pin／snapshot 不可得 → "NA" 不假 0）、tokens per clear／QATY／EuTB
 （雙欄＋disclosure cohort，F17——排名委派 metrics 層 rank_efficiency；跨
 cohort 整榜 non-ranking，rows 只發布 common-observable 描述性欄位且逐列
@@ -78,6 +80,7 @@ import shutil
 import statistics
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 from dataclasses import dataclass
@@ -86,14 +89,13 @@ from pathlib import Path
 
 import yaml
 
-from patchmud.adapters.agy_cli import AgyCliAdapter
-from patchmud.adapters.anthropic import AnthropicAdapter
 from patchmud.adapters.base import AdapterError, ModelAdapter
-from patchmud.adapters.claude_cli import ClaudeCliAdapter
-from patchmud.adapters.codex_cli import CodexCliAdapter
 from patchmud.adapters.human import HumanAdapter
-from patchmud.adapters.openai_compat import OpenAICompatAdapter
-from patchmud.adapters.scripted import ScriptedAdapter
+from patchmud.adapters.profile import (
+    AdapterResolutionError,
+    build_execution_profile_record,
+    build_registered_adapter,
+)
 from patchmud.authoring import AuthoringError, build_encounter, load_source
 from patchmud.deck.loader import load_card
 from patchmud.deck.materialize import materialize_repo
@@ -132,7 +134,14 @@ from patchmud.evaluator.power import PowerReport
 from patchmud.ledger.cost import compute_run_cost
 from patchmud.ledger.pricing import PricingSnapshot
 from patchmud.ledger.tokens import LedgerEntry, LedgerError
-from patchmud.metrics.economy import EconomyError, RunSample, cost_per_clear
+from patchmud.report_provenance import build_run_report_metadata
+from patchmud.report_schema import (
+    REPORT_SCHEMA_VERSION,
+    ReportSchemaError,
+    validate_report_v2,
+)
+from patchmud.schema_capabilities import schema_capabilities
+from patchmud.metrics.economy import EconomyError, RunSample
 from patchmud.metrics.efficiency import (
     CohortMismatchError,
     EfficiencyError,
@@ -152,6 +161,7 @@ from patchmud.metrics.calibration import (
     freeze_calibration,
 )
 from patchmud.metrics.flood import FloodError, flood_metrics, load_flood_coeffs
+from patchmud.usage_provenance import USAGE_FIELDS, legacy_usage_evidence
 from patchmud.sandbox.isolate import DEFAULT_BWRAP_PATH, IsolationRunner
 from patchmud.sandbox.probes import (
     DEFAULT_PYTEST_ARGV,
@@ -405,8 +415,25 @@ def main(argv: list[str] | None = None) -> int:
             return _interactive_menu()
         print(
             f"patchmud {_package_version()} — 子命令：validate-deck / author-encounter / "
-            "score-diff / run / versus / play / watch / replay / report / pilot；其餘見 "
+            "score-diff / run / versus / play / watch / replay / report / pilot / schema；其餘見 "
             "docs/superpowers/plans/2026-07-16-patchmud-mvp.md"
+        )
+        return 0
+    if args[0] == "schema":
+        parser = argparse.ArgumentParser(
+            prog="patchmud schema",
+            description="輸出 PatchMUD 可讀取與輸出的 schema 能力。",
+        )
+        parser.add_argument("--json", action="store_true", required=True)
+        parser.parse_args(args[1:])
+        print(
+            json.dumps(
+                schema_capabilities(_package_version()),
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            )
         )
         return 0
     if args[0] == "validate-deck":
@@ -1055,6 +1082,16 @@ def _cmd_run(argv: list[str]) -> int:
     parser.add_argument(
         "--loadout", default="P0T0R0", help="forced loadout（預設 P0T0R0 = SOLO）"
     )
+    parser.add_argument(
+        "--effort",
+        default=None,
+        help="adapter 原生 effort；省略時採 descriptor 明示的 default",
+    )
+    parser.add_argument(
+        "--tool-mode",
+        default=None,
+        help="adapter 宣告支援的工具模式（目前僅支援 none）",
+    )
     parser.add_argument("--runs-root", type=Path, default=Path("runs"), help="run 目錄根")
     parser.add_argument("--run-id", default=None, help="run 識別字串（預設自動產生）")
     parser.add_argument(
@@ -1078,6 +1115,8 @@ def _cmd_run(argv: list[str]) -> int:
             ns.model,
             ns.loadout,
             ns.runs_root,
+            effort=ns.effort,
+            tool_mode=ns.tool_mode,
             run_id=ns.run_id,
             live=ns.live,
             delay=ns.delay,
@@ -1196,6 +1235,8 @@ def run_cli(
     bwrap_path: str = DEFAULT_BWRAP_PATH,
     live: bool = False,
     delay: float = 0.0,
+    effort: str | None = None,
+    tool_mode: str | None = None,
 ):
     """`patchmud run` 串線：真佈線（IsolationRunner／ProbeSuite／evaluator）
     交給 `run_encounter`（spec §5、§6；plan Task 13）。
@@ -1206,7 +1247,7 @@ def run_cli(
     encounter_dir = Path(encounter_dir).resolve()
     card = load_card(encounter_dir / "card.yaml")
     loadout = Loadout.from_string(loadout_spec)
-    adapter = _build_adapter(model_spec)
+    adapter = _build_adapter(model_spec, effort=effort, tool_mode=tool_mode)
 
     spectator = LiveSpectator(delay=delay).feed if live else None
 
@@ -1223,7 +1264,10 @@ def run_cli(
         # 封存展開後的完整 spec，不是使用者打的別名：別名表是會演進的間接層
         # （`opus` 曾指向 claude-opus-4-8，現指向 claude-opus-5），封存若只記
         # 別名，事後無從得知當時實際跑的是哪個模型，違反可重播的前提。
-        record_extra={"model": normalize_model_spec(model_spec)},
+        record_extra={
+            "model": normalize_model_spec(model_spec),
+            "execution_profile": build_execution_profile_record(adapter, loadout_spec),
+        },
         spectator=spectator,
     )
 
@@ -1305,8 +1349,14 @@ def _wire_and_run_encounter(
                 "harness_prompt_version": HARNESS_PROMPT_VERSION,
                 "schedule_ref": _OFFLINE_NA,
                 "encounter_dir": str(encounter_dir),
+                "measured_at": _report_timestamp(),
                 "loadout": loadout.name,
                 **record_extra,
+                **build_run_report_metadata(
+                    encounter_dir,
+                    role="human" if human else "builder",
+                    benchmark_type="human-play" if human else "issue-resolution",
+                ),
             },
             runs_root,
         )
@@ -1410,9 +1460,6 @@ def _cmd_play(argv: list[str]) -> int:
     return 0
 
 
-_SCRIPT_DELIMITER = "-----"
-
-
 #: 模型別名 → 完整 model spec（指令只打 sonnet / sol / flash 這類短名）。
 #:
 #: 三家 provider 的短別名共用同一個命名空間，彼此不得重複。codex 與 agy 走
@@ -1432,11 +1479,6 @@ _MODEL_ALIASES = {
     "flash": "agy:gemini-3.6-flash",
     "pro": "agy:gemini-3.1-pro",
 }
-
-#: CLI-based adapter 的 effort 一律固定 high（issue #14）：ranked run 之間的
-#: 推理預算必須可比，不隨使用者的 CLI 設定漂移。
-CLI_EFFORT = "high"
-
 
 def has_claude_cli() -> bool:
     """檢查系統是否有安裝並可執行的 `claude` CLI。"""
@@ -1485,85 +1527,29 @@ def has_anthropic_credentials() -> bool:
     return bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
 
 
-def _build_adapter(spec: str) -> ModelAdapter:
-    """model spec → adapter；HTTP adapter 的憑證一律取自 env（不進 CLI）。"""
-    spec = normalize_model_spec(spec)
-    kind, _, rest = spec.partition(":")
-    if kind == "scripted":
-        script = Path(rest)
-        if not rest or not script.is_file():
-            raise RunCliError(f"scripted 劇本檔不存在：{rest!r}")
-        replies = _split_script(script.read_text(encoding="utf-8"))
-        if not replies:
-            raise RunCliError(f"scripted 劇本檔沒有任何回覆：{script}")
-        return ScriptedAdapter(replies)
-    if kind == "claude":
-        model_id = rest if rest else "claude-sonnet-5"
-        if not has_claude_cli():
-            raise RunCliError("系統未安裝 `claude` CLI（找不到 `claude` 可執行檔）")
-        return ClaudeCliAdapter(model=model_id)
-    if kind == "codex":
-        if not rest:
-            raise RunCliError("codex spec 缺 model id：codex:<model>")
-        if not has_codex_cli():
-            raise RunCliError(
-                "系統未安裝 `codex` CLI（找不到 `codex` 可執行檔）。\n"
-                "  安裝後以 `codex login` 建立 OAuth 登入態即可，不需 OPENAI_API_KEY。"
-            )
-        return CodexCliAdapter(model=rest, effort=CLI_EFFORT)
-    if kind == "agy":
-        if not rest:
-            raise RunCliError("agy spec 缺 model id：agy:<model>")
-        if not has_agy_cli():
-            raise RunCliError(
-                "系統未安裝 `agy` CLI（找不到 `agy` 可執行檔）。\n"
-                "  安裝並登入後即可使用，不需 API key。"
-            )
-        return AgyCliAdapter(model=rest, effort=CLI_EFFORT)
-    if kind == "anthropic":
-        if not rest:
-            raise RunCliError("anthropic spec 缺 model id：anthropic:<model>")
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
-        if not has_anthropic_credentials():
-            if has_claude_cli():
-                return ClaudeCliAdapter(model=rest)
-            raise RunCliError(
-                "未設定 Anthropic 憑證：\n"
-                "  1. 設 ANTHROPIC_API_KEY，或用 OAuth——`ant auth login` 後 `set -a; eval \"$(ant auth print-credentials --env)\"; set +a`\n"
-                "  2. 改用其他家的 CLI 登入態（同樣不需 API key）：\n"
-                "     patchmud versus <關卡> --models sol,flash   # codex / agy 別名\n"
-                "  3. 若無任何雲端登入，可用免 Key 地端模型（如 Ollama）：\n"
-                "     patchmud versus <關卡> --models openai:llama3@http://localhost:11434/v1,openai:qwen2.5@http://localhost:11434/v1\n"
-                "  4. 或用離線劇本模式：\n"
-                "     patchmud versus <關卡> --models scripted:script1.txt,scripted:script2.txt"
-            )
-        return AnthropicAdapter(rest, api_key, auth_token=auth_token)
-    if kind == "openai":
-        if not rest:
-            raise RunCliError("openai spec 缺 model id：openai:<model>[@<base_url>]")
-        model, _, base_url = rest.partition("@")
-        kwargs: dict = {}
-        if base_url:
-            kwargs["base_url"] = base_url
-        return OpenAICompatAdapter(
-            model, os.environ.get("OPENAI_API_KEY", ""), **kwargs
+def _build_adapter(
+    spec: str,
+    *,
+    effort: str | None = None,
+    tool_mode: str | None = None,
+) -> ModelAdapter:
+    """依 adapter descriptor 驗證設定後建 adapter；憑證仍只從環境讀取。"""
+    # 完整 `anthropic:<model>` 缺憑證且有 claude CLI 時改走 CLI（維持 #37 前的行為）；
+    # 在解析 profile 前決定，讓 execution profile 記錄實際使用的 adapter。
+    normalized = _fallback_to_claude_cli(normalize_model_spec(spec))
+    try:
+        return build_registered_adapter(
+            normalized,
+            effort=effort,
+            tool_mode=tool_mode,
+            availability_checks={
+                "claude": has_claude_cli,
+                "codex": has_codex_cli,
+                "agy": has_agy_cli,
+            },
         )
-    raise RunCliError(f"未知 model spec：{spec!r}")
-
-
-def _split_script(text: str) -> list[str]:
-    """scripted 劇本：回覆以獨立一行 `-----` 分隔（回覆內容逐 byte 保留）。"""
-    replies: list[str] = []
-    current: list[str] = []
-    for line in text.splitlines():
-        if line.strip() == _SCRIPT_DELIMITER:
-            replies.append("\n".join(current))
-            current = []
-        else:
-            current.append(line)
-    replies.append("\n".join(current))
-    return [reply for reply in replies if reply.strip()]
+    except AdapterResolutionError as exc:
+        raise RunCliError(str(exc)) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -1799,8 +1785,6 @@ def _replay_apply(diff: str, worktree: Path) -> None:
 # report 子命令（Task 17，milestone C 收口；spec §10.3、§13、報告 §11.2）
 # ---------------------------------------------------------------------------
 
-REPORT_SCHEMA_VERSION = 1
-
 #: result.yaml end_reason 的合法值域（engine.loop 終局常數；report 透傳前驗證）。
 _END_REASONS = (END_COMMIT, END_MAX_TURNS, END_WALL_CLOCK, END_PROTOCOL)
 
@@ -1833,6 +1817,23 @@ class _ReportRun:
     model: str
     loadout: str
     encounter: str
+    role: str
+    benchmark_type: str
+    profile_id: str
+    deck_id: str
+    deck_digest: str
+    evaluator_revision: str
+    measured_dimensions: tuple[str, ...]
+    unmeasured_dimensions: dict
+    expected_encounters: tuple[str, ...]
+    measured_at: str
+    identity_complete: bool
+    artifact_digests: dict[str, str]
+    run_digest: str
+    failure_reason: str | None
+    failure_source: str | None
+    usage_provenance: dict
+    usage_semantics_signature: str
     clear: int
     end_reason: str
     protocol_failed: bool
@@ -1840,7 +1841,7 @@ class _ReportRun:
     cost: Decimal | None
     cost_reason: str | None
     work_tokens: int | None
-    observable_tokens: int
+    observable_tokens: int | None
     control: float
     ftr: float
     tau_uncalibrated: bool
@@ -1853,7 +1854,7 @@ def _cmd_report(argv: list[str]) -> int:
         prog="patchmud report",
         description=(
             "多榜研究 report（報告 §11.2）：只讀多場 run 的落盤封存，"
-            "輸出 YAML/CSV 到 --out 目錄。"
+            "輸出 schema v2 JSON/YAML/CSV 到 --out 目錄。"
         ),
     )
     parser.add_argument("--runs", required=True, help="run 目錄 glob，如 'runs/*'")
@@ -1878,6 +1879,7 @@ def _cmd_report(argv: list[str]) -> int:
         )
     except (
         ReportError,
+        ReportSchemaError,
         DeckError,
         StoreError,
         ReplayError,
@@ -1904,10 +1906,10 @@ def build_report(
     pricing_path: Path | None = None,
     registered_dir: Path = DEFAULT_REGISTERED_DIR,
 ) -> dict:
-    """多場 run 封存 → 多榜 report（YAML + 每榜一份 CSV）。
+    """多場 run 封存 → report v2（JSON/YAML/CSV 從同一資料重建）。
 
     只讀 run 目錄封存與 deck card、絕不寫回 run 目錄（invariant 4）；
-    聚合鍵為 (model, loadout)。回傳 report dict（同步落盤 report.yaml）。
+    聚合依 role/benchmark/profile/deck/evaluator cohort 隔離。
     """
     snapshot = None
     if pricing_path is not None:
@@ -1920,6 +1922,20 @@ def build_report(
         raise ReportError(f"--runs glob 無任何匹配：{runs_glob!r}")
     for match in matches:
         run_dir = Path(match)
+        if run_dir.is_file() and tarfile.is_tarfile(run_dir):
+            try:
+                with tempfile.TemporaryDirectory(prefix="patchmud-report-archive-") as tmp:
+                    extracted_run, archived_card = _extract_run_archive(
+                        run_dir, Path(tmp)
+                    )
+                    runs.append(
+                        _load_report_run(
+                            extracted_run, snapshot, card_path=archived_card
+                        )
+                    )
+            except _SkipRun as exc:
+                skipped.append({"run_id": run_dir.stem, "reason": str(exc)})
+            continue
         if not (run_dir / "run.yaml").is_file():
             # runs root 可能混有封存 tar 等非 run 目錄項目
             skipped.append({"run_id": run_dir.name, "reason": "非 run 目錄（缺 run.yaml）"})
@@ -1933,11 +1949,18 @@ def build_report(
 
     report = {
         "schema_version": REPORT_SCHEMA_VERSION,
+        "producer": {
+            "name": "paulsha-patchmud",
+            "version": _producer_version(),
+        },
+        "generated_at": _report_timestamp(),
         "runs_included": len(runs),
-        "runs_skipped": skipped,
-        "runs": [_run_row(run) for run in runs],
+        "runs_skipped": sorted(skipped, key=lambda item: item["run_id"]),
+        "runs": [_run_row(run) for run in sorted(runs, key=lambda item: item.run_id)],
         "leaderboards": _build_leaderboards(runs, registered_dir),
     }
+    report["report_fingerprint"] = _report_fingerprint(report)
+    validate_report_v2(report)
 
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1961,13 +1984,88 @@ def build_report(
         rows = board.get("rows")
         if rows:
             _write_csv(out_dir / f"{name}.csv", rows)
+    _write_runs_csv(out_dir / "runs.csv", report["runs"])
+    _write_usage_csv(out_dir / "usage.csv", report["runs"])
     return report
 
 
 # ---- run 封存載入（fail-closed） -------------------------------------------
 
 
-def _load_report_run(run_dir: Path, snapshot: PricingSnapshot | None) -> _ReportRun:
+def _extract_run_archive(archive_path: Path, destination: Path) -> tuple[Path, Path]:
+    """安全讀取 RunStore tar；只解開 run 檔與 evaluator bundle 的 card.yaml。"""
+    try:
+        with tarfile.open(archive_path, mode="r:*") as archive:
+            members = archive.getmembers()
+            safe_members = []
+            roots: set[str] = set()
+            for member in members:
+                raw_parts = member.name.split("/")
+                while raw_parts and raw_parts[-1] == "":
+                    raw_parts.pop()
+                if (
+                    not raw_parts
+                    or any(part in ("", ".", "..") for part in raw_parts)
+                    or "\\" in member.name
+                    or member.name.startswith("/")
+                ):
+                    raise ReportError(f"封存含非法 tar 路徑：{member.name!r}")
+                roots.add(raw_parts[0])
+                if not member.isdir() and not member.isreg():
+                    raise ReportError(f"封存含非一般檔案：{member.name!r}")
+                safe_members.append((member, raw_parts))
+
+            run_yaml_roots = {
+                parts[0]
+                for member, parts in safe_members
+                if member.isreg() and len(parts) == 2 and parts[1] == "run.yaml"
+            }
+            if len(roots) != 1 or len(run_yaml_roots) != 1 or roots != run_yaml_roots:
+                raise ReportError("封存必須含單一 run 根目錄與根層 run.yaml")
+            run_root = next(iter(roots))
+            run_dir = destination / run_root
+            run_dir.mkdir(parents=True)
+            archived_card = destination / "archived-card.yaml"
+            has_archived_card = False
+            written: set[Path] = set()
+            for member, parts in safe_members:
+                if member.isdir():
+                    continue
+                if parts[:2] == [run_root, "evaluator_bundle"]:
+                    if parts[2:] == ["card.yaml"]:
+                        file_obj = archive.extractfile(member)
+                        if file_obj is None or has_archived_card:
+                            raise ReportError("封存 evaluator bundle/card.yaml 重複或無法讀取")
+                        archived_card.write_bytes(file_obj.read())
+                        has_archived_card = True
+                    continue
+                if parts[0] != run_root:
+                    raise ReportError(f"封存含 run 根目錄外檔案：{member.name!r}")
+                relative_parts = parts[1:]
+                if not relative_parts:
+                    raise ReportError(f"封存含非法 run 檔案路徑：{member.name!r}")
+                target = run_dir.joinpath(*relative_parts)
+                if target in written:
+                    raise ReportError(f"封存含重複檔案路徑：{member.name!r}")
+                written.add(target)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                file_obj = archive.extractfile(member)
+                if file_obj is None:
+                    raise ReportError(f"封存檔案無法讀取：{member.name!r}")
+                target.write_bytes(file_obj.read())
+    except (OSError, tarfile.TarError) as exc:
+        raise ReportError(f"無法讀取 run tar 封存：{exc}") from exc
+    if not has_archived_card:
+        raise ReportError("run tar 封存缺 evaluator_bundle/card.yaml")
+    return run_dir, archived_card
+
+
+def _load_report_run(
+    run_dir: Path,
+    snapshot: PricingSnapshot | None,
+    *,
+    card_path: Path | None = None,
+) -> _ReportRun:
     store = RunStore.open(run_dir)  # fail-closed：run.yaml schema、event seq
     record = yaml.safe_load((run_dir / "run.yaml").read_text(encoding="utf-8"))
 
@@ -2011,24 +2109,85 @@ def _load_report_run(run_dir: Path, snapshot: PricingSnapshot | None) -> _Report
     entries = load_ledger(run_dir)
     if not entries:
         raise ReportError(f"ledger.jsonl 無任何 entry（{run_dir.name}）")
-    cost, cost_reason = _run_cost(record, entries, snapshot)
+    usage_calls = store.load_usage_evidence()
+    if not usage_calls:
+        usage_calls = []
+        for index, entry in enumerate(entries, start=1):
+            legacy = legacy_usage_evidence(turn=entry.turn, role=entry.role)
+            legacy["seq"] = index
+            usage_calls.append(legacy)
+    elif len(usage_calls) != len(entries):
+        raise ReportError(
+            f"usage_evidence.jsonl 與 ledger.jsonl 筆數不符（{run_dir.name}）："
+            f"{len(usage_calls)} != {len(entries)}"
+        )
+    usage_provenance = _aggregate_usage_evidence(usage_calls)
+    cost, cost_reason = _run_cost(record, entries, snapshot, usage_provenance)
 
-    card = load_card(Path(str(record["encounter_dir"])) / "card.yaml")
+    card = load_card(card_path or Path(str(record["encounter_dir"])) / "card.yaml")
     flood = flood_metrics(store.load_events(), card, load_flood_coeffs())
+
+    profile_record = record.get("execution_profile")
+    profile_id = record.get("profile_id")
+    if not isinstance(profile_id, str) and isinstance(profile_record, dict):
+        profile_id = profile_record.get("profile_id")
+    if not isinstance(profile_id, str) or not profile_id:
+        profile_id = "legacy/unknown"
+    role = _metadata_text(record.get("role"), "legacy/unknown")
+    benchmark_type = _metadata_text(
+        record.get("benchmark_type"), "legacy/unknown"
+    )
+    deck_id = _metadata_text(record.get("deck_id"), "legacy/unknown")
+    deck_digest = _metadata_text(record.get("deck_digest"), "legacy/unknown")
+    evaluator_revision = _metadata_text(
+        record.get("evaluator_revision"), "legacy/unknown"
+    )
+    measured_dimensions = _metadata_strings(record.get("measured_dimensions"))
+    unmeasured_dimensions = _metadata_mapping(record.get("unmeasured_dimensions"))
+    expected_encounters = _metadata_strings(record.get("deck_encounters"))
+    identity_complete = _cohort_identity_complete(
+        role, benchmark_type, profile_id, deck_digest, evaluator_revision
+    )
+    work_tokens = _usage_total(
+        usage_provenance["fields"],
+        ("input_uncached", "input_cached", "output_visible", "reasoning"),
+    )
+    observable_tokens = _usage_total(
+        usage_provenance["fields"], ("billed_input_total", "output_visible")
+    )
+    failure_reason, failure_source = _failure_provenance(result)
+    artifact_digests, run_digest = _artifact_digests(run_dir)
 
     return _ReportRun(
         run_id=str(record["run_id"]),
         model=str(record.get("model", _OFFLINE_NA)),
         loadout=str(result.get("loadout", record.get("loadout", _OFFLINE_NA))),
         encounter=Path(str(record["encounter_dir"])).name,
+        role=role,
+        benchmark_type=benchmark_type,
+        profile_id=profile_id,
+        deck_id=deck_id,
+        deck_digest=deck_digest,
+        evaluator_revision=evaluator_revision,
+        measured_dimensions=measured_dimensions,
+        unmeasured_dimensions=unmeasured_dimensions,
+        expected_encounters=expected_encounters,
+        measured_at=_metadata_text(record.get("measured_at"), "legacy/unknown"),
+        identity_complete=identity_complete,
+        artifact_digests=artifact_digests,
+        run_digest=run_digest,
+        failure_reason=failure_reason,
+        failure_source=failure_source,
+        usage_provenance=usage_provenance,
+        usage_semantics_signature=_usage_semantics_signature(usage_calls),
         clear=int(clear),
         end_reason=str(end_reason),
         protocol_failed=protocol_failed,
         power_total=float(power["total"]),
         cost=cost,
         cost_reason=cost_reason,
-        work_tokens=_work_tokens_of(result, run_dir),
-        observable_tokens=_observable_tokens(entries, run_dir),
+        work_tokens=work_tokens,
+        observable_tokens=observable_tokens,
         control=flood.control,
         ftr=flood.ftr,
         tau_uncalibrated=flood.tau_uncalibrated,
@@ -2038,7 +2197,10 @@ def _load_report_run(run_dir: Path, snapshot: PricingSnapshot | None) -> _Report
 
 
 def _run_cost(
-    record: dict, entries: list[LedgerEntry], snapshot: PricingSnapshot | None
+    record: dict,
+    entries: list[LedgerEntry],
+    snapshot: PricingSnapshot | None,
+    usage_provenance: dict,
 ) -> tuple[Decimal | None, str | None]:
     """C_run 只以 run.yaml pin 的 snapshot 計價（§10.2）；不可得 → NA＋理由。"""
     pricing_hash = record.get("pricing_hash")
@@ -2051,161 +2213,531 @@ def _run_cost(
             "--pricing snapshot content hash 與 run.yaml pin 不符"
             f"（{snapshot.content_hash[:12]}… != {str(pricing_hash)[:12]}…）"
         )
+    fields = usage_provenance["fields"]
+    for name in ("billed_input_total", "billed_output_total"):
+        field = fields[name]
+        if field["state"] != "observed":
+            return None, (
+                f"{name} usage provenance 為 {field['state']}，成本榜不可排名"
+            )
     return compute_run_cost(entries, snapshot).total, None
 
 
-def _work_tokens_of(result: dict, run_dir: Path) -> int | None:
-    ledger = result.get("ledger")
-    if not isinstance(ledger, dict) or "work_tokens" not in ledger:
-        raise ReportError(f"result.yaml 缺 ledger.work_tokens（{run_dir.name}）")
-    work = ledger["work_tokens"]
-    if work == _OFFLINE_NA:
-        return None
-    if isinstance(work, bool) or not isinstance(work, int):
-        raise ReportError(
-            f"result.yaml ledger.work_tokens 非整數或 NA（{run_dir.name}）：{work!r}"
+def _usage_total(fields: dict, names: tuple[str, ...]) -> int | None:
+    values: list[int] = []
+    for name in names:
+        field = fields[name]
+        if "value" not in field:
+            return None
+        values.append(field["value"])
+    return sum(values)
+
+
+def _aggregate_usage_evidence(calls: list[dict]) -> dict:
+    fields: dict[str, dict] = {}
+    all_sources = {
+        json.dumps(field["source"], sort_keys=True, separators=(",", ":"))
+        for call in calls
+        for field in call["fields"].values()
+    }
+    sources = [json.loads(value) for value in sorted(all_sources)]
+    source = (
+        sources[0]
+        if len(sources) == 1
+        else {
+            "source_id": "mixed",
+            "source_schema": "mixed",
+            "adapter_version": "mixed",
+        }
+    )
+    gaps: list[dict[str, str]] = []
+    quantity_kinds = {call["quantity_kind"] for call in calls}
+    if quantity_kinds != {"usage_delta"}:
+        reason = (
+            "cumulative-usage-not-deduplicated"
+            if quantity_kinds == {"usage_total"}
+            else "usage-semantics-incompatible"
         )
-    return work
-
-
-def _observable_tokens(entries: list[LedgerEntry], run_dir: Path) -> int:
-    """common-observable = input + output_visible（§10.1；永遠可得）。"""
-    total = 0
-    for entry in entries:
-        if entry.output_visible is None:
-            raise ReportError(
-                f"ledger entry 缺 output_visible，observable 欄無法計算"
-                f"（{run_dir.name} turn={entry.turn}）"
+        for name in USAGE_FIELDS:
+            call_fields = [call["fields"][name] for call in calls]
+            unique_sources = {
+                json.dumps(field["source"], sort_keys=True, separators=(",", ":"))
+                for field in call_fields
+            }
+            fields[name] = {
+                "state": "unknown",
+                "reason": reason,
+                "unit_ref": call_fields[0]["unit_ref"],
+                "method": "legacy"
+                if all(field["method"] == "legacy" for field in call_fields)
+                else "executor_usage",
+                "sources": [json.loads(value) for value in sorted(unique_sources)],
+                "calculation": {"operations": ["unavailable"]},
+                "semantics": call_fields[0]["semantics"],
+            }
+            gaps.append({"scope": name, "reason": reason})
+        return {
+            "schema_version": 1,
+            "quantity_kind": "mixed" if len(quantity_kinds) > 1 else next(iter(quantity_kinds)),
+            "source": source,
+            "coverage": {"state": "unknown", "gaps": gaps},
+            "fields": fields,
+            "calls": calls,
+        }
+    for name in USAGE_FIELDS:
+        call_fields = [call["fields"][name] for call in calls]
+        semantics = [field["semantics"] for field in call_fields]
+        compatible = all(item == semantics[0] for item in semantics)
+        states = [field["state"] for field in call_fields]
+        values = [field.get("value") for field in call_fields]
+        if not compatible:
+            state = "unknown"
+            reason = "usage-semantics-incompatible"
+        elif "unknown" in states:
+            state = "unknown"
+            reasons = sorted(
+                {str(field.get("reason", "usage-unknown")) for field in call_fields if field["state"] == "unknown"}
             )
-        total += entry.billed_input_total + entry.output_visible
-    return total
+            reason = reasons[0] if len(reasons) == 1 else "partial-usage-coverage"
+        elif "estimated" in states:
+            state = "estimated"
+            reason = "usage-includes-estimate"
+        else:
+            state = "observed"
+            reason = ""
+
+        unique_sources = {
+            json.dumps(field["source"], sort_keys=True, separators=(",", ":"))
+            for field in call_fields
+        }
+        aggregate: dict[str, object] = {
+            "state": state,
+            "unit_ref": call_fields[0]["unit_ref"],
+            "method": (
+                "legacy"
+                if state == "unknown" and all(field["method"] == "legacy" for field in call_fields)
+                else "estimate"
+                if state == "estimated"
+                else "executor_usage"
+            ),
+            "sources": [json.loads(value) for value in sorted(unique_sources)],
+            "calculation": {
+                "operations": sorted(
+                    {field["calculation"]["operation"] for field in call_fields}
+                )
+            },
+            "semantics": semantics[0] if compatible else {"relation": "incompatible"},
+        }
+        if state == "unknown":
+            aggregate["reason"] = reason
+            gaps.append({"scope": name, "reason": reason})
+        else:
+            aggregate["value"] = sum(int(value) for value in values)
+            if state == "estimated":
+                aggregate["reason"] = reason
+        fields[name] = aggregate
+
+    known_count = sum(field["state"] != "unknown" for field in fields.values())
+    coverage_state = (
+        "unknown"
+        if known_count == 0
+        else "complete"
+        if known_count == len(fields)
+        else "partial"
+    )
+    return {
+        "schema_version": 1,
+        "quantity_kind": "usage_delta",
+        "source": source,
+        "coverage": {"state": coverage_state, "gaps": gaps},
+        "fields": fields,
+        "calls": calls,
+    }
+
+
+def _usage_semantics_signature(calls: list[dict]) -> str:
+    shapes = {
+        json.dumps(
+            {
+                "quantity_kind": call["quantity_kind"],
+                "fields": {
+                    name: call["fields"][name]["semantics"] for name in USAGE_FIELDS
+                },
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        for call in calls
+    }
+    canonical = json.dumps(sorted(shapes), separators=(",", ":")).encode("utf-8")
+    prefix = "incompatible:" if len(shapes) > 1 else "sha256:"
+    return prefix + hashlib.sha256(canonical).hexdigest()
+
+
+def _metadata_text(value: object, fallback: str) -> str:
+    return value if isinstance(value, str) and value else fallback
+
+
+def _metadata_strings(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        return ()
+    return tuple(sorted(set(value)))
+
+
+def _metadata_mapping(value: object) -> dict:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _cohort_identity_complete(
+    role: str,
+    benchmark_type: str,
+    profile_id: str,
+    deck_digest: str,
+    evaluator_revision: str,
+) -> bool:
+    return (
+        role != "legacy/unknown"
+        and benchmark_type != "legacy/unknown"
+        and profile_id.startswith("epk:v1:")
+        and _is_sha256_ref(deck_digest)
+        and _is_sha256_ref(evaluator_revision)
+    )
+
+
+def _is_sha256_ref(value: str) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 71
+        and value.startswith("sha256:")
+        and all(char in "0123456789abcdef" for char in value[7:])
+    )
+
+
+def _failure_provenance(result: dict) -> tuple[str | None, str | None]:
+    if result.get("clear") == 1:
+        return None, None
+    if result.get("protocol_failed") is True:
+        return str(result.get("end_reason", "failed:protocol")), "protocol"
+    gates = result.get("gates")
+    if isinstance(gates, dict) and gates.get("run_invalid") is True:
+        return "run-invalid", "evaluator"
+    return "clear-gate-not-met", "evaluator"
+
+
+def _artifact_digests(run_dir: Path) -> tuple[dict[str, str], str]:
+    artifacts: dict[str, str] = {}
+    for path in sorted(Path(run_dir).rglob("*")):
+        if path.is_symlink():
+            raise ReportError(f"run artifact 不可為 symlink：{path.name}")
+        if path.is_file():
+            relative = path.relative_to(run_dir).as_posix()
+            artifacts[relative] = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+    canonical = json.dumps(
+        artifacts, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    run_digest = "sha256:" + hashlib.sha256(canonical).hexdigest()
+    return artifacts, run_digest
+
+
+def _producer_version() -> str:
+    version_file = Path(__file__).resolve().parents[1] / "VERSION"
+    if version_file.is_file():
+        version = version_file.read_text(encoding="utf-8").strip()
+        if version:
+            return version
+    try:
+        return metadata.version("paulsha-patchmud")
+    except metadata.PackageNotFoundError:
+        return "unknown"
+
+
+def _report_timestamp() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _report_fingerprint(report: dict) -> str:
+    stable = {key: value for key, value in report.items() if key not in ("generated_at", "report_fingerprint")}
+    canonical = json.dumps(
+        stable,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(canonical).hexdigest()
 
 
 # ---- 榜組裝（純資料轉換） ---------------------------------------------------
 
 
 def _build_leaderboards(runs: list[_ReportRun], registered_dir: Path) -> dict:
-    groups: dict[tuple[str, str], list[_ReportRun]] = {}
+    groups: dict[_CohortKey, list[_ReportRun]] = {}
     for run in runs:
-        groups.setdefault((run.model, run.loadout), []).append(run)
-    samples = {key: [_sample_of(run) for run in members] for key, members in groups.items()}
-
-    boards = {
+        groups.setdefault(_cohort_key(run), []).append(run)
+    return {
         "clear_rate": _clear_rate_board(groups),
-        "cost_per_clear": _cost_board(groups, samples),
-        "tokens_per_clear": _efficiency_board(samples, tokens_per_clear),
-        "qaty": _efficiency_board(samples, qaty),
-        "eutb": _eutb_board(samples, registered_dir),
+        "cost_per_clear": _cost_board(groups),
+        "tokens_per_clear": _efficiency_board(groups, tokens_per_clear),
+        "qaty": _efficiency_board(groups, qaty),
+        "eutb": _eutb_board(groups, registered_dir),
         "power": _mean_board(groups, lambda run: run.power_total, reverse=True),
         "control": _control_board(groups),
         "ftr": _ftr_board(groups),
     }
-    return boards
 
 
 def _sample_of(run: _ReportRun) -> RunSample:
+    if run.observable_tokens is None or run.observable_tokens <= 0:
+        raise ReportError(
+            f"usage evidence 不足以建立效率樣本（{run.run_id}），不能以 0 代替未知"
+        )
     return RunSample(
         clear=run.clear,
         power=run.power_total,
         cost=run.cost,
-        work_tokens=run.work_tokens,
+        work_tokens=(
+            run.work_tokens
+            if all(
+                run.usage_provenance["fields"][name]["state"] == "observed"
+                for name in ("input_uncached", "input_cached", "output_visible", "reasoning")
+            )
+            else None
+        ),
         observable_tokens=run.observable_tokens,
     )
 
 
-def _group_fields(key: tuple[str, str]) -> dict:
-    return {"model": key[0], "loadout": key[1]}
+@dataclass(frozen=True)
+class _CohortKey:
+    role: str
+    benchmark_type: str
+    profile_id: str
+    deck_digest: str
+    evaluator_revision: str
+    identity_complete: bool
+    discriminator: str
+
+    @property
+    def cohort_id(self) -> str:
+        identity = {
+            "role": self.role,
+            "benchmark_type": self.benchmark_type,
+            "profile_id": self.profile_id,
+            "deck_digest": self.deck_digest,
+            "evaluator_revision": self.evaluator_revision,
+        }
+        if self.discriminator:
+            identity["run_id"] = self.discriminator
+        canonical = json.dumps(
+            identity, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        return "cohort:" + hashlib.sha256(canonical).hexdigest()
+
+    @property
+    def sort_key(self) -> tuple[str, ...]:
+        return (
+            self.role,
+            self.benchmark_type,
+            self.profile_id,
+            self.deck_digest,
+            self.evaluator_revision,
+            self.discriminator,
+        )
 
 
-def _clear_rate_board(groups: dict[tuple[str, str], list[_ReportRun]]) -> dict:
+def _cohort_key(run: _ReportRun) -> _CohortKey:
+    return _CohortKey(
+        run.role,
+        run.benchmark_type,
+        run.profile_id,
+        run.deck_digest,
+        run.evaluator_revision,
+        run.identity_complete,
+        "" if run.identity_complete else run.run_id,
+    )
+
+
+def _group_fields(key: _CohortKey, members: list[_ReportRun]) -> dict:
+    models = sorted({run.model for run in members})
+    loadouts = sorted({run.loadout for run in members})
+    return {
+        "cohort_id": key.cohort_id,
+        "cohort_identity_complete": key.identity_complete,
+        "role": key.role,
+        "benchmark_type": key.benchmark_type,
+        "profile_id": key.profile_id,
+        "deck_id": members[0].deck_id,
+        "deck_digest": key.deck_digest,
+        "evaluator_revision": key.evaluator_revision,
+        "model": models[0] if len(models) == 1 else "mixed",
+        "loadout": loadouts[0] if len(loadouts) == 1 else "mixed",
+        **_coverage_fields(members),
+    }
+
+
+def _coverage_fields(members: list[_ReportRun]) -> dict:
+    expected = sorted({item for run in members for item in run.expected_encounters})
+    observed = sorted({run.encounter for run in members})
+    complete = bool(expected) and set(expected).issubset(observed) if expected else None
+    return {
+        "coverage_expected_encounters": expected,
+        "coverage_observed_encounters": observed,
+        "coverage_complete": complete,
+    }
+
+
+def _clear_rate_board(groups: dict[_CohortKey, list[_ReportRun]]) -> dict:
     rows = []
     for key, members in groups.items():
         clears = sum(run.clear for run in members)
         rows.append(
             {
-                **_group_fields(key),
+                **_group_fields(key, members),
                 "runs": len(members),
                 "clears": clears,
                 "value": clears / len(members),
+                "ranked": key.identity_complete,
+                "reason": "" if key.identity_complete else "cohort_identity_incomplete",
             }
         )
-    rows.sort(key=lambda row: (-row["value"], row["model"], row["loadout"]))
+    rows.sort(key=lambda row: (not row["ranked"], -row["value"], row["cohort_id"]))
     return {"status": "ok", "rows": rows}
 
 
 def _cost_board(
-    groups: dict[tuple[str, str], list[_ReportRun]],
-    samples: dict[tuple[str, str], list[RunSample]],
+    groups: dict[_CohortKey, list[_ReportRun]],
 ) -> dict:
     """CostPerClear 榜：cost 缺漏（未 pin／snapshot 不可得）→ NA，不假 0。"""
     ranked_rows: list[tuple[Decimal, dict]] = []
-    na_rows: list[dict] = []
+    unavailable_rows: list[dict] = []
     for key, members in groups.items():
         missing = [run for run in members if run.cost is None]
-        if missing:
-            na_rows.append(
+        if missing or not key.identity_complete:
+            reason = (
+                missing[0].cost_reason if missing else "cohort identity incomplete"
+            ) or "run 缺 C_run"
+            unavailable_rows.append(
                 {
-                    **_group_fields(key),
+                    **_group_fields(key, members),
                     "value": _OFFLINE_NA,
                     "ranked": False,
-                    "reason": missing[0].cost_reason or "run 缺 C_run",
+                    "reason": reason,
                 }
             )
             continue
-        value = cost_per_clear(samples[key])
+        costs = [run.cost for run in members]
+        if any(value is None or value == 0 for value in costs):
+            raise EconomyError("cost_per_clear：C_run = 0 或缺漏，拒絕排名")
+        total = sum((value for value in costs if value is not None), Decimal(0))
+        clears = sum(run.clear for run in members)
+        value = Decimal("Infinity") if clears == 0 else total / Decimal(clears)
         ranked_rows.append(
             (
                 value,
                 {
-                    **_group_fields(key),
+                    **_group_fields(key, members),
                     "value": "inf" if not value.is_finite() else str(value),
                     "ranked": True,
                     "reason": "",
                 },
             )
         )
-    ranked_rows.sort(key=lambda item: (item[0], item[1]["model"], item[1]["loadout"]))
-    na_rows.sort(key=lambda row: (row["model"], row["loadout"]))
-    return {"status": "ok", "rows": [row for _, row in ranked_rows] + na_rows}
+    ranked_rows.sort(key=lambda item: (item[0], item[1]["cohort_id"]))
+    unavailable_rows.sort(key=lambda row: row["cohort_id"])
+    return {
+        "status": "ok" if ranked_rows or unavailable_rows else "unavailable",
+        "rows": [row for _, row in ranked_rows] + unavailable_rows,
+    }
 
 
 def _efficiency_board(
-    samples: dict[tuple[str, str], list[RunSample]], metric_fn
+    groups: dict[_CohortKey, list[_ReportRun]], metric_fn
 ) -> dict:
-    results = {key: metric_fn(samples[key]) for key in samples}
-    return _efficiency_rows(results)
+    return _build_efficiency_board(groups, metric_fn)
 
 
 def _eutb_board(
-    samples: dict[tuple[str, str], list[RunSample]], registered_dir: Path
+    groups: dict[_CohortKey, list[_ReportRun]], registered_dir: Path
 ) -> dict:
     """EuTB 榜：registered 預算檔缺失 → skipped 而非假值（§19.9 fail-closed）。"""
     try:
         budget = load_eutb_budget(Path(registered_dir) / _EUTB_BUDGET_FILE)
     except NotRegisteredError as exc:
         return {"status": "skipped", "reason": str(exc)}
-    results = {key: eutb(samples[key], budget) for key in samples}
-    return _efficiency_rows(results)
+    return _build_efficiency_board(groups, lambda samples: eutb(samples, budget))
 
 
-def _efficiency_rows(results: dict[tuple[str, str], EfficiencyResult]) -> dict:
-    """EfficiencyResult → 榜列（雙欄＋cohort，F17／§13）。
+def _build_efficiency_board(
+    groups: dict[_CohortKey, list[_ReportRun]], metric_fn
+) -> dict:
+    reason = _usage_ranking_reason(groups)
+    if reason:
+        rows = []
+        for key, members in sorted(groups.items(), key=lambda item: item[0].sort_key):
+            observable = _usage_total(
+                members[0].usage_provenance["fields"],
+                ("billed_input_total", "output_visible"),
+            )
+            rows.append(
+                {
+                    **_group_fields(key, members),
+                    "observable": _OFFLINE_NA if observable is None else observable,
+                    "non_ranking": True,
+                    "note": reason,
+                }
+            )
+        return {
+            "status": "unavailable",
+            "non_ranking": True,
+            "reason": reason,
+            "rows": rows,
+        }
 
-    排名一律委派 metrics 層 ``rank_efficiency``（方向由指標 pin，caller
-    不得自選；跨 cohort 排名在該層被拒）。跨 cohort 時整榜退為
-    ``non_ranking``：rows **只發布**以 input + output_visible 一致計算的
-    common-observable 描述性欄位——cohort 依賴的 ``value`` 欄（full
-    群組為 T^work 基礎值）一概不出——列序退為群組名稱字典序。兩分支
-    的 rows 皆逐列帶 ``non_ranking`` 標註（non-ranking 另帶 ``note``），
-    CSV 由 rows 直出，檔案層即可與排名榜區分（§13）。
-    """
+    key_by_id = {key.cohort_id: key for key in groups}
+    samples = {
+        key.cohort_id: [_sample_of(run) for run in members]
+        for key, members in groups.items()
+    }
+    results = {
+        cohort_id: metric_fn(sample_runs)
+        for cohort_id, sample_runs in samples.items()
+    }
+    return _efficiency_rows(results, key_by_id, groups)
+
+
+def _usage_ranking_reason(groups: dict[_CohortKey, list[_ReportRun]]) -> str | None:
+    runs = [run for members in groups.values() for run in members]
+    if any(not run.identity_complete for run in runs):
+        return "cohort_identity_incomplete"
+    if len({run.usage_semantics_signature for run in runs}) > 1:
+        return "usage_semantics_incompatible"
+    # Full T^work ranks require every exclusive component observed. The shared
+    # common-observable metric remains usable when its own two fields are exact.
+    required = ("billed_input_total", "output_visible")
+    states = [
+        run.usage_provenance["fields"][name]["state"]
+        for run in runs
+        for name in required
+    ]
+    if "unknown" in states:
+        return "usage_unknown"
+    if "estimated" in states:
+        return "usage_estimated"
+    return None
+
+
+def _efficiency_rows(
+    results: dict[str, EfficiencyResult],
+    key_by_id: dict[str, _CohortKey],
+    groups: dict[_CohortKey, list[_ReportRun]],
+) -> dict:
     try:
         ordered = rank_efficiency(results)
     except CohortMismatchError as exc:
         note = str(exc)
         rows = [
             {
-                **_group_fields(key),
+                **_group_fields(key_by_id[key], groups[key_by_id[key]]),
                 "observable": _num(results[key].observable),
                 "disclosure_cohort": results[key].disclosure_cohort,
                 "non_ranking": True,
@@ -2216,7 +2748,7 @@ def _efficiency_rows(results: dict[tuple[str, str], EfficiencyResult]) -> dict:
         return {"status": "ok", "non_ranking": True, "note": note, "rows": rows}
     rows = [
         {
-            **_group_fields(key),
+            **_group_fields(key_by_id[key], groups[key_by_id[key]]),
             "value": _num(results[key].value),
             "observable": _num(results[key].observable),
             "disclosure_cohort": results[key].disclosure_cohort,
@@ -2228,36 +2760,44 @@ def _efficiency_rows(results: dict[tuple[str, str], EfficiencyResult]) -> dict:
 
 
 def _mean_board(
-    groups: dict[tuple[str, str], list[_ReportRun]], value_of, *, reverse: bool
+    groups: dict[_CohortKey, list[_ReportRun]], value_of, *, reverse: bool
 ) -> dict:
     rows = []
     for key, members in groups.items():
         rows.append(
             {
-                **_group_fields(key),
+                **_group_fields(key, members),
                 "runs": len(members),
                 "value": statistics.fmean(value_of(run) for run in members),
+                "ranked": key.identity_complete,
+                "reason": "" if key.identity_complete else "cohort_identity_incomplete",
             }
         )
     rows.sort(
-        key=lambda row: (-row["value"] if reverse else row["value"], row["model"], row["loadout"])
+        key=lambda row: (
+            not row["ranked"],
+            -row["value"] if reverse else row["value"],
+            row["cohort_id"],
+        )
     )
     return {"status": "ok", "rows": rows}
 
 
-def _control_board(groups: dict[tuple[str, str], list[_ReportRun]]) -> dict:
+def _control_board(groups: dict[_CohortKey, list[_ReportRun]]) -> dict:
     board = _mean_board(groups, lambda run: run.control, reverse=True)
+    by_id = {key.cohort_id: members for key, members in groups.items()}
     for row in board["rows"]:
-        members = groups[(row["model"], row["loadout"])]
+        members = by_id[row["cohort_id"]]
         # τ 未經 §10.4 estimator 校準的 Control 必須明示，不得偽裝正式值
         row["tau_uncalibrated"] = any(run.tau_uncalibrated for run in members)
     return board
 
 
-def _ftr_board(groups: dict[tuple[str, str], list[_ReportRun]]) -> dict:
+def _ftr_board(groups: dict[_CohortKey, list[_ReportRun]]) -> dict:
     board = _mean_board(groups, lambda run: run.ftr, reverse=False)
+    by_id = {key.cohort_id: members for key, members in groups.items()}
     for row in board["rows"]:
-        members = groups[(row["model"], row["loadout"])]
+        members = by_id[row["cohort_id"]]
         row["flood_create_tokens"] = sum(run.flood_create_tokens for run in members)
         row["flood_repair_tokens"] = sum(run.flood_repair_tokens for run in members)
     return board
@@ -2281,13 +2821,39 @@ def _run_row(run: _ReportRun) -> dict:
         "model": run.model,
         "loadout": run.loadout,
         "encounter": run.encounter,
+        "role": run.role,
+        "benchmark_type": run.benchmark_type,
+        "profile_id": run.profile_id,
+        "deck_id": run.deck_id,
+        "deck_digest": run.deck_digest,
+        "evaluator_revision": run.evaluator_revision,
+        "measured_dimensions": list(run.measured_dimensions),
+        "unmeasured_dimensions": run.unmeasured_dimensions,
+        "deck_coverage": {
+            "expected_encounters": list(run.expected_encounters),
+            "observed_encounters": [run.encounter],
+            "complete": (
+                bool(run.expected_encounters)
+                and set(run.expected_encounters) == {run.encounter}
+            )
+            if run.expected_encounters
+            else None,
+        },
+        "measured_at": run.measured_at,
         "clear": run.clear,
         "end_reason": run.end_reason,
         "protocol_failed": run.protocol_failed,
+        "failure_reason": run.failure_reason,
+        "failure_source": run.failure_source,
         "power_total": run.power_total,
         "cost": _OFFLINE_NA if run.cost is None else str(run.cost),
         "work_tokens": _OFFLINE_NA if run.work_tokens is None else run.work_tokens,
-        "observable_tokens": run.observable_tokens,
+        "observable_tokens": (
+            _OFFLINE_NA if run.observable_tokens is None else run.observable_tokens
+        ),
+        "usage_provenance": run.usage_provenance,
+        "run_digest": run.run_digest,
+        "artifact_digests": run.artifact_digests,
         "control": run.control,
         "ftr": run.ftr,
         "tau_uncalibrated": run.tau_uncalibrated,
@@ -2299,6 +2865,58 @@ def _write_csv(path: Path, rows: list[dict]) -> None:
         writer = csv.DictWriter(fh, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _write_runs_csv(path: Path, rows: list[dict]) -> None:
+    flat_rows = []
+    for row in rows:
+        flat_rows.append(
+            {
+                key: json.dumps(value, ensure_ascii=False, sort_keys=True)
+                if isinstance(value, (dict, list))
+                else value
+                for key, value in row.items()
+                if key != "usage_provenance"
+            }
+        )
+    if flat_rows:
+        _write_csv(path, flat_rows)
+
+
+def _write_usage_csv(path: Path, runs: list[dict]) -> None:
+    rows: list[dict] = []
+    for run in runs:
+        for call in run["usage_provenance"]["calls"]:
+            for name in USAGE_FIELDS:
+                field = call["fields"][name]
+                source = field["source"]
+                unit = field["unit_ref"]["value"]
+                semantics = field["semantics"]
+                calculation = field["calculation"]
+                rows.append(
+                    {
+                        "run_id": run["run_id"],
+                        "seq": call["seq"],
+                        "turn": call["turn"],
+                        "role": call["role"],
+                        "field": name,
+                        "state": field["state"],
+                        "value": field.get("value"),
+                        "unit_id": unit["unit_id"],
+                        "unit_version": unit["version"],
+                        "method": field["method"],
+                        "source_id": source["source_id"],
+                        "source_schema": source["source_schema"],
+                        "adapter_version": source["adapter_version"],
+                        "quantity_kind": call["quantity_kind"],
+                        "relation": semantics["relation"],
+                        "subset_of": semantics.get("subset_of"),
+                        "calculation": calculation["operation"],
+                        "reason": field.get("reason"),
+                    }
+                )
+    if rows:
+        _write_csv(path, rows)
 
 
 # ---------------------------------------------------------------------------
@@ -2431,6 +3049,9 @@ def pilot_cli(
                 "model": entry.adapter,
                 "model_id": entry.id,
                 "schedule_ref": schedule.sha256,
+                # #37：pilot 批次路徑與 `patchmud run` 一致封存 execution profile，
+                # 否則 report v2 的 cohort 身分不完整、每個 run 各自成一列。
+                "execution_profile": build_execution_profile_record(adapter, item.loadout),
             },
         )
         return {

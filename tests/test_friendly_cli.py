@@ -150,6 +150,27 @@ class TestAnthropicCredentialCheck:
         assert isinstance(adapter, ClaudeCliAdapter)
 
 
+    def test_full_anthropic_spec_falls_back_to_claude_cli_without_credentials(self, monkeypatch):
+        """完整 `anthropic:<model>`（非別名）缺憑證且有 claude CLI 時，同樣改走 CLI。"""
+        from patchmud.adapters.claude_cli import ClaudeCliAdapter
+        from patchmud.cli import _build_adapter, normalize_model_spec
+
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+        monkeypatch.setattr("patchmud.cli.has_claude_cli", lambda: True)
+
+        assert isinstance(_build_adapter("anthropic:claude-sonnet-5"), ClaudeCliAdapter)
+
+    def test_full_anthropic_spec_keeps_http_adapter_with_credentials(self, monkeypatch):
+        from patchmud.adapters.anthropic import AnthropicAdapter
+        from patchmud.cli import _build_adapter
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        monkeypatch.setattr("patchmud.cli.has_claude_cli", lambda: True)
+
+        assert isinstance(_build_adapter("anthropic:claude-sonnet-5"), AnthropicAdapter)
+
+
 class TestCodexAndAgyAdapterBuild:
     """codex / agy spec → adapter（CLI 不在 PATH 時 fail-closed）。"""
 
@@ -215,7 +236,12 @@ class TestRunRecordsExpandedModelSpec:
             raise _StopWiring
 
         monkeypatch.setattr(cli, "_wire_and_run_encounter", fake_wire)
-        monkeypatch.setattr(cli, "_build_adapter", lambda spec: object())
+        monkeypatch.setattr(cli, "_build_adapter", lambda spec, **_kwargs: object())
+        monkeypatch.setattr(
+            cli,
+            "build_execution_profile_record",
+            lambda _adapter, _loadout: {"profile_id": "epk:v1:resolved:test"},
+        )
         monkeypatch.setattr(cli, "load_card", lambda _p: _FakeCard())
         with pytest.raises(_StopWiring):
             cli.run_cli(Path("/nonexistent"), alias, "P0T0R0", Path("/tmp"))
@@ -249,5 +275,4 @@ class _StopWiring(Exception):
 
 class _FakeCard:
     issue_id = "fake-encounter-v1"
-
 

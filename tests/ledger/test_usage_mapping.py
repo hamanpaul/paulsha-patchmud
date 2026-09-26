@@ -54,13 +54,13 @@ class TestAnthropicMapping:
         assert entry.role == "author"
         assert entry.input_uncached == 1000
         assert entry.input_cached == 300
-        assert entry.output_visible == 500
-        # anthropic usage 不拆 reasoning → NA，不得記 0。
+        # Anthropic 未拆 reasoning，不能把 billed output 誤標成可見輸出。
+        assert entry.output_visible is None
         assert entry.reasoning is None
-        # billed totals = provider 帳面計價量總和，永遠照抄。
-        assert entry.billed_input_total == 1300
+        # cache_creation 未回報，不能以 0 推定完整 billed input。
+        assert entry.billed_input_total is None
         assert entry.billed_output_total == 500
-        assert entry.unallocated == 0
+        assert entry.unallocated is None
         assert entry.api_calls == 1
 
     def test_cache_creation_goes_to_unallocated(self):
@@ -86,8 +86,10 @@ class TestAnthropicMapping:
         )
         assert entry.input_cached is None
         assert entry.reasoning is None
-        assert entry.billed_input_total == 1000
+        assert entry.output_visible is None
+        assert entry.billed_input_total is None
         assert entry.billed_output_total == 500
+        assert entry.unallocated is None
 
 
 class TestOpenAIMapping:
@@ -112,7 +114,7 @@ class TestOpenAIMapping:
         assert entry.reasoning == 300
         assert entry.billed_input_total == 1200
         assert entry.billed_output_total == 800
-        assert entry.unallocated == 0
+        assert entry.unallocated is None
 
     def test_reasoning_absent_is_none_not_zero(self):
         entry = map_usage(
@@ -125,9 +127,10 @@ class TestOpenAIMapping:
         )
         assert entry.reasoning is None
         assert entry.reasoning != 0
-        assert entry.output_visible == 50
+        assert entry.output_visible is None
         assert entry.input_cached == 0
         assert entry.input_uncached == 100
+        assert entry.unallocated is None
 
     def test_details_absent_entirely_cached_is_na(self):
         entry = map_usage(
@@ -138,6 +141,8 @@ class TestOpenAIMapping:
         assert entry.reasoning is None
         assert entry.billed_input_total == 100
         assert entry.billed_output_total == 50
+        assert entry.input_uncached is None
+        assert entry.output_visible is None
 
     def test_cached_exceeding_prompt_fails_closed(self):
         with pytest.raises(LedgerError):
@@ -207,11 +212,16 @@ class TestMapUsageFailClosed:
         with pytest.raises(LedgerError):
             map_usage("mystery", {"input_tokens": 1, "output_tokens": 1})
 
-    def test_missing_required_usage_fields_rejected(self):
-        with pytest.raises(LedgerError):
-            map_usage("anthropic", {"input_tokens": 1})
-        with pytest.raises(LedgerError):
-            map_usage("openai", {"prompt_tokens": 1})
+    def test_missing_usage_fields_remain_unknown(self):
+        anthropic = map_usage("anthropic", {"input_tokens": 1})
+        assert anthropic.input_uncached == 1
+        assert anthropic.billed_output_total is None
+        assert anthropic.output_visible is None
+
+        openai = map_usage("openai", {"prompt_tokens": 1})
+        assert openai.billed_input_total == 1
+        assert openai.billed_output_total is None
+        assert openai.input_uncached is None
 
     def test_negative_tokens_rejected(self):
         with pytest.raises(LedgerError):
@@ -312,9 +322,9 @@ class TestCodexMapping:
         entry = map_usage("codex", {"input_tokens": 500, "output_tokens": 20})
         assert entry.input_cached is None
         assert entry.reasoning is None
-        assert entry.input_uncached == 500
-        assert entry.output_visible == 20
-        assert entry.unallocated == 0
+        assert entry.input_uncached is None
+        assert entry.output_visible is None
+        assert entry.unallocated is None
 
     def test_cached_exceeding_input_is_fail_closed(self):
         with pytest.raises(LedgerError):
@@ -334,9 +344,12 @@ class TestCodexMapping:
                 },
             )
 
-    def test_missing_required_field_is_fail_closed(self):
-        with pytest.raises(LedgerError):
-            map_usage("codex", {"input_tokens": 100})
+    def test_missing_required_field_remains_unknown(self):
+        entry = map_usage("codex", {"input_tokens": 100})
+        assert entry.billed_input_total == 100
+        assert entry.billed_output_total is None
+        assert entry.input_uncached is None
+        assert entry.output_visible is None
 
 
 class TestAgyMapping:
@@ -370,7 +383,7 @@ class TestAgyMapping:
         assert entry.reasoning == 452
         assert entry.billed_input_total == 17874
         assert entry.billed_output_total == 459
-        assert entry.unallocated == 0
+        assert entry.unallocated is None
 
     def test_cache_read_is_subset_of_input(self):
         entry = map_usage(
@@ -390,7 +403,10 @@ class TestAgyMapping:
         entry = map_usage("agy", {"input_tokens": 700, "output_tokens": 30})
         assert entry.input_cached is None
         assert entry.reasoning is None
-        assert entry.output_visible == 30
+        assert entry.input_uncached is None
+        assert entry.output_visible is None
+        assert entry.billed_input_total == 700
+        assert entry.billed_output_total == 30
 
     def test_inconsistent_total_tokens_is_fail_closed(self):
         # total_tokens 與 input+output 對不上 → provider 資料不一致，不得靜默採信。
@@ -407,6 +423,9 @@ class TestAgyMapping:
                 {"input_tokens": 100, "output_tokens": 10, "thinking_tokens": 11},
             )
 
-    def test_missing_required_field_is_fail_closed(self):
-        with pytest.raises(LedgerError):
-            map_usage("agy", {"output_tokens": 10})
+    def test_missing_required_field_remains_unknown(self):
+        entry = map_usage("agy", {"output_tokens": 10})
+        assert entry.billed_input_total is None
+        assert entry.billed_output_total == 10
+        assert entry.input_uncached is None
+        assert entry.output_visible is None

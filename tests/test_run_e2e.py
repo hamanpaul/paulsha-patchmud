@@ -122,3 +122,8 @@ class TestTwoTurnFix:
         # （`opus` 曾指向 claude-opus-4-8），封存只記別名則事後無從還原當時
         # 實際跑的模型。
         assert run_record["model"] == f"scripted:{script}"
+        profile = run_record["execution_profile"]
+        assert profile["profile_id"].startswith("epk:v1:resolved:")
+        assert profile["descriptor"]["model"]["id"] == "offline-scripted"
+        assert {"requested", "resolved", "observed"} <= profile.keys()
+        assert profile["actual_condition_key"] is None

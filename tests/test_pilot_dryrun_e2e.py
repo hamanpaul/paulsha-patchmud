@@ -24,6 +24,8 @@ git 狀態。
 
 from __future__ import annotations
 
+import hashlib
+
 import json
 import os
 import subprocess
@@ -306,6 +308,13 @@ class TestPilotMatrixDryRun:
                         "model": f"scripted:{item.model}",
                         "model_id": item.model,
                         "schedule_ref": sealed.sha256,
+                        # 兩個假模型都是 scripted adapter，真實 profile 會相同；這裡以
+                        # (model, loadout) 給定穩定 profile_id，保留 2 模型 × 8 loadout
+                        # 矩陣機制的驗證目標（report v2 依 profile 分組）。
+                        "profile_id": "epk:v1:actual:"
+                        + hashlib.sha256(
+                            f"{item.model}|{item.loadout}".encode("utf-8")
+                        ).hexdigest(),
                     },
                 )
                 return {

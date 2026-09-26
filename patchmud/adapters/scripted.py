@@ -3,8 +3,8 @@
 依序回放預先寫死的 replies；耗盡再被呼叫 → ``ScriptedRepliesExhausted``
 （fail-closed，劇本寫錯不得靜默循環）。
 
-usage_raw 用 openai 格式的**合成 deterministic 量**（字元數 // 4，下限 1），
-讓 dry-run 的 ledger 路徑（``map_usage("openai", …)``）可完整走通；
+    usage_raw 用 openai 格式的**合成 deterministic 量**（字元數 // 4，下限 1），
+    並明確標為 estimated；讓 dry-run 的 ledger 路徑可走通；
 不打網路、不耗 wall-clock（``wall_ms = 0``）。
 """
 
@@ -47,4 +47,22 @@ class ScriptedAdapter(ModelAdapter):
             "prompt_tokens": _synthetic_tokens("x" * prompt_chars),
             "completion_tokens": _synthetic_tokens(reply),
         }
-        return AdapterResponse(text=reply, usage_raw=usage_raw, wall_ms=0)
+        return AdapterResponse(
+            text=reply,
+            usage_raw=usage_raw,
+            wall_ms=0,
+            usage_annotations={
+                "prompt_tokens": {
+                    "state": "estimated",
+                    "method": "estimate",
+                    "calculation": "prompt_characters_div_4_min_1",
+                    "reason": "scripted-synthetic-usage",
+                },
+                "completion_tokens": {
+                    "state": "estimated",
+                    "method": "estimate",
+                    "calculation": "response_characters_div_4_min_1",
+                    "reason": "scripted-synthetic-usage",
+                },
+            },
+        )

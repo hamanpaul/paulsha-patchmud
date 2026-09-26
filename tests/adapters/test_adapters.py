@@ -311,35 +311,58 @@ class TestClaudeCliAdapter:
     def test_complete_parses_json_output_and_maps_usage(self) -> None:
         import json
         from patchmud.adapters.claude_cli import ClaudeCliAdapter
-        from patchmud.ledger.tokens import map_usage
+        from patchmud.usage_provenance import map_usage_with_provenance
 
-        fake_json = json.dumps({
-            "result": "ACTION: COMMIT",
-            "usage": {
-                "input_tokens": 100,
-                "output_tokens": 20,
-                "cache_read_input_tokens": 30,
-                "cache_creation_input_tokens": 10,
+        fake_json = json.dumps(
+            {
+                "result": "ACTION: COMMIT",
+                "usage": {
+                    "input_tokens": 100,
+                    "output_tokens": 20,
+                    "cache_read_input_tokens": 30,
+                    "cache_creation_input_tokens": 10,
+                },
             }
-        })
+        )
         adapter = ClaudeCliAdapter(runner=lambda _cmd: fake_json)
         resp = adapter.complete(MESSAGES)
         assert resp.text == "ACTION: COMMIT"
-        entry = map_usage("anthropic", resp.usage_raw, turn=1, role="author")
+        entry, evidence = map_usage_with_provenance(
+            "anthropic",
+            resp.usage_raw,
+            annotations=resp.usage_annotations,
+            turn=1,
+            role="author",
+        )
         assert entry.input_uncached == 100
-        assert entry.output_visible == 20
+        assert entry.billed_output_total == 20
+        assert entry.output_visible is None
+        assert evidence["fields"]["billed_output_total"]["state"] == "observed"
+        assert evidence["fields"]["billed_output_total"]["value"] == 20
+        assert evidence["fields"]["output_visible"]["state"] == "unknown"
+        assert "value" not in evidence["fields"]["output_visible"]
 
     def test_complete_fallback_estimated_usage_when_plain_text(self) -> None:
         from patchmud.adapters.claude_cli import ClaudeCliAdapter
-        from patchmud.ledger.tokens import map_usage
+        from patchmud.usage_provenance import map_usage_with_provenance
 
         adapter = ClaudeCliAdapter(runner=lambda _cmd: "ACTION: LOOK")
         resp = adapter.complete(MESSAGES)
         assert resp.text == "ACTION: LOOK"
-        # 即使輸出不是 JSON，也會提供合法的 input/output tokens 避免 ledger 崩潰
-        entry = map_usage("anthropic", resp.usage_raw, turn=1, role="author")
+        # fallback token 數值可留在 ledger，但必須維持 estimated provenance。
+        entry, evidence = map_usage_with_provenance(
+            "anthropic",
+            resp.usage_raw,
+            annotations=resp.usage_annotations,
+            turn=1,
+            role="author",
+        )
         assert isinstance(entry.input_uncached, int)
-        assert isinstance(entry.output_visible, int)
+        assert entry.output_visible is None
+        assert entry.billed_output_total == resp.usage_raw["output_tokens"]
+        assert evidence["fields"]["billed_output_total"]["state"] == "estimated"
+        assert evidence["fields"]["output_visible"]["state"] == "unknown"
+        assert "value" not in evidence["fields"]["output_visible"]
 
 
 def _codex_jsonl(text: str, usage: dict | None = None) -> str:
@@ -619,5 +642,4 @@ class TestAgyCliAdapter:
         adapter = AgyCliAdapter(runner=lambda _cmd: "Fetching available models...")
         with pytest.raises(AdapterError):
             adapter.complete(MESSAGES)
-
 
