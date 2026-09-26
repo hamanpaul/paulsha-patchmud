@@ -86,14 +86,13 @@ from pathlib import Path
 
 import yaml
 
-from patchmud.adapters.agy_cli import AgyCliAdapter
-from patchmud.adapters.anthropic import AnthropicAdapter
 from patchmud.adapters.base import AdapterError, ModelAdapter
-from patchmud.adapters.claude_cli import ClaudeCliAdapter
-from patchmud.adapters.codex_cli import CodexCliAdapter
 from patchmud.adapters.human import HumanAdapter
-from patchmud.adapters.openai_compat import OpenAICompatAdapter
-from patchmud.adapters.scripted import ScriptedAdapter
+from patchmud.adapters.profile import (
+    AdapterResolutionError,
+    build_execution_profile_record,
+    build_registered_adapter,
+)
 from patchmud.authoring import AuthoringError, build_encounter, load_source
 from patchmud.deck.loader import load_card
 from patchmud.deck.materialize import materialize_repo
@@ -1055,6 +1054,16 @@ def _cmd_run(argv: list[str]) -> int:
     parser.add_argument(
         "--loadout", default="P0T0R0", help="forced loadout（預設 P0T0R0 = SOLO）"
     )
+    parser.add_argument(
+        "--effort",
+        default=None,
+        help="adapter 原生 effort；省略時採 descriptor 明示的 default",
+    )
+    parser.add_argument(
+        "--tool-mode",
+        default=None,
+        help="adapter 宣告支援的工具模式（目前僅支援 none）",
+    )
     parser.add_argument("--runs-root", type=Path, default=Path("runs"), help="run 目錄根")
     parser.add_argument("--run-id", default=None, help="run 識別字串（預設自動產生）")
     parser.add_argument(
@@ -1078,6 +1087,8 @@ def _cmd_run(argv: list[str]) -> int:
             ns.model,
             ns.loadout,
             ns.runs_root,
+            effort=ns.effort,
+            tool_mode=ns.tool_mode,
             run_id=ns.run_id,
             live=ns.live,
             delay=ns.delay,
@@ -1196,6 +1207,8 @@ def run_cli(
     bwrap_path: str = DEFAULT_BWRAP_PATH,
     live: bool = False,
     delay: float = 0.0,
+    effort: str | None = None,
+    tool_mode: str | None = None,
 ):
     """`patchmud run` 串線：真佈線（IsolationRunner／ProbeSuite／evaluator）
     交給 `run_encounter`（spec §5、§6；plan Task 13）。
@@ -1206,7 +1219,7 @@ def run_cli(
     encounter_dir = Path(encounter_dir).resolve()
     card = load_card(encounter_dir / "card.yaml")
     loadout = Loadout.from_string(loadout_spec)
-    adapter = _build_adapter(model_spec)
+    adapter = _build_adapter(model_spec, effort=effort, tool_mode=tool_mode)
 
     spectator = LiveSpectator(delay=delay).feed if live else None
 
@@ -1223,7 +1236,10 @@ def run_cli(
         # 封存展開後的完整 spec，不是使用者打的別名：別名表是會演進的間接層
         # （`opus` 曾指向 claude-opus-4-8，現指向 claude-opus-5），封存若只記
         # 別名，事後無從得知當時實際跑的是哪個模型，違反可重播的前提。
-        record_extra={"model": normalize_model_spec(model_spec)},
+        record_extra={
+            "model": normalize_model_spec(model_spec),
+            "execution_profile": build_execution_profile_record(adapter, loadout_spec),
+        },
         spectator=spectator,
     )
 
@@ -1410,9 +1426,6 @@ def _cmd_play(argv: list[str]) -> int:
     return 0
 
 
-_SCRIPT_DELIMITER = "-----"
-
-
 #: 模型別名 → 完整 model spec（指令只打 sonnet / sol / flash 這類短名）。
 #:
 #: 三家 provider 的短別名共用同一個命名空間，彼此不得重複。codex 與 agy 走
@@ -1432,11 +1445,6 @@ _MODEL_ALIASES = {
     "flash": "agy:gemini-3.6-flash",
     "pro": "agy:gemini-3.1-pro",
 }
-
-#: CLI-based adapter 的 effort 一律固定 high（issue #14）：ranked run 之間的
-#: 推理預算必須可比，不隨使用者的 CLI 設定漂移。
-CLI_EFFORT = "high"
-
 
 def has_claude_cli() -> bool:
     """檢查系統是否有安裝並可執行的 `claude` CLI。"""
@@ -1485,85 +1493,27 @@ def has_anthropic_credentials() -> bool:
     return bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
 
 
-def _build_adapter(spec: str) -> ModelAdapter:
-    """model spec → adapter；HTTP adapter 的憑證一律取自 env（不進 CLI）。"""
-    spec = normalize_model_spec(spec)
-    kind, _, rest = spec.partition(":")
-    if kind == "scripted":
-        script = Path(rest)
-        if not rest or not script.is_file():
-            raise RunCliError(f"scripted 劇本檔不存在：{rest!r}")
-        replies = _split_script(script.read_text(encoding="utf-8"))
-        if not replies:
-            raise RunCliError(f"scripted 劇本檔沒有任何回覆：{script}")
-        return ScriptedAdapter(replies)
-    if kind == "claude":
-        model_id = rest if rest else "claude-sonnet-5"
-        if not has_claude_cli():
-            raise RunCliError("系統未安裝 `claude` CLI（找不到 `claude` 可執行檔）")
-        return ClaudeCliAdapter(model=model_id)
-    if kind == "codex":
-        if not rest:
-            raise RunCliError("codex spec 缺 model id：codex:<model>")
-        if not has_codex_cli():
-            raise RunCliError(
-                "系統未安裝 `codex` CLI（找不到 `codex` 可執行檔）。\n"
-                "  安裝後以 `codex login` 建立 OAuth 登入態即可，不需 OPENAI_API_KEY。"
-            )
-        return CodexCliAdapter(model=rest, effort=CLI_EFFORT)
-    if kind == "agy":
-        if not rest:
-            raise RunCliError("agy spec 缺 model id：agy:<model>")
-        if not has_agy_cli():
-            raise RunCliError(
-                "系統未安裝 `agy` CLI（找不到 `agy` 可執行檔）。\n"
-                "  安裝並登入後即可使用，不需 API key。"
-            )
-        return AgyCliAdapter(model=rest, effort=CLI_EFFORT)
-    if kind == "anthropic":
-        if not rest:
-            raise RunCliError("anthropic spec 缺 model id：anthropic:<model>")
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
-        if not has_anthropic_credentials():
-            if has_claude_cli():
-                return ClaudeCliAdapter(model=rest)
-            raise RunCliError(
-                "未設定 Anthropic 憑證：\n"
-                "  1. 設 ANTHROPIC_API_KEY，或用 OAuth——`ant auth login` 後 `set -a; eval \"$(ant auth print-credentials --env)\"; set +a`\n"
-                "  2. 改用其他家的 CLI 登入態（同樣不需 API key）：\n"
-                "     patchmud versus <關卡> --models sol,flash   # codex / agy 別名\n"
-                "  3. 若無任何雲端登入，可用免 Key 地端模型（如 Ollama）：\n"
-                "     patchmud versus <關卡> --models openai:llama3@http://localhost:11434/v1,openai:qwen2.5@http://localhost:11434/v1\n"
-                "  4. 或用離線劇本模式：\n"
-                "     patchmud versus <關卡> --models scripted:script1.txt,scripted:script2.txt"
-            )
-        return AnthropicAdapter(rest, api_key, auth_token=auth_token)
-    if kind == "openai":
-        if not rest:
-            raise RunCliError("openai spec 缺 model id：openai:<model>[@<base_url>]")
-        model, _, base_url = rest.partition("@")
-        kwargs: dict = {}
-        if base_url:
-            kwargs["base_url"] = base_url
-        return OpenAICompatAdapter(
-            model, os.environ.get("OPENAI_API_KEY", ""), **kwargs
+def _build_adapter(
+    spec: str,
+    *,
+    effort: str | None = None,
+    tool_mode: str | None = None,
+) -> ModelAdapter:
+    """依 adapter descriptor 驗證設定後建 adapter；憑證仍只從環境讀取。"""
+    normalized = normalize_model_spec(spec)
+    try:
+        return build_registered_adapter(
+            normalized,
+            effort=effort,
+            tool_mode=tool_mode,
+            availability_checks={
+                "claude": has_claude_cli,
+                "codex": has_codex_cli,
+                "agy": has_agy_cli,
+            },
         )
-    raise RunCliError(f"未知 model spec：{spec!r}")
-
-
-def _split_script(text: str) -> list[str]:
-    """scripted 劇本：回覆以獨立一行 `-----` 分隔（回覆內容逐 byte 保留）。"""
-    replies: list[str] = []
-    current: list[str] = []
-    for line in text.splitlines():
-        if line.strip() == _SCRIPT_DELIMITER:
-            replies.append("\n".join(current))
-            current = []
-        else:
-            current.append(line)
-    replies.append("\n".join(current))
-    return [reply for reply in replies if reply.strip()]
+    except AdapterResolutionError as exc:
+        raise RunCliError(str(exc)) from exc
 
 
 # ---------------------------------------------------------------------------

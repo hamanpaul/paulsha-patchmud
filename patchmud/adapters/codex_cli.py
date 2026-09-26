@@ -14,6 +14,9 @@
 ``--ignore-user-config``
     不載入 ``~/.codex/config.toml``（personality、預設 effort、hooks 都會
     污染評測的可重現性）；auth 仍照 ``CODEX_HOME`` 解析。
+``model_reasoning_effort=<effort>``
+    使用 profile descriptor 驗證後解析出的原生 effort；run 未指定時沿用
+    descriptor 明示的 ``high`` 預設值；明確指定則使用該值，不讀 ambient 設定。
 ``--disable plugins|memories|goals|hooks``
     關閉會把使用者狀態帶進 prompt 的功能。
 

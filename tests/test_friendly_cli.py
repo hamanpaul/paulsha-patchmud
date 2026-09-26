@@ -215,7 +215,12 @@ class TestRunRecordsExpandedModelSpec:
             raise _StopWiring
 
         monkeypatch.setattr(cli, "_wire_and_run_encounter", fake_wire)
-        monkeypatch.setattr(cli, "_build_adapter", lambda spec: object())
+        monkeypatch.setattr(cli, "_build_adapter", lambda spec, **_kwargs: object())
+        monkeypatch.setattr(
+            cli,
+            "build_execution_profile_record",
+            lambda _adapter, _loadout: {"profile_id": "epk:v1:resolved:test"},
+        )
         monkeypatch.setattr(cli, "load_card", lambda _p: _FakeCard())
         with pytest.raises(_StopWiring):
             cli.run_cli(Path("/nonexistent"), alias, "P0T0R0", Path("/tmp"))
@@ -249,5 +254,4 @@ class _StopWiring(Exception):
 
 class _FakeCard:
     issue_id = "fake-encounter-v1"
-
 

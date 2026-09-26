@@ -10,10 +10,9 @@
 ``--disable-slash-commands``
     關閉 slash command 與 skill 展開，避免關卡文字被當成指令解讀。
 ``--effort``
-    固定 ``high``。agy 的 effort 也可以烘在 model id 後綴
-    （``gemini-3.6-flash-high``），這裡改用 base id + 顯式旗標，與
-    :class:`~patchmud.adapters.codex_cli.CodexCliAdapter` 對稱，別名表也
-    不必為每個 effort 檔位各列一條。
+    使用 profile descriptor 驗證後解析出的原生 effort；run 未指定時沿用
+    descriptor 明示的 ``high`` 預設值；明確指定則使用該值，不讀 ambient 設定。
+    effort 保留為旗標，不烘在 model id 後綴，別名表無須為每個檔位各列一條。
 
 輸出解析（``--output-format json`` 的單一 JSON object）::
 

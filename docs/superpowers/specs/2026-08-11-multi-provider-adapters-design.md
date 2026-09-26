@@ -43,10 +43,14 @@ agy --print <prompt> --model <id> --effort high \
 `--ignore-user-config` 是可重現性的防線：`~/.codex/config.toml` 的 personality、
 預設 effort、hooks 都會進 prompt，未阻斷則同一個關卡在不同機器上量到不同結果。
 
-## 決策二：effort 固定 `high`
+## 決策二：effort 預設 `high`（#37 更新 run 行為）
 
-`CLI_EFFORT = "high"`，codex 走 `-c model_reasoning_effort=high`、agy 走
-`--effort high`。ranked run 之間的推理預算必須可比，不能隨使用者的 CLI 設定漂移。
+原始決策以 `CLI_EFFORT = "high"` 固定 codex／agy 推理預算，避免 ambient CLI
+設定造成漂移。PatchMUD #37 後，`patchmud run --effort <native-value>` 可明示
+覆寫；省略時 descriptor 仍解析成 `high`，且不讀 ambient CLI 預設。codex 走
+`-c model_reasoning_effort=<value>`、agy 走 `--effort <value>`；不支援的原生值
+會在 adapter 建構前拒絕。此覆寫會形成不同 resolved profile key，不能與其他
+effort 的結果合併。
 
 agy 的 effort 也可以烘在 model id 後綴（`gemini-3.6-flash-high`）。改用
 base id + 顯式旗標，一是與 codex 對稱、二是別名表不必為每個 effort 檔位各列

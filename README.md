@@ -53,7 +53,7 @@ patchmud report --runs "runs/*"                # 多榜研究報告（模型比�
 
   跨家對戰：`patchmud versus input-validation-v1 --models sonnet,sol,flash`。
 - Anthropic 認證兩選一：`export ANTHROPIC_API_KEY=…`，**或** 用 Claude 帳號 OAuth——`ant auth login` 後 `set -a; eval "$(ant auth print-credentials --env)"; set +a`（設定 `ANTHROPIC_AUTH_TOKEN`，不必管 API key）。codex 與 agy 別名走各自 CLI 的登入態，不需要任何 API key 環境變數。
-- CLI-based adapter（`claude` / `codex` / `agy`）一律以**純補全模式**執行：工具寫入能力全關、在臨時空目錄執行，執行 candidate code 的唯一 seam 仍是 `IsolationRunner`；`codex` / `agy` 的 reasoning effort 固定 `high`，不隨使用者的 CLI 設定漂移。代價是 CLI 自帶的 system prompt 與 skill 目錄會產生每回合固定的 input token overhead（實測 codex ≈17k、agy ≈18k），跨家比較 economy 維度時需知悉。
+- CLI-based adapter（`claude` / `codex` / `agy`）一律以**純補全模式**執行：工具寫入能力全關，執行 candidate code 的唯一 seam 仍是 `IsolationRunner`。`codex` / `agy` 的 `patchmud run` 可用 `--effort` 指定 adapter 原生 effort；省略時沿用 descriptor 明示的 `high`，不讀 ambient CLI 預設。`--tool-mode` 目前只接受 `none`。unsupported effort／工具模式會在建立 adapter 前拒絕。`run.yaml` 會封存 execution-profile v1 的 descriptor、requested／resolved／observed 三個 plane 及各自 profile key；provider 未回報實際 model／effort 時標成 unknown，`actual_condition_key` 留空。CLI 自帶的 system prompt 與 skill 目錄會產生每回合固定的 input token overhead（實測 codex ≈17k、agy ≈18k），跨家比較 economy 維度時需知悉。
 - 出題（把已解決的 closed bug 結構化凍結成新關卡、含 bug/fix 品質閘）見 [`docs/authoring/README.md`](docs/authoring/README.md)。
 
 ## Version

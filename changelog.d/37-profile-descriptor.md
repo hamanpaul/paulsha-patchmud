@@ -1,0 +1,1 @@
+#37：新增 execution-profile v1 descriptor、requested／resolved／observed profile 與和 Cortex wire contract 對齊的 canonical key；`patchmud run` 可指定 adapter 原生 effort／工具模式，並在建立 adapter 前拒絕 descriptor 未宣告的設定，省略 effort 時保留 codex／agy 的 `high` 預設。
