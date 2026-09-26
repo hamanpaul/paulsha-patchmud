@@ -3049,6 +3049,9 @@ def pilot_cli(
                 "model": entry.adapter,
                 "model_id": entry.id,
                 "schedule_ref": schedule.sha256,
+                # #37：pilot 批次路徑與 `patchmud run` 一致封存 execution profile，
+                # 否則 report v2 的 cohort 身分不完整、每個 run 各自成一列。
+                "execution_profile": build_execution_profile_record(adapter, item.loadout),
             },
         )
         return {
