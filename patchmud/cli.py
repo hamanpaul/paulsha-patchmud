@@ -1,6 +1,6 @@
 """patchmud CLI 進入點。
 
-子命令（validate-deck / score-diff / run / play / pilot / replay / report）依
+子命令（schema / validate-deck / score-diff / run / play / pilot / replay / report）依
 docs/superpowers/plans/2026-07-16-patchmud-mvp.md 逐 task 落地。
 
 `validate-deck`（Task 20，spec §4.2）：`patchmud validate-deck <deck_dir>`——
@@ -140,6 +140,7 @@ from patchmud.report_schema import (
     ReportSchemaError,
     validate_report_v2,
 )
+from patchmud.schema_capabilities import schema_capabilities
 from patchmud.metrics.economy import EconomyError, RunSample
 from patchmud.metrics.efficiency import (
     CohortMismatchError,
@@ -414,8 +415,25 @@ def main(argv: list[str] | None = None) -> int:
             return _interactive_menu()
         print(
             f"patchmud {_package_version()} — 子命令：validate-deck / author-encounter / "
-            "score-diff / run / versus / play / watch / replay / report / pilot；其餘見 "
+            "score-diff / run / versus / play / watch / replay / report / pilot / schema；其餘見 "
             "docs/superpowers/plans/2026-07-16-patchmud-mvp.md"
+        )
+        return 0
+    if args[0] == "schema":
+        parser = argparse.ArgumentParser(
+            prog="patchmud schema",
+            description="輸出 PatchMUD 可讀取與輸出的 schema 能力。",
+        )
+        parser.add_argument("--json", action="store_true", required=True)
+        parser.parse_args(args[1:])
+        print(
+            json.dumps(
+                schema_capabilities(_package_version()),
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            )
         )
         return 0
     if args[0] == "validate-deck":

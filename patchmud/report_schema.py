@@ -13,9 +13,25 @@ from patchmud.usage_provenance import (
     validate_usage_evidence,
 )
 
-__all__ = ["REPORT_SCHEMA_VERSION", "ReportSchemaError", "validate_report_v2"]
+__all__ = [
+    "REPORT_SCHEMA_VERSION",
+    "REPORT_READ_SCHEMA_VERSIONS",
+    "REPORT_WRITE_SCHEMA_VERSIONS",
+    "ReportSchemaError",
+    "read_report_document",
+    "validate_report_v2",
+]
 
 REPORT_SCHEMA_VERSION = 2
+REPORT_READ_SCHEMA_VERSIONS = (1, 2)
+REPORT_WRITE_SCHEMA_VERSIONS = (2,)
+_LEGACY_REPORT_KEYS = {
+    "schema_version",
+    "runs_included",
+    "runs_skipped",
+    "runs",
+    "leaderboards",
+}
 _REPORT_KEYS = {
     "schema_version",
     "producer",
@@ -85,6 +101,58 @@ _GROUP_FIELDS = {
 
 class ReportSchemaError(ValueError):
     """report v2 結構或穩定 fingerprint 違反契約。"""
+
+
+def read_report_document(value: object) -> dict:
+    """讀取 v1 舊報告或嚴格驗證 v2；v1 保持 opaque，不轉成資格證據。
+
+    ``value`` 可為已解碼的 object 或 UTF-8 JSON。v1 的 payload 原樣回傳，
+    僅驗證舊版外框；呼叫端不得將其補欄升格為 report v2。
+    """
+    if isinstance(value, (str, bytes, bytearray)):
+        try:
+            value = json.loads(value)
+        except (UnicodeDecodeError, json.JSONDecodeError, TypeError) as exc:
+            raise ReportSchemaError("report 不是合法 JSON") from exc
+    if not isinstance(value, dict):
+        raise ReportSchemaError("report 必須是 object")
+    version = value.get("schema_version")
+    if type(version) is not int:
+        raise ReportSchemaError("report schema_version 必須是整數")
+    if version == 1:
+        _validate_legacy_report_v1(value)
+    elif version == REPORT_SCHEMA_VERSION:
+        validate_report_v2(value)
+    else:
+        raise ReportSchemaError(f"report schema_version 不支援：{version!r}")
+    return value
+
+
+def _validate_legacy_report_v1(report: dict) -> None:
+    """驗證既有 report v1 外框並保留其 payload，不解讀榜列作新版排名。"""
+    if set(report) != _LEGACY_REPORT_KEYS:
+        raise ReportSchemaError("report v1 欄位集合不符")
+    runs = report["runs"]
+    if (
+        type(report["runs_included"]) is not int
+        or not isinstance(runs, list)
+        or report["runs_included"] != len(runs)
+        or any(not isinstance(row, dict) for row in runs)
+    ):
+        raise ReportSchemaError("report v1 runs 欄位不符")
+    skipped = report["runs_skipped"]
+    if not isinstance(skipped, list) or any(
+        not isinstance(item, dict)
+        or set(item) != {"run_id", "reason"}
+        or not all(isinstance(item[key], str) for key in item)
+        for item in skipped
+    ):
+        raise ReportSchemaError("report v1 runs_skipped 欄位不符")
+    boards = report["leaderboards"]
+    if not isinstance(boards, dict) or set(boards) != _BOARDS or any(
+        not isinstance(board, dict) for board in boards.values()
+    ):
+        raise ReportSchemaError("report v1 leaderboards 欄位不符")
 
 
 def validate_report_v2(report: object) -> None:

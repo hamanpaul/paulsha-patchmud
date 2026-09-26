@@ -3,6 +3,9 @@
 `patchmud report --runs <glob> --out <dir>` 從 run 目錄或 RunStore `.tar` 封存
 唯讀重建報告。輸出只使用 schema v2；report JSON、YAML、榜單 CSV、`runs.csv`
 與 `usage.csv` 都由同一份 report/run evidence 產生。v1 report 不再輸出。
+舊 report v1 僅能透過 `read_report_document()` opaque 讀取；它不會轉成 v2，亦不可
+進入新版排名。版本能力與遷移細節見
+[`schema-migration-v1-v2.md`](schema-migration-v1-v2.md)。
 
 ## Report 外框
 

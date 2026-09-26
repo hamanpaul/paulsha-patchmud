@@ -8,6 +8,7 @@
 ## [Unreleased]
 
 ### Added
+- **Golden fixtures、schema migration 與能力宣告**（issue #37，PR 3）——版本化公開 fixtures 涵蓋 execution-profile v1、usage-provenance v1、report v2 與 legacy v1 run/result/report；`fixtures/golden/manifest.json` 固定 source revision、schema versions 和逐檔 SHA-256，產生／驗證測試與安全掃描防止內容變更未更新 digest、hidden bytes、憑證或個人絕對路徑外洩。`patchmud schema --json` 機器宣告 profile／usage／report 可讀與輸出版本；`docs/schema-migration-v1-v2.md` 列明舊封存 unknown 降級與未知版本 fail-closed，report v1 只 opaque 讀取、report 僅輸出 v2。
 - **Execution profile descriptor 與 CLI 驗證**（issue #37，PR 1）——新增獨立 execution-profile v1 schema、typed canonical JSON 與 domain-separated profile／actual-condition key；adapter capability registry 宣告原生 effort、工具模式、sandbox 與權限。`patchmud run` 可指定 `--effort`／`--tool-mode`，不支援的設定在建立 adapter 前拒絕；省略 effort 時 codex／agy 保留明示的 `high` 預設。`run.yaml` 封存 requested／resolved／observed profile 與 `profile_id`，未經 provider 確認的實際 model／effort 保持 unknown。
 - **Usage provenance 與舊封存讀取**（issue #37，PR 2）——ledger 每欄保留 observed／estimated／unknown、method、token unit、provider/schema/adapter 版本、計算與 subset/total 語意；append-only `usage_evidence.jsonl` 只存正規化值，不保存 provider payload。失敗前的用量先封存；缺欄位和估算不會變成 observed 或 0。讀取舊 run v1 目錄／tar 時，缺 provenance 標 `legacy/unknown`，report rebuild 不改原封存。
 - **report 同步落盤 `report.json` 機器契約**（issue #26）——與 `report.yaml` 同一個 report dict、`json.dumps(ensure_ascii=False, sort_keys=True, allow_nan=False)`。YAML 供人讀、JSON 供下游程式讀：PyYAML 的 indentless sequence 與長 scalar 折行（cortex#466 實跑驗證中零依賴 parser 連踩兩例）不該成為檔案契約的解析門檻；`allow_nan=False` 斷言原始 inf/nan 不得進 report（現行值皆已由 `_num()` 字串化，此為防回歸斷言）。

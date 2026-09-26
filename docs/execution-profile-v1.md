@@ -26,6 +26,10 @@ profile key。Observed 資料不足以確認所有條件時，`actual_condition_
 deck content digest 與 evaluator revision 分 cohort；詳見
 [`report-contract-v2.md`](report-contract-v2.md)。
 
+可讀／輸出版本由 `patchmud schema --json` 宣告；跨 repo producer fixtures 與
+manifest 位於 `fixtures/golden/`，舊資料處理依
+[`schema-migration-v1-v2.md`](schema-migration-v1-v2.md)。
+
 ## Canonical key
 
 Canonical bytes 使用 typed JSON 表示原生型別，字串以 UTF-8 編碼、物件鍵按
