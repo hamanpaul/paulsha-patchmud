@@ -29,11 +29,13 @@ from patchmud.judge import llm_cli
 from patchmud.judge.structured import ChoiceQuestion, StructuredRequest, sha256_json
 
 __all__ = [
+    "AC_TYPES",
     "BANK_FILES",
     "COMPOSITION",
     "FROZEN_FILE",
     "INDUCED_NOTES",
     "TRAP_KINDS",
+    "ROUTE_LABELS",
     "VARIANTS",
     "VERDICTS",
     "VERDICT_QUESTION",
@@ -52,6 +54,9 @@ VERDICTS = ("satisfied", "not_satisfied", "insufficient")
 TRAP_KINDS = ("looks_fixed", "irrelevant_evidence", "missing_evidence", "persuasive_text")
 SOURCE_KINDS = ("public-fixture", "public-issue", "scrubbed-private")
 VARIANTS = ("clean", "induced")
+#: P1b 選填欄位：AC 類型、路由標註、原子子句、誤導變體的來源題。
+AC_TYPES = ("code_behavior", "non_code")
+ROUTE_LABELS = ("LLM_REQUIRED", "JEV_ELIGIBLE")
 BANK_FILES = {"public": "public.yaml", "hidden": "hidden.yaml"}
 FROZEN_FILE = "FROZEN.json"
 
@@ -104,9 +109,13 @@ class BankItem:
     rationale: str
     criterion: str
     evidence: tuple
+    ac_type: str | None = None
+    route_label: str | None = None
+    clauses: tuple = ()
+    variant_of: str | None = None
 
     def to_dict(self) -> dict:
-        return {
+        data = {
             "id": self.id,
             "split": self.split,
             "gold": self.gold,
@@ -116,6 +125,16 @@ class BankItem:
             "criterion": self.criterion,
             "evidence": [dict(e) for e in self.evidence],
         }
+        # P1b 欄位只在有值時出現，P1 題庫的 digest 因此不受影響。
+        if self.ac_type is not None:
+            data["ac_type"] = self.ac_type
+        if self.route_label is not None:
+            data["route_label"] = self.route_label
+        if self.clauses:
+            data["clauses"] = list(self.clauses)
+        if self.variant_of is not None:
+            data["variant_of"] = self.variant_of
+        return data
 
 
 @dataclass(frozen=True)
@@ -137,7 +156,8 @@ def _require(condition: bool, message: str) -> None:
 
 def _parse_item(raw: object, split: str, where: str) -> BankItem:
     _require(isinstance(raw, dict), f"{where}：題目必須是 mapping")
-    known = {"id", "gold", "traps", "source", "rationale", "criterion", "evidence"}
+    known = {"id", "gold", "traps", "source", "rationale", "criterion", "evidence",
+             "ac_type", "route_label", "clauses", "variant_of"}
     extra = set(raw) - known
     _require(not extra, f"{where}：未知欄位 {sorted(extra)}")
     item_id = raw.get("id")
@@ -167,6 +187,17 @@ def _parse_item(raw: object, split: str, where: str) -> BankItem:
         _require(entry["id"] not in seen, f"{where}：evidence id 重複 {entry['id']}")
         seen.add(entry["id"])
         parsed_evidence.append({"id": entry["id"], "kind": entry["kind"], "content": entry["content"]})
+    ac_type = raw.get("ac_type")
+    _require(ac_type is None or ac_type in AC_TYPES, f"{where}：ac_type 必須是 {AC_TYPES}")
+    route_label = raw.get("route_label")
+    _require(route_label is None or route_label in ROUTE_LABELS, f"{where}：route_label 必須是 {ROUTE_LABELS}")
+    clauses = raw.get("clauses") or []
+    _require(
+        isinstance(clauses, list) and all(isinstance(c, str) and c.strip() for c in clauses),
+        f"{where}：clauses 必須是非空字串 list",
+    )
+    variant_of = raw.get("variant_of")
+    _require(variant_of is None or (isinstance(variant_of, str) and bool(_ID_PATTERN.match(variant_of))), f"{where}：variant_of 不合法")
     return BankItem(
         id=item_id,
         split=split,
@@ -176,6 +207,10 @@ def _parse_item(raw: object, split: str, where: str) -> BankItem:
         rationale=raw["rationale"].strip(),
         criterion=raw["criterion"].strip(),
         evidence=tuple(parsed_evidence),
+        ac_type=ac_type,
+        route_label=route_label,
+        clauses=tuple(c.strip() for c in clauses),
+        variant_of=variant_of,
     )
 
 
@@ -192,6 +227,12 @@ def load_bank(root: Path) -> Bank:
     counts = Counter(item.id for item in items)
     duplicated = sorted(i for i, n in counts.items() if n > 1)
     _require(not duplicated, f"題目 id 重複：{duplicated}")
+    by_id = {item.id: item for item in items}
+    for item in items:
+        if item.variant_of is not None:
+            base = by_id.get(item.variant_of)
+            _require(base is not None, f"{item.id}：variant_of 指向不存在的題目 {item.variant_of}")
+            _require(base.gold == item.gold and base.split == item.split, f"{item.id}：變體必須與來源題同 split、同標註")
     return Bank(root=root, items=tuple(sorted(items, key=lambda i: i.id)))
 
 

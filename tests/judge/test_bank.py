@@ -157,3 +157,14 @@ def test_repo_bank_requests_fit_jev_state_budget():
     for item in load_bank(REPO_BANK).items:
         size = len(json.dumps(build_request(item, "induced").to_payload(), ensure_ascii=False).encode("utf-8"))
         assert size < 40_000, item.id
+
+
+def test_repo_bank_plain_scalars_have_no_yaml_comment_truncation():
+    # YAML 會把純文字值裡「空格＋#」之後當成註解截掉（例如 "issue #91"）；值含 # 時必須加引號。
+    import re
+
+    pattern = re.compile(r"^\s+(- )?(criterion|rationale|content|ref|id|gold):\s+[^'\"|>{\[\s].* #")
+    for root in (REPO_BANK, REPO_BANK.parents[1] / "jev-p1b" / "bank"):
+        for name in ("public.yaml", "hidden.yaml"):
+            for number, line in enumerate((root / name).read_text(encoding="utf-8").splitlines(), 1):
+                assert not pattern.match(line), f"{root.parent.name}/{name}:{number}: {line.strip()}"

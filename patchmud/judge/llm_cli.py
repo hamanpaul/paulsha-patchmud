@@ -13,7 +13,7 @@ judge spec，改動會改變 ``judge_spec_digest``。
   固定 overhead 屬於 provider 既有成本結構，照實計入。
 - 成本：Claude 取 CLI 回報的 ``total_cost_usd``（API 牌價等值）；Copilot 取
   ``--usage-output-file`` 的 premium request 用量，乘以每單位 0.04 美元估算，
-  ``basis`` 標明為估算。
+  ``basis`` 標明為估算；Codex 走訂閱、CLI 不回報金額，只記 token，美元為未知。
 - 子行程 runner 可注入：unit tests 不啟真 CLI、不打真 API。
 """
 
@@ -45,6 +45,7 @@ __all__ = [
     "SYSTEM_PROMPT",
     "ClaudeCliJudge",
     "CliJudgeRunner",
+    "CodexCliJudge",
     "CopilotCliJudge",
     "build_cli_judge_runner",
     "copilot_user_mcp_servers",
@@ -353,3 +354,65 @@ class CopilotCliJudge(_CliJudge):
         else:
             cost = JudgeCost(usd=None, basis="copilot_usage_unavailable", units=usage)
         return text, model, cost, usage, api_ms if isinstance(api_ms, int) else None
+
+
+class CodexCliJudge(_CliJudge):
+    """``codex exec`` 純補全 judge；effort 以 ``model_reasoning_effort`` 指定。
+
+    旗標沿用 ``patchmud.adapters.codex_cli``：唯讀 sandbox、ephemeral、不讀使用者
+    設定與 rules，並關閉 plugins／memories／goals／hooks；judge 另外關閉
+    ``shell_tool``，確保不執行任何指令。Codex 沒有取代內建 system prompt 的旗標，
+    因此和 Copilot 一樣把 system 文字放在 prompt 開頭。
+    """
+
+    provider = "codex"
+    binary_name = "codex"
+    DISABLED_FEATURES = ("plugins", "memories", "goals", "hooks", "shell_tool")
+
+    def __init__(self, model: str = "gpt-6-luna", *, effort: str = "max", **kwargs) -> None:
+        super().__init__(model, **kwargs)
+        self.effort = effort
+
+    def _build_argv(self, user_prompt: str, workdir: Path) -> list:
+        argv = [
+            self._binary,
+            "exec",
+            SYSTEM_PROMPT + "\n\n" + user_prompt,
+            "-m",
+            self.model,
+            "-c",
+            f"model_reasoning_effort={self.effort}",
+            "--sandbox",
+            "read-only",
+            "--ephemeral",
+            "--skip-git-repo-check",
+            "--ignore-user-config",
+            "--ignore-rules",
+        ]
+        for feature in self.DISABLED_FEATURES:
+            argv += ["--disable", feature]
+        return argv + ["--cd", str(workdir), "--json"]
+
+    def _parse(self, stdout: str, workdir: Path) -> tuple:
+        text = None
+        usage: dict = {}
+        for line in stdout.splitlines():
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict):
+                continue
+            item = event.get("item")
+            if event.get("type") == "item.completed" and isinstance(item, dict) and item.get("type") == "agent_message":
+                if isinstance(item.get("text"), str):
+                    text = item["text"]
+            elif event.get("type") == "turn.completed" and isinstance(event.get("usage"), dict):
+                usage = dict(event["usage"])
+        if text is None:
+            raise JudgeError("invalid_output", "codex 輸出沒有 agent_message")
+        cost = JudgeCost(usd=None, basis="codex_subscription_tokens_only", units=usage)
+        return text, f"{self.model}@{self.effort}", cost, usage, None

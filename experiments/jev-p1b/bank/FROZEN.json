@@ -1,0 +1,73 @@
+{
+  "frozen_at": "2026-09-27T09:55:09Z",
+  "schema": "jev-p1b-protocol/v1",
+  "dataset_digest": "8dc35f5f4d32ee4f83b313b2364034ea97e6ef3d99befaae24c4d125f91809d1",
+  "hidden_case_ids": [
+    "h-code-checkpoint-after-write",
+    "h-code-migration-dryrun-writes",
+    "h-code-outbox-effect-unseen",
+    "h-code-outbox-observe-only-mutates",
+    "h-code-outbox-tenant-identity",
+    "h-code-parser-quoted-comma",
+    "h-code-projection-test-unrun",
+    "h-code-ratelimit-retries-500",
+    "h-code-rollout-duplicate-operation",
+    "h-code-rollout-overwrites-operator",
+    "h-code-rollout-restart-unseen",
+    "h-code-snapshot-cursor-unseen",
+    "h-nc-ci-run-all-passed",
+    "h-nc-ci-run-one-failed",
+    "h-nc-fleet-host3-missing",
+    "h-nc-issue-closed-by-pr",
+    "h-nc-migration-tenant-c-missing",
+    "h-nc-node-a-admitted",
+    "h-nc-owner-mismatch",
+    "h-nc-pitr-disabled",
+    "h-nc-restore-never-observed",
+    "h-nc-retention-too-short",
+    "h-nc-slo-half-month",
+    "h-nc-version-declared",
+    "hv-code-checkpoint-stale-comment",
+    "hv-code-dryrun-claimed-fixed",
+    "hv-code-outbox-effect-lgtm",
+    "hv-code-tenant-identity-noise",
+    "hv-nc-ci-failure-muted",
+    "hv-nc-ci-passed-old-failure",
+    "hv-nc-fleet-status-complete",
+    "hv-nc-retention-policy-doc"
+  ],
+  "expected_label_digest": "0d936786ab6a93f216424bc8f34db2d1974246628dee8206f9a6b7d259495b0d",
+  "route_label_digest": "a252d43af056208c63bfee712bf7ef37055c425208ed9c40d89b0bc4df577a29",
+  "router_questions_revision": "4a69fc21bdc8fc8f64d7773a39c2aa4b6802c3c22a44756dc899fe27512df5fd",
+  "code_judge_prompt_digest": "6a3a4d5b0732a89123ee7262679523ea2110745e4387de256c981934b4c1b9c3",
+  "non_code_aggregation_revision": "b675c8cf76bd8fb58882c580ac0a196ff3059e9abbd8980c8e36a3483b6988a7",
+  "spec_digest": "270fb31a3064b63f88dd55107125cf146adbfb1480f19363eb2ded99fd8dad08",
+  "providers": {
+    "jev": "jev-1.13.0",
+    "codex": "gpt-6-luna@max",
+    "claude": "sonnet"
+  },
+  "run_counts": {
+    "base": 1,
+    "variant": 2
+  },
+  "call_caps": {
+    "codex": 60,
+    "claude": 40,
+    "jev_typed_judgments": 300
+  },
+  "thresholds": {
+    "unsafe_route_max": 0,
+    "eligible_routed_min": 0.75,
+    "slice_false_satisfied_max": 0,
+    "slice_macro_f1_min": 0.9,
+    "slice_insufficient_recall_min": 0.9,
+    "slice_misleading_flip_max": 0,
+    "hybrid_false_satisfied_max": 0,
+    "hybrid_quality_margin": 0.03,
+    "llm_call_reduction_min": 0.35,
+    "latency_reduction_min": 0.3,
+    "cost_reduction_min": 0.3
+  },
+  "deadline": "2026-10-03"
+}
