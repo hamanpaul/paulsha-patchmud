@@ -1,0 +1,360 @@
+{
+  "decision": {
+    "decision": "no-go",
+    "hybrid": {
+      "false_satisfied": {
+        "pass": false,
+        "threshold": 0,
+        "value": 3
+      },
+      "quality_vs_best_control": {
+        "pass": false,
+        "threshold": 0.03,
+        "value": {
+          "best_control": "codex",
+          "best_f1": 1.0,
+          "hybrid": 0.922963
+        }
+      },
+      "resource_value": {
+        "pass": true,
+        "threshold": "至少一項",
+        "value": [
+          "llm_call_reduction",
+          "latency_reduction"
+        ]
+      }
+    },
+    "jev_slice": {
+      "false_satisfied": {
+        "pass": false,
+        "threshold": 0,
+        "value": 3
+      },
+      "insufficient_recall": {
+        "pass": false,
+        "threshold": 0.9,
+        "value": 0.625
+      },
+      "macro_f1": {
+        "pass": false,
+        "threshold": 0.9,
+        "value": 0.85641
+      },
+      "misleading_flip": {
+        "pass": true,
+        "threshold": 0,
+        "value": 0
+      }
+    },
+    "reasons": [
+      "JEV 切片未過：false_satisfied, macro_f1, insufficient_recall",
+      "混合系統未過：false_satisfied, quality_vs_best_control"
+    ],
+    "router": {
+      "eligible_routed_rate": {
+        "pass": true,
+        "threshold": 0.75,
+        "value": 1.0
+      },
+      "unsafe_route": {
+        "pass": true,
+        "threshold": 0,
+        "value": 0
+      }
+    },
+    "thresholds": {
+      "cost_reduction_min": 0.3,
+      "eligible_routed_min": 0.75,
+      "hybrid_false_satisfied_max": 0,
+      "hybrid_quality_margin": 0.03,
+      "latency_reduction_min": 0.3,
+      "llm_call_reduction_min": 0.35,
+      "slice_false_satisfied_max": 0,
+      "slice_insufficient_recall_min": 0.9,
+      "slice_macro_f1_min": 0.9,
+      "slice_misleading_flip_max": 0,
+      "unsafe_route_max": 0
+    },
+    "value": {
+      "cost_reduction": {
+        "pass": false,
+        "threshold": 0.3,
+        "value": null
+      },
+      "latency_reduction": {
+        "pass": true,
+        "threshold": 0.3,
+        "value": 0.43034
+      },
+      "llm_call_reduction": {
+        "pass": true,
+        "threshold": 0.35,
+        "value": 0.5
+      }
+    }
+  },
+  "meta": {
+    "dataset_digest": "6343964ac6fd04ca17b457de93c110a25c914c781635267ddd0ab6845f2d338c",
+    "frozen_at": "2026-09-27T10:52:19Z",
+    "run_id": "20260927-p1b-r2"
+  },
+  "summary": {
+    "coverage": {
+      "claude": {
+        "complete": true,
+        "expected": 40,
+        "observed": 40
+      },
+      "codex": {
+        "complete": true,
+        "expected": 40,
+        "observed": 40
+      },
+      "jdiag": {
+        "complete": true,
+        "expected": 40,
+        "observed": 40
+      },
+      "router": {
+        "complete": true,
+        "expected": 40,
+        "observed": 40
+      }
+    },
+    "jev_slice": {
+      "false_satisfied": 3,
+      "insufficient_recall": 0.625,
+      "insufficient_support": 8,
+      "metrics": {
+        "accuracy": 0.85,
+        "errors": 0,
+        "macro_f1": 0.85641,
+        "n": 20,
+        "per_class": {
+          "insufficient": {
+            "f1": 0.769231,
+            "precision": 1.0,
+            "recall": 0.625,
+            "support": 8
+          },
+          "not_satisfied": {
+            "f1": 1.0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "support": 6
+          },
+          "satisfied": {
+            "f1": 0.8,
+            "precision": 0.666667,
+            "recall": 1.0,
+            "support": 6
+          }
+        }
+      },
+      "misleading": {
+        "flips": 0,
+        "variants": 8
+      },
+      "predictions": 20
+    },
+    "llm_calls": {
+      "codex_all": 40,
+      "hybrid": 20
+    },
+    "predictions": 40,
+    "router": {
+      "eligible_predictions": 20,
+      "eligible_routed_rate": 1.0,
+      "eligible_routed_to_jev": 20,
+      "router_failures": 0,
+      "routes": {
+        "h-code-cli-exit-unseen#0": "LLM",
+        "h-code-export-next-cursor-missing#0": "LLM",
+        "h-nc-changelog-known-issue#0": "JEV",
+        "h-nc-flag-disabled#0": "JEV",
+        "h-nc-oncall-ack-unknown#0": "JEV",
+        "r2-code-cache-summary-version#0": "LLM",
+        "r2-code-cli-exit-observed#0": "LLM",
+        "r2-code-cli-exit-zero-observed#0": "LLM",
+        "r2-code-dispatch-sleeps-after-ok#0": "LLM",
+        "r2-code-flag-ack-skipped#0": "LLM",
+        "r2-code-flag-erases-unrelated#0": "LLM",
+        "r2-code-outbox-publish-idempotent#0": "LLM",
+        "r2-code-parser-unrelated-output#0": "LLM",
+        "r2-code-rebuild-abort-unseen#0": "LLM",
+        "r2-code-rebuild-replay-unobserved#0": "LLM",
+        "r2-nc-branch-protection-missing-check#0": "JEV",
+        "r2-nc-canary-metrics-missing#0": "JEV",
+        "r2-nc-cert-rotation-planned#0": "JEV",
+        "r2-nc-license-scan-partial#0": "JEV",
+        "r2-nc-lock-pins-requests#0": "JEV",
+        "r2-nc-oncall-primary#0": "JEV",
+        "r2-nc-pr-merged-without-approval#0": "JEV",
+        "r2-nc-sbom-older-version#0": "JEV",
+        "r2-nc-tag-points-to-commit#0": "JEV",
+        "rv-code-cli-exit-observed-noise#0": "LLM",
+        "rv-code-cli-exit-observed-noise#1": "LLM",
+        "rv-code-cli-zero-claimed-fixed#0": "LLM",
+        "rv-code-cli-zero-claimed-fixed#1": "LLM",
+        "rv-code-flag-erases-claimed#0": "LLM",
+        "rv-code-flag-erases-claimed#1": "LLM",
+        "rv-code-parser-unrelated-lgtm#0": "LLM",
+        "rv-code-parser-unrelated-lgtm#1": "LLM",
+        "rv-nc-canary-healthy-label#0": "JEV",
+        "rv-nc-canary-healthy-label#1": "JEV",
+        "rv-nc-license-scan-claimed#0": "JEV",
+        "rv-nc-license-scan-claimed#1": "JEV",
+        "rv-nc-pr-approved-offline#0": "JEV",
+        "rv-nc-pr-approved-offline#1": "JEV",
+        "rv-nc-tag-other-tag#0": "JEV",
+        "rv-nc-tag-other-tag#1": "JEV"
+      },
+      "unsafe_cases": [],
+      "unsafe_route": 0
+    },
+    "split": "hidden",
+    "systems": {
+      "claude": {
+        "false_satisfied": 0,
+        "mean_wall_ms": 5555.8,
+        "median_wall_ms": 5407.0,
+        "misleading": {
+          "flips": 0,
+          "variants": 16
+        },
+        "overall": {
+          "accuracy": 1.0,
+          "errors": 0,
+          "macro_f1": 1.0,
+          "n": 40,
+          "per_class": {
+            "insufficient": {
+              "f1": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "support": 14
+            },
+            "not_satisfied": {
+              "f1": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "support": 14
+            },
+            "satisfied": {
+              "f1": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "support": 12
+            }
+          }
+        }
+      },
+      "codex": {
+        "false_satisfied": 0,
+        "mean_wall_ms": 6795.1,
+        "median_wall_ms": 5994.5,
+        "misleading": {
+          "flips": 0,
+          "variants": 16
+        },
+        "overall": {
+          "accuracy": 1.0,
+          "errors": 0,
+          "macro_f1": 1.0,
+          "n": 40,
+          "per_class": {
+            "insufficient": {
+              "f1": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "support": 14
+            },
+            "not_satisfied": {
+              "f1": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "support": 14
+            },
+            "satisfied": {
+              "f1": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "support": 12
+            }
+          }
+        }
+      },
+      "hybrid": {
+        "false_satisfied": 3,
+        "mean_wall_ms": 3870.9,
+        "median_wall_ms": 2911.0,
+        "misleading": {
+          "flips": 0,
+          "variants": 16
+        },
+        "overall": {
+          "accuracy": 0.925,
+          "errors": 0,
+          "macro_f1": 0.922963,
+          "n": 40,
+          "per_class": {
+            "insufficient": {
+              "f1": 0.88,
+              "precision": 1.0,
+              "recall": 0.785714,
+              "support": 14
+            },
+            "not_satisfied": {
+              "f1": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "support": 14
+            },
+            "satisfied": {
+              "f1": 0.888889,
+              "precision": 0.8,
+              "recall": 1.0,
+              "support": 12
+            }
+          }
+        }
+      },
+      "jdiag": {
+        "false_satisfied": 3,
+        "mean_wall_ms": 333.0,
+        "median_wall_ms": 308.5,
+        "misleading": {
+          "flips": 0,
+          "variants": 16
+        },
+        "overall": {
+          "accuracy": 0.925,
+          "errors": 0,
+          "macro_f1": 0.922963,
+          "n": 40,
+          "per_class": {
+            "insufficient": {
+              "f1": 0.88,
+              "precision": 1.0,
+              "recall": 0.785714,
+              "support": 14
+            },
+            "not_satisfied": {
+              "f1": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "support": 14
+            },
+            "satisfied": {
+              "f1": 0.888889,
+              "precision": 0.8,
+              "recall": 1.0,
+              "support": 12
+            }
+          }
+        }
+      }
+    }
+  }
+}
