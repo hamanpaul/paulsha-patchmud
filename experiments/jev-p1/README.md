@@ -75,6 +75,14 @@ python -m patchmud.judge score --bank experiments/jev-p1/bank \
   - 或 hidden macro-F1 高出 ≥ 5pp。
 - 任一 provider 的預測或誘導配對未滿就判 no-go（資料不足），不延長時間盒。「能用」本身不算 go。
 
+## 結果
+
+| run | 日期 | 判定 | 摘要 |
+|---|---|---|---|
+| [`20260927-p1`](results/20260927-p1/findings.md) | 2026-09-27 | **no-go** | 安全門檻 4 項中 3 項未過：hidden false-satisfied 2、macro-F1 0.817、誘導翻轉率 11.1%。成本與延遲遠優於 LLM judge，但品質落後最佳既有 judge（Copilot，0.986）約 17pp |
+
+依 v3 §5，no-go 後保留 structured adapter、題庫與結果，production 維持零 JEV 依賴，P2–P4 與 Cortex deck card 都不開。
+
 ## 效度限制
 
 - 標註由 Claude 撰寫，而 Claude 同時是受測 judge，可能共享盲點。凍結前另請不參賽的 Codex 兩輪獨立審查全部標註，並依審查修正了 7 題的證據與措辭（見 [`label-audit/`](label-audit/README.md)）；judge 規格沒有因審查而變動。
