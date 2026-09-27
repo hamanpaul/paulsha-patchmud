@@ -83,6 +83,21 @@ python -m patchmud.judge score --bank experiments/jev-p1/bank \
 
 依 v3 §5，no-go 後保留 structured adapter、題庫與結果，production 維持零 JEV 依賴，P2–P4 與 Cortex deck card 都不開。
 
+## 三輪結論與適用範圍（2026-09-27 決策紀錄 v4）
+
+| 輪次 | 位置 | 判定 |
+|---|---|---|
+| P1 | 本目錄 | no-go |
+| P1b-r1 | [`../jev-p1b/`](../jev-p1b/README.md) | no-go（只差路由安全） |
+| P1b-r2 | [`../jev-p1b-r2/`](../jev-p1b-r2/README.md) | no-go（路由已解決，JEV 非程式判決出現 false-satisfied） |
+
+- **結論與範圍：**
+  - 「JEV 當 semantic-acceptance production judge」判定 no-go for now，不做 r3；
+  - 這個結論**只否定驗收條件判決這個用途**，不外推到其他 JEV 用途；
+  - 本實驗與其工具**不授權任何 production JEV 整合**：`patchmud/judge/` 不接入 engine、pilot、report 與排名。
+- **structured-judge adapter 與量測工具：** 保留為實驗基礎，不代表任何 production 資格。
+- **後續：** JEV 依用途分開評估，現階段唯一在進行的是 Hippo 記憶相關性篩選（paulsha-hippo 的 pull A/B C 組），與本實驗無關。
+
 ## 效度限制
 
 - 標註由 Claude 撰寫，而 Claude 同時是受測 judge，可能共享盲點。凍結前另請不參賽的 Codex 兩輪獨立審查全部標註，並依審查修正了 7 題的證據與措辭（見 [`label-audit/`](label-audit/README.md)）；judge 規格沒有因審查而變動。
