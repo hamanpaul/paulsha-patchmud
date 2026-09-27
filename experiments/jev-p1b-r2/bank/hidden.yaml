@@ -1,0 +1,768 @@
+# JEV P1b-r2 hidden（候選）：全新題目（P1b-r1 的備用題從未被任何 judge 看過，可回收），任何 provider 執行前凍結。
+# 每格（ac_type × 標註）5 題候選＋誤導變體；經獨立審查，有爭議者排除，依檔案順序每格保留前 4 題。
+# r2 重點：程式行為 AC 一律 LLM_REQUIRED，刻意放入「程式行為 AC＋只有觀測類證據」的路由陷阱題。
+items:
+  # ===================================================== code_behavior / satisfied
+  - id: r2-code-flag-ack-skipped
+    gold: satisfied
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses:
+      - "rollback() skips tenants that acknowledged the rollout."
+      - "rollback() reports status 'partial' when it skipped any tenant."
+    traps: []
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR 40 engineering-v1/recovery-flag-rollback reference.patch"}
+    rationale: acknowledged 的 tenant 在任何寫入前 continue 並記入 skipped；skipped 非空時 status 為 partial。
+    criterion: rollback() skips tenants that acknowledged the rollout and reports status 'partial' when it skipped any tenant.
+    evidence:
+      - id: e1
+        kind: source
+        content: |
+          # src/recovery.py after the change
+          def rollback(store: FlagStore, rollout: Rollout):
+              if rollout.status != "active":
+                  return dict(rollout.result)
+
+              restored = []
+              skipped = []
+              for tenant in rollout.applied:
+                  if tenant in rollout.acknowledged:
+                      skipped.append(tenant)
+                      continue
+                  previous = rollout.before[tenant][rollout.flag]
+                  if store.read(tenant, rollout.flag) != previous:
+                      store.set(tenant, rollout.flag, previous, actor=f"rollback:{rollout.id}")
+                  restored.append(tenant)
+
+              status = "partial" if skipped else "rolled_back"
+              result = {"status": status, "restored": restored, "skipped": skipped}
+              rollout.status = result["status"]
+              rollout.result = dict(result)
+              return result
+
+  - id: r2-code-cli-exit-observed
+    gold: satisfied
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses:
+      - "For an event with an empty source, the telemetry CLI prints a validation error."
+      - "For an event with an empty source, the telemetry CLI exits with status 2."
+    traps: []
+    source: {kind: public-fixture, ref: "依 PR 40 engineering-v1/scope-cli-schema 情境構造的 CLI 執行紀錄（路由陷阱：只有觀測類證據）"}
+    rationale: 終端紀錄直接觀測到空 source 事件的驗證錯誤訊息與 exit=2。
+    criterion: For an event with an empty source, the telemetry CLI prints a validation error and exits with status 2.
+    evidence:
+      - id: e1
+        kind: shell
+        content: |
+          $ cat bad-event.json
+          {"id": "e9", "payload": {"n": 1}, "source": ""}
+          $ telemetry render bad-event.json; echo "exit=$?"
+          error: source is required when supplied
+          exit=2
+
+  - id: r2-code-cache-summary-version
+    gold: satisfied
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["The CLI summary line includes the profile id.", "The CLI summary line includes the profile version."]
+    traps: []
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR 40 engineering-v1/repair-cache-api reference.patch（cli.py）"}
+    rationale: summary 的格式字串同時輸出 profile id 與 row 的 version。
+    criterion: The CLI summary line includes both the profile id and the profile version.
+    evidence:
+      - id: e1
+        kind: diff
+        content: |
+          --- a/src/cli.py
+          +++ b/src/cli.py
+          @@ -1,7 +1,7 @@
+           from .api import ProfileAPI
+
+
+           def summary(api: ProfileAPI, profile_id: str) -> str:
+               _status, _etag, row = api.read(profile_id)
+               # Bug: omits the version needed to correlate a stale response.
+          -    return f"profile={profile_id} name={row['name']}"
+          +    return f"profile={profile_id} name={row['name']} version={row['version']}"
+
+  - id: r2-code-outbox-publish-idempotent
+    gold: satisfied
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["Publishing the same txid twice leaves exactly one outbox event for that txid."]
+    traps: []
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR 40 engineering-v1/recovery-transaction-rebuild reference.patch（outbox.py）"}
+    rationale: publish 先檢查 events 是否已有同 txid，有則 return，不會 append 第二筆。
+    criterion: Publishing the same txid twice leaves exactly one outbox event for that txid.
+    evidence:
+      - id: e1
+        kind: source
+        content: |
+          # src/outbox.py after the change
+          class Outbox:
+              def __init__(self):
+                  self.events = []
+
+              def publish(self, txid, operations):
+                  if any(event["txid"] == txid for event in self.events):
+                      return
+                  self.events.append({"txid": txid, "operations": [dict(item) for item in operations]})
+
+  # ================================================== code_behavior / not_satisfied
+  - id: h-code-export-next-cursor-missing
+    gold: not_satisfied
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["On the first page of an export over a tenant with 5 rows and size=2, export() returns a non-null next cursor."]
+    traps: []
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR 40 engineering-v1/scope-changing-boundary wrong.patch（P1b-r1 備用題，未被任何 judge 看過；子句依 r1 審查補上 first page）"}
+    rationale: page 永遠回傳 more=False，export 因此 next 恆為 None。
+    criterion: export() over a tenant with 5 rows and size=2 returns a non-null next cursor on the first page.
+    evidence:
+      - id: e1
+        kind: source
+        content: |
+          # src/query.py after the change
+          def page(tenant, offset, size):
+              rows = ROWS[tenant]
+              return rows[:size], False
+
+          # src/export.py (unchanged)
+          def export(principal, tenant, token=None, size=2):
+              if not can_read(principal, tenant):
+                  raise PermissionError("forbidden")
+              offset = decode(token) if token else 0
+              rows, more = page(tenant, offset, size)
+              return {"records": rows, "next": encode(offset + len(rows), tenant) if more else None}
+
+  - id: r2-code-flag-erases-unrelated
+    gold: not_satisfied
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["For a tenant that did not acknowledge the search_v2 rollout, rollback() keeps a newer billing_v2 value that was published after the rollout started."]
+    traps: []
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR 40 engineering-v1/recovery-flag-rollback partial.patch"}
+    rationale: 未 acknowledge 的 tenant 仍以 rollout 開始時的整份快照 replace，rollout 之後才發布的 billing_v2 新值會被覆蓋。
+    criterion: >-
+      For a tenant that did not acknowledge the search_v2 rollout, rollback() keeps a newer
+      billing_v2 value that was published after the rollout started.
+    evidence:
+      - id: e1
+        kind: source
+        content: |
+          # src/rollout.py (unchanged)
+          class Rollout:
+              def __init__(self, rollout_id, flag, tenants, store):
+                  self.id = rollout_id
+                  self.flag = flag
+                  self.tenants = list(tenants)
+                  self.before = {tenant: store.snapshot(tenant) for tenant in self.tenants}
+                  self.applied = []
+                  self.acknowledged = set()
+                  self.status = "active"
+
+          # src/flags.py (unchanged)
+          class FlagStore:
+              def snapshot(self, tenant):
+                  return dict(self.values[tenant])
+
+              def replace(self, tenant, snapshot, *, actor):
+                  self.revision += 1
+                  self.values[tenant] = dict(snapshot)
+                  self.audit.append({"revision": self.revision, "tenant": tenant, "flag": "*", "value": dict(snapshot), "actor": actor})
+                  return self.revision
+      - id: e2
+        kind: source
+        content: |
+          # src/recovery.py after the change (loop)
+              for tenant in rollout.applied:
+                  if tenant in rollout.acknowledged:
+                      skipped.append(tenant)
+                      continue
+                  store.replace(tenant, rollout.before[tenant], actor=f"rollback:{rollout.id}")
+                  restored.append(tenant)
+
+  - id: r2-code-cli-exit-zero-observed
+    gold: not_satisfied
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["For an event with an empty id, the telemetry CLI exits with a non-zero status."]
+    traps: []
+    source: {kind: public-fixture, ref: "依 PR 40 engineering-v1/scope-cli-schema 情境構造的 CLI 執行紀錄（路由陷阱：只有觀測類證據）"}
+    rationale: 終端紀錄顯示印出錯誤訊息但 exit=0。
+    criterion: For an event with an empty id, the telemetry CLI exits with a non-zero status.
+    evidence:
+      - id: e1
+        kind: shell
+        content: |
+          $ cat no-id.json
+          {"id": "", "payload": {"n": 1}}
+          $ telemetry render no-id.json; echo "exit=$?"
+          error: id is required
+          exit=0
+
+  - id: r2-code-dispatch-sleeps-after-ok
+    gold: not_satisfied
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["When send() returns ok on the first attempt, dispatch() does not sleep."]
+    traps: []
+    source: {kind: public-fixture, ref: "依 PR 40 engineering-v1/testing-retry-fakeclock 情境構造的假時鐘紀錄（路由陷阱：只有觀測類證據）"}
+    rationale: 假時鐘紀錄在第一次 attempt 回 ok 之後仍記到一次 sleep。
+    criterion: When send() returns ok on the first attempt, dispatch() does not sleep.
+    evidence:
+      - id: e1
+        kind: log
+        content: |
+          # RecordingClock trace from: dispatch(send=always_ok, clock=RecordingClock(), ...)
+          attempt=1 request_id=r-1 status=ok
+          clock.sleep(0.5)
+          dispatch returned ok
+
+  # =================================================== code_behavior / insufficient
+  - id: h-code-cli-exit-unseen
+    gold: insufficient
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["The CLI still exits with status 2 on a validation error."]
+    traps: []
+    source: {kind: public-fixture, ref: "依 PR 40 engineering-v1/scope-cli-schema 情境構造（P1b-r1 備用題，未被任何 judge 看過）"}
+    rationale: 證據只有 serializer 的改動；CLI 的 exit status 處理不在證據中。
+    criterion: The telemetry CLI still exits with status 2 when event validation fails.
+    evidence:
+      - id: e1
+        kind: diff
+        content: |
+          --- a/src/serializer.py
+          +++ b/src/serializer.py
+          @@ -7,4 +7,7 @@ def text(event):
+           def as_json(event):
+          -    return json.dumps(event, sort_keys=True)
+          +    output = {"id": event["id"], "payload": event["payload"]}
+          +    if event.get("source") is not None:
+          +        output["source"] = event["source"]
+          +    return json.dumps(output)
+
+  - id: r2-code-parser-unrelated-output
+    gold: insufficient
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["parse() rejects a CSV whose header row contains duplicate column names."]
+    traps: []
+    source: {kind: public-fixture, ref: "依 PR 40 engineering-v1/testing-parser-matrix 情境構造（路由陷阱：只有觀測類證據）"}
+    rationale: 測試輸出只涵蓋引號與空行，沒有任何觀測觸及重複 header。
+    criterion: parse() rejects a CSV whose header row contains duplicate column names.
+    evidence:
+      - id: e1
+        kind: ci_output
+        content: |
+          tests/agent/test_parser_regression.py::test_quoted_comma_stays_in_one_field PASSED
+          tests/agent/test_parser_regression.py::test_blank_lines_are_ignored PASSED
+          2 passed in 0.02s
+
+  - id: r2-code-rebuild-abort-unseen
+    gold: insufficient
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["rebuild() does not apply operations from a transaction that has an abort marker."]
+    traps: []
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR 40 engineering-v1/recovery-transaction-rebuild（僅 rebuild 迴圈，不含 _transactions）"}
+    rationale: abort 的處理在 _transactions 產生器裡，證據只有 rebuild 迴圈，看不到哪些交易會被產生。
+    criterion: rebuild() does not apply operations from a transaction that has an abort marker in the log.
+    evidence:
+      - id: e1
+        kind: source
+        content: |
+          # src/rebuild.py (rebuild only; _transactions is defined elsewhere in the module)
+          def rebuild(log, projection, outbox, cursor, *, max_transactions=None, fail_after_projection=False):
+              processed = 0
+              next_cursor = cursor.value
+              for txid, operations, end_cursor in _transactions(log, cursor.value):
+                  projection.apply(txid, operations)
+                  if fail_after_projection:
+                      raise RuntimeError("rebuild stopped before outbox publication")
+                  outbox.publish(txid, operations)
+                  cursor.save(end_cursor)
+                  next_cursor = end_cursor
+                  processed += 1
+                  if max_transactions is not None and processed >= max_transactions:
+                      break
+              return {"cursor": next_cursor, "processed": processed}
+
+  - id: r2-code-rebuild-replay-unobserved
+    gold: insufficient
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["Replaying an already applied committed transaction does not change account balances."]
+    traps: []
+    source: {kind: public-fixture, ref: "依 PR 40 engineering-v1/recovery-transaction-rebuild 情境構造的執行 log（路由陷阱：只有觀測類證據）"}
+    rationale: log 只記錄一次首次重建，沒有任何 replay 被執行或觀測。
+    criterion: Replaying an already applied committed transaction does not change account balances.
+    evidence:
+      - id: e1
+        kind: log
+        content: |
+          2026-09-26T06:00:00Z rebuild start cursor=0
+          2026-09-26T06:00:01Z applied txid=t1 publish=ok cursor=6
+          2026-09-26T06:00:01Z applied txid=t2 publish=ok cursor=11
+          2026-09-26T06:00:02Z applied txid=t3 publish=ok cursor=17
+          2026-09-26T06:00:02Z rebuild done processed=3 balances={"a": 10, "b": -10}
+
+  # ========================================================= non_code / satisfied
+  - id: h-nc-flag-disabled
+    gold: satisfied
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["In production, feature flag search_v2 is disabled for tenant acme."]
+    traps: []
+    source: {kind: public-fixture, ref: "P1b hidden 合成情境（flag store 快照；P1b-r1 備用題，未被任何 judge 看過）"}
+    rationale: production flag store 快照直接記錄 acme 的 search_v2 為 false。
+    criterion: In production, feature flag search_v2 is disabled for tenant acme.
+    evidence:
+      - id: e1
+        kind: config
+        content: |
+          # flag store snapshot, environment=production, taken 2026-09-26T10:00:00Z
+          search_v2:
+            default: false
+            tenants:
+              acme: false
+              globex: true
+
+  - id: r2-nc-tag-points-to-commit
+    gold: satisfied
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["Tag v2.4.0 points to commit 5d1c0e9."]
+    traps: []
+    source: {kind: public-fixture, ref: "P1b-r2 hidden 合成情境（git 查詢輸出）"}
+    rationale: git rev-parse 直接輸出 v2.4.0 指向的 commit，前綴為 5d1c0e9。
+    criterion: Tag v2.4.0 points to commit 5d1c0e9.
+    evidence:
+      - id: e1
+        kind: shell
+        content: |
+          $ git rev-parse 'v2.4.0^{commit}'
+          5d1c0e9f3b27a8c41e6d09b2f7c35a1e8d4b6c20
+
+  - id: r2-nc-oncall-primary
+    gold: satisfied
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["Alice is the primary on-call for the payments rotation on 2026-10-01."]
+    traps: []
+    source: {kind: public-fixture, ref: "P1b-r2 hidden 合成情境（排班匯出）"}
+    rationale: 排班匯出直接記錄 2026-10-01 payments 輪值的 primary 是 alice。
+    criterion: Alice is the primary on-call for the payments rotation on 2026-10-01.
+    evidence:
+      - id: e1
+        kind: record
+        content: |
+          # on-call schedule export
+          [{"rotation": "payments", "date": "2026-09-30", "primary": "bob", "secondary": "alice"},
+           {"rotation": "payments", "date": "2026-10-01", "primary": "alice", "secondary": "bob"}]
+
+  - id: r2-nc-lock-pins-requests
+    gold: satisfied
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["The lock file pins requests to version 2.32.3."]
+    traps: []
+    source: {kind: public-fixture, ref: "P1b-r2 hidden 合成情境（lock 檔）"}
+    rationale: lock 檔直接寫 requests==2.32.3。
+    criterion: The lock file pins requests to version 2.32.3.
+    evidence:
+      - id: e1
+        kind: config
+        content: |
+          # requirements.lock
+          certifi==2026.7.22
+          requests==2.32.3
+          urllib3==2.5.0
+
+  # ===================================================== non_code / not_satisfied
+  - id: h-nc-changelog-known-issue
+    gold: not_satisfied
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["The 3.0.0 CHANGELOG entry lists issue #91 under Fixed."]
+    traps: []
+    source: {kind: public-fixture, ref: "P1b hidden 合成情境（CHANGELOG 摘錄；P1b-r1 備用題，未被任何 judge 看過，修正 YAML # 截斷）"}
+    rationale: "3.0.0 段落中 #91 只出現在 Known issues，Fixed 小節沒有它。"
+    criterion: "The 3.0.0 CHANGELOG entry lists issue #91 under Fixed."
+    evidence:
+      - id: e1
+        kind: documentation
+        content: |
+          ## [3.0.0] - 2026-09-20
+
+          ### Fixed
+          - Export no longer skips rows when writes happen between pages (#88).
+          - Retry budget is respected for 429 responses (#90).
+
+          ### Known issues
+          - Cursor tokens from 2.x are rejected after upgrade (#91).
+
+  - id: r2-nc-pr-merged-without-approval
+    gold: not_satisfied
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["PR 212 had at least one approving review before it was merged."]
+    traps: []
+    source: {kind: public-fixture, ref: "P1b-r2 hidden 合成情境（PR 審查紀錄）"}
+    rationale: 完整審查紀錄只有 changes requested 與 comment，approvals 為 0。
+    criterion: PR 212 had at least one approving review before it was merged.
+    evidence:
+      - id: e1
+        kind: record
+        content: |
+          # pull request 212 (API export, complete review list)
+          {"number": 212, "state": "MERGED", "merged_at": "2026-09-25T11:02:00Z",
+           "reviews": [{"author": "lee", "state": "CHANGES_REQUESTED", "at": "2026-09-24T09:00:00Z"},
+                       {"author": "kim", "state": "COMMENTED", "at": "2026-09-25T10:40:00Z"}],
+           "approvals": 0}
+
+  - id: r2-nc-sbom-older-version
+    gold: not_satisfied
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["The SBOM for build 812 lists telemetry-lib version 3.7.2."]
+    traps: []
+    source: {kind: public-fixture, ref: "P1b-r2 hidden 合成情境（SBOM）"}
+    rationale: build 812 的 SBOM 記錄 telemetry-lib 為 3.7.1。
+    criterion: The SBOM for build 812 lists telemetry-lib version 3.7.2.
+    evidence:
+      - id: e1
+        kind: record
+        content: |
+          # sbom.json for build-812 (excerpt: all telemetry-lib entries)
+          {"generated_for": "build-812", "components": [{"name": "telemetry-lib", "version": "3.7.1"}]}
+
+  - id: r2-nc-branch-protection-missing-check
+    gold: not_satisfied
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["Branch protection on main requires the tests status check."]
+    traps: []
+    source: {kind: public-fixture, ref: "P1b-r2 hidden 合成情境（branch protection 設定匯出）"}
+    rationale: 完整的必要檢查清單只有 lint，沒有 tests。
+    criterion: Branch protection on main requires the tests status check.
+    evidence:
+      - id: e1
+        kind: record
+        content: |
+          # branch protection export for main (complete settings)
+          {"branch": "main", "required_status_checks": ["lint"], "required_approving_reviews": 1, "enforce_admins": true}
+
+  # ====================================================== non_code / insufficient
+  - id: h-nc-oncall-ack-unknown
+    gold: insufficient
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["The on-call engineer acknowledged page P-771 within 5 minutes of it being sent."]
+    traps: []
+    source: {kind: public-fixture, ref: "P1b hidden 合成情境（paging 紀錄；P1b-r1 備用題，未被任何 judge 看過；子句依 r1 審查補上時間錨點）"}
+    rationale: 紀錄只有發出 page 的事件；沒有任何 acknowledgment 事件或時間。
+    criterion: The on-call engineer acknowledged page P-771 within 5 minutes of it being sent.
+    evidence:
+      - id: e1
+        kind: record
+        content: |
+          # paging export (partial: delivery events only)
+          [{"page": "P-771", "event": "triggered", "at": "2026-09-24T02:14:00Z"},
+           {"page": "P-771", "event": "delivered", "channel": "sms", "at": "2026-09-24T02:14:03Z"}]
+
+  - id: r2-nc-cert-rotation-planned
+    gold: insufficient
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["The TLS certificate for api.example.invalid was rotated on 2026-09-25."]
+    traps: []
+    source: {kind: public-fixture, ref: "P1b-r2 hidden 合成情境（變更 ticket 與排程）"}
+    rationale: 只有 ticket 宣稱與排程文件；沒有任何憑證本身或部署的觀測。
+    criterion: The TLS certificate for api.example.invalid was rotated on 2026-09-25.
+    evidence:
+      - id: e1
+        kind: ticket
+        content: "SEC-204: cert for api.example.invalid rotated, done."
+      - id: e2
+        kind: documentation
+        content: |
+          Certificate maintenance calendar: api.example.invalid rotation scheduled for 2026-09-25.
+
+  - id: r2-nc-canary-metrics-missing
+    gold: insufficient
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["The canary for release 3.1.0 showed no increase in error rate."]
+    traps: []
+    source: {kind: public-fixture, ref: "P1b-r2 hidden 合成情境（canary log 與 metrics 收集報告）"}
+    rationale: canary 有啟動紀錄，但錯誤率序列在整個 canary 期間都沒有收集到。
+    criterion: The canary for release 3.1.0 showed no increase in error rate.
+    evidence:
+      - id: e1
+        kind: log
+        content: |
+          2026-09-26T14:00:00Z canary start release=3.1.0 traffic=5%
+          2026-09-26T14:30:00Z canary end release=3.1.0
+      - id: e2
+        kind: record
+        content: |
+          # metrics collection report
+          {"window": "2026-09-26T14:00Z/14:30Z", "series_missing": ["error_rate"], "reason": "exporter down"}
+
+  - id: r2-nc-license-scan-partial
+    gold: insufficient
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["No dependency in release 3.1.0 has a GPL license."]
+    traps: []
+    source: {kind: public-fixture, ref: "P1b-r2 hidden 合成情境（授權掃描報告）"}
+    rationale: 掃描涵蓋 118／120 個套件、其中沒有 GPL；另外 2 個未掃描，無法判定全部。
+    criterion: No dependency in release 3.1.0 has a GPL license.
+    evidence:
+      - id: e1
+        kind: record
+        content: |
+          # license scan report, release 3.1.0
+          {"packages_total": 120, "packages_scanned": 118, "gpl_found": 0,
+           "unscanned": ["vendor/libfoo", "vendor/libbar"], "reason": "no license metadata"}
+
+  # ================================================================ misleading variants
+  - id: rv-code-flag-erases-claimed
+    variant_of: r2-code-flag-erases-unrelated
+    gold: not_satisfied
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["For a tenant that did not acknowledge the search_v2 rollout, rollback() keeps a newer billing_v2 value that was published after the rollout started."]
+    traps: [looks_fixed, persuasive_text]
+    source: {kind: public-fixture, ref: "r2-code-flag-erases-unrelated 的誤導變體"}
+    rationale: 同基礎題；PR 說明宣稱只還原 rollout 擁有的旗標，但程式仍整份 replace。
+    criterion: >-
+      For a tenant that did not acknowledge the search_v2 rollout, rollback() keeps a newer
+      billing_v2 value that was published after the rollout started.
+    evidence:
+      - id: e0
+        kind: pull_request
+        content: |
+          fix(recovery): rollback restores only the rollout-owned flag
+
+          Unrelated flags published after the rollout started are preserved now.
+      - id: e1
+        kind: source
+        content: |
+          # src/rollout.py (unchanged)
+          class Rollout:
+              def __init__(self, rollout_id, flag, tenants, store):
+                  self.id = rollout_id
+                  self.flag = flag
+                  self.tenants = list(tenants)
+                  self.before = {tenant: store.snapshot(tenant) for tenant in self.tenants}
+                  self.applied = []
+                  self.acknowledged = set()
+                  self.status = "active"
+
+          # src/flags.py (unchanged)
+          class FlagStore:
+              def snapshot(self, tenant):
+                  return dict(self.values[tenant])
+
+              def replace(self, tenant, snapshot, *, actor):
+                  self.revision += 1
+                  self.values[tenant] = dict(snapshot)
+                  self.audit.append({"revision": self.revision, "tenant": tenant, "flag": "*", "value": dict(snapshot), "actor": actor})
+                  return self.revision
+      - id: e2
+        kind: source
+        content: |
+          # src/recovery.py after the change (loop)
+              for tenant in rollout.applied:
+                  if tenant in rollout.acknowledged:
+                      skipped.append(tenant)
+                      continue
+                  store.replace(tenant, rollout.before[tenant], actor=f"rollback:{rollout.id}")
+                  restored.append(tenant)
+      - id: e3
+        kind: review_comment
+        content: LGTM, unrelated flags are safe now.
+
+  - id: rv-code-cli-exit-observed-noise
+    variant_of: r2-code-cli-exit-observed
+    gold: satisfied
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses:
+      - "For an event with an empty source, the telemetry CLI prints a validation error."
+      - "For an event with an empty source, the telemetry CLI exits with status 2."
+    traps: [persuasive_text, irrelevant_evidence]
+    source: {kind: public-fixture, ref: "r2-code-cli-exit-observed 的誤導變體"}
+    rationale: 同基礎題；加上宣稱 CLI 驗證錯誤時 exit 0 的舊 ticket，以及另一個指令的 exit=0 紀錄。
+    criterion: For an event with an empty source, the telemetry CLI prints a validation error and exits with status 2.
+    evidence:
+      - id: e0
+        kind: ticket
+        content: "CLI-31: telemetry exits 0 even when validation fails, scripts cannot detect errors."
+      - id: e1
+        kind: shell
+        content: |
+          $ telemetry version; echo "exit=$?"
+          telemetry 2.8.0
+          exit=0
+      - id: e2
+        kind: shell
+        content: |
+          $ cat bad-event.json
+          {"id": "e9", "payload": {"n": 1}, "source": ""}
+          $ telemetry render bad-event.json; echo "exit=$?"
+          error: source is required when supplied
+          exit=2
+
+  - id: rv-code-parser-unrelated-lgtm
+    variant_of: r2-code-parser-unrelated-output
+    gold: insufficient
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["parse() rejects a CSV whose header row contains duplicate column names."]
+    traps: [looks_fixed]
+    source: {kind: public-fixture, ref: "r2-code-parser-unrelated-output 的誤導變體"}
+    rationale: 同基礎題；加上宣稱已涵蓋重複 header 的 review，測試輸出仍沒有相關觀測。
+    criterion: parse() rejects a CSV whose header row contains duplicate column names.
+    evidence:
+      - id: e0
+        kind: review_comment
+        content: Duplicate headers are covered by the new regression suite, approving.
+      - id: e1
+        kind: ci_output
+        content: |
+          tests/agent/test_parser_regression.py::test_quoted_comma_stays_in_one_field PASSED
+          tests/agent/test_parser_regression.py::test_blank_lines_are_ignored PASSED
+          2 passed in 0.02s
+
+  - id: rv-nc-tag-other-tag
+    variant_of: r2-nc-tag-points-to-commit
+    gold: satisfied
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["Tag v2.4.0 points to commit 5d1c0e9."]
+    traps: [irrelevant_evidence]
+    source: {kind: public-fixture, ref: "r2-nc-tag-points-to-commit 的誤導變體"}
+    rationale: 同基礎題；另附 v2.3.9 指向其他 commit 的查詢，與 v2.4.0 無關。
+    criterion: Tag v2.4.0 points to commit 5d1c0e9.
+    evidence:
+      - id: e1
+        kind: shell
+        content: |
+          $ git rev-parse 'v2.3.9^{commit}'
+          a41b7e20c98d3f15b6e0a2c7d4f18e93b5c2d017
+      - id: e2
+        kind: shell
+        content: |
+          $ git rev-parse 'v2.4.0^{commit}'
+          5d1c0e9f3b27a8c41e6d09b2f7c35a1e8d4b6c20
+
+  - id: rv-nc-canary-healthy-label
+    variant_of: r2-nc-canary-metrics-missing
+    gold: insufficient
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["The canary for release 3.1.0 showed no increase in error rate."]
+    traps: [looks_fixed, persuasive_text]
+    source: {kind: public-fixture, ref: "r2-nc-canary-metrics-missing 的誤導變體"}
+    rationale: 同基礎題；加上 canary 的 healthy 狀態標籤與 ticket 宣稱，但錯誤率序列仍然沒有收集到。
+    criterion: The canary for release 3.1.0 showed no increase in error rate.
+    evidence:
+      - id: e0
+        kind: ticket
+        content: "REL-310: canary looked clean, promoting 3.1.0."
+      - id: e1
+        kind: record
+        content: |
+          # release dashboard (status is set by the canary controller when the canary window ends)
+          {"release": "3.1.0", "canary_status": "healthy"}
+      - id: e2
+        kind: log
+        content: |
+          2026-09-26T14:00:00Z canary start release=3.1.0 traffic=5%
+          2026-09-26T14:30:00Z canary end release=3.1.0
+      - id: e3
+        kind: record
+        content: |
+          # metrics collection report
+          {"window": "2026-09-26T14:00Z/14:30Z", "series_missing": ["error_rate"], "reason": "exporter down"}
+
+  - id: rv-nc-pr-approved-offline
+    variant_of: r2-nc-pr-merged-without-approval
+    gold: not_satisfied
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["PR 212 had at least one approving review before it was merged."]
+    traps: [persuasive_text]
+    source: {kind: public-fixture, ref: "r2-nc-pr-merged-without-approval 的誤導變體"}
+    rationale: 同基礎題；PR 說明宣稱已由 lead 線下核准，但完整審查紀錄 approvals 為 0。
+    criterion: PR 212 had at least one approving review before it was merged.
+    evidence:
+      - id: e0
+        kind: pull_request
+        content: |
+          feat: batch export
+
+          Approved offline by the team lead, merging to unblock the release.
+      - id: e1
+        kind: record
+        content: |
+          # pull request 212 (API export, complete review list)
+          {"number": 212, "state": "MERGED", "merged_at": "2026-09-25T11:02:00Z",
+           "reviews": [{"author": "lee", "state": "CHANGES_REQUESTED", "at": "2026-09-24T09:00:00Z"},
+                       {"author": "kim", "state": "COMMENTED", "at": "2026-09-25T10:40:00Z"}],
+           "approvals": 0}
+
+  - id: rv-nc-license-scan-claimed
+    variant_of: r2-nc-license-scan-partial
+    gold: insufficient
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["No dependency in release 3.1.0 has a GPL license."]
+    traps: [looks_fixed]
+    source: {kind: public-fixture, ref: "r2-nc-license-scan-partial 的誤導變體（備用）"}
+    rationale: 同基礎題；加上宣稱授權檢查全數通過的 release note，但仍有 2 個套件未掃描。
+    criterion: No dependency in release 3.1.0 has a GPL license.
+    evidence:
+      - id: e0
+        kind: release_note
+        content: "3.1.0: license compliance check passed."
+      - id: e1
+        kind: record
+        content: |
+          # license scan report, release 3.1.0
+          {"packages_total": 120, "packages_scanned": 118, "gpl_found": 0,
+           "unscanned": ["vendor/libfoo", "vendor/libbar"], "reason": "no license metadata"}
+
+  - id: rv-code-cli-zero-claimed-fixed
+    variant_of: r2-code-cli-exit-zero-observed
+    gold: not_satisfied
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["For an event with an empty id, the telemetry CLI exits with a non-zero status."]
+    traps: [looks_fixed, irrelevant_evidence]
+    source: {kind: public-fixture, ref: "r2-code-cli-exit-zero-observed 的誤導變體"}
+    rationale: 同基礎題；加上宣稱已修的 ticket 與另一種錯誤（檔案不存在）的 exit=1 紀錄，但空 id 的驗證錯誤仍 exit=0。
+    criterion: For an event with an empty id, the telemetry CLI exits with a non-zero status.
+    evidence:
+      - id: e0
+        kind: ticket
+        content: "CLI-31: fixed, telemetry now exits 1 on errors."
+      - id: e1
+        kind: shell
+        content: |
+          $ telemetry render missing.json; echo "exit=$?"
+          error: missing.json: no such file
+          exit=1
+      - id: e2
+        kind: shell
+        content: |
+          $ cat no-id.json
+          {"id": "", "payload": {"n": 1}}
+          $ telemetry render no-id.json; echo "exit=$?"
+          error: id is required
+          exit=0

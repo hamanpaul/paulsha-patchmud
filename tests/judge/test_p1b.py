@@ -280,5 +280,38 @@ def test_repo_p1b_bank_is_frozen_and_conforming():
     assert p1b.check_p1b_composition(bank) == []
     from patchmud.judge.__main__ import P1B_MODELS
     from patchmud.judge.p1b_scoring import P1B_THRESHOLDS
-    spec = p1b.p1b_spec(**P1B_MODELS)
+    spec = p1b.p1b_spec(**P1B_MODELS, revision="r1")
     p1b.verify_p1b_frozen(bank, spec, P1B_THRESHOLDS)
+
+
+@pytest.mark.parametrize(
+    "r0,r1,r2,route",
+    [("no", "not_required", "yes", "JEV"), ("yes", "not_required", "yes", "LLM"), ("uncertain", "not_required", "yes", "LLM"),
+     ("no", "required", "yes", "LLM")],
+)
+def test_r2_route_requires_non_software_criterion(r0, r1, r2, route):
+    arm = p1b.router_arm(None, "r2")
+    out = arm.interpret(None, _answers(r0_software_behavior=r0, r1_execution_reasoning=r1, r2_direct_evidence_path=r2))
+    assert out["details"]["route"] == route and out["details"]["r0"] == r0
+
+
+def test_r2_revision_adds_r0_without_changing_r1_spec(tmp_path):
+    bank = _write(tmp_path, [_item("a", "satisfied", "non_code", "JEV_ELIGIBLE")], [])
+    item = bank.items[0]
+    assert set(p1b.route_request(item, revision="r2").questions) == {"r0_software_behavior", *p1b.ROUTER_QUESTIONS}
+    assert set(p1b.router_arm(None, "r2").build(item).questions) == set(p1b.ROUTER_REVISIONS["r2"])
+    r1 = p1b.p1b_spec(codex_model="m", codex_effort="max", claude_model="c")
+    r2 = p1b.p1b_spec(codex_model="m", codex_effort="max", claude_model="c", revision="r2")
+    assert "revision" not in r1 and r2["revision"] == "r2"
+    assert r1["router_questions"] != r2["router_questions"]
+    tasks = p1b.plan_p1b_tasks(bank, ["router"], split="public")
+    assert p1b.count_calls(bank, tasks, "r2") == {"jev_typed_judgments": 3}
+
+
+def test_repo_p1b_r2_bank_is_frozen_and_conforming():
+    from patchmud.judge.__main__ import P1B_MODELS
+    from patchmud.judge.p1b_scoring import P1B_THRESHOLDS
+
+    bank = load_bank(REPO_P1B_BANK.parents[1] / "jev-p1b-r2" / "bank")
+    assert p1b.check_p1b_composition(bank) == []
+    p1b.verify_p1b_frozen(bank, p1b.p1b_spec(**P1B_MODELS, revision="r2"), P1B_THRESHOLDS)

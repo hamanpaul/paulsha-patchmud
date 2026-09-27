@@ -139,7 +139,9 @@ def _cmd_score(args) -> int:
 
 
 def _p1b_spec(args) -> dict:
-    return p1b.p1b_spec(codex_model=args.codex_model, codex_effort=args.codex_effort, claude_model=args.claude_model)
+    return p1b.p1b_spec(
+        codex_model=args.codex_model, codex_effort=args.codex_effort, claude_model=args.claude_model, revision=args.revision
+    )
 
 
 def _cmd_p1b_validate(args) -> int:
@@ -174,7 +176,7 @@ def _cmd_p1b_run(args) -> int:
     jev = TypeSafeJudgeAdapter() if {"router", "jdiag"} & set(names) else None
     codex = CodexCliJudge(model=args.codex_model, effort=args.codex_effort) if "codex" in names else None
     claude = ClaudeCliJudge(model=args.claude_model) if "claude" in names else None
-    arms = {k: v for k, v in p1b.p1b_arms(jev=jev, codex=codex, claude=claude).items() if k in names}
+    arms = {k: v for k, v in p1b.p1b_arms(jev=jev, codex=codex, claude=claude, revision=args.revision).items() if k in names}
     unknown = sorted(set(names) - set(arms))
     if unknown:
         raise SystemExit(f"未知 arm：{unknown}（可用：router、jdiag、codex、claude）")
@@ -182,11 +184,11 @@ def _cmd_p1b_run(args) -> int:
     tasks = p1b.plan_p1b_tasks(bank, list(arms), split=args.split, item_ids=items)
     out = Path(args.out)
     done = {(r["provider"], r["item_id"], r["variant"], r["run_index"]) for r in load_records(out)}
-    planned = p1b.count_calls(bank, tasks)
+    planned = p1b.count_calls(bank, tasks, args.revision)
     for key, cap in p1b.CALL_CAPS.items():
         if planned.get(key, 0) > cap:
             raise SystemExit(f"{key} 計畫呼叫 {planned[key]} 超過上限 {cap}，拒絕執行")
-    remaining = p1b.count_calls(bank, [t for t in tasks if t.key() not in done])
+    remaining = p1b.count_calls(bank, [t for t in tasks if t.key() not in done], args.revision)
     print(f"計畫呼叫 {planned}；尚未完成 {remaining}", flush=True)
 
     def progress(record: dict) -> None:
@@ -231,6 +233,7 @@ def _cmd_p1b_score(args) -> int:
 
 
 def _add_p1b_model_args(p) -> None:
+    p.add_argument("--revision", choices=tuple(p1b.ROUTER_REVISIONS), default="r2", help="協定版本（決定路由問題）")
     p.add_argument("--codex-model", default=P1B_MODELS["codex_model"])
     p.add_argument("--codex-effort", default=P1B_MODELS["codex_effort"])
     p.add_argument("--claude-model", default=P1B_MODELS["claude_model"])

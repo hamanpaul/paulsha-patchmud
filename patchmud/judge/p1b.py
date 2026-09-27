@@ -42,6 +42,7 @@ __all__ = [
     "P1B_FROZEN_FILE",
     "RELATION_CRITERIA",
     "ROUTER_QUESTIONS",
+    "ROUTER_REVISIONS",
     "check_p1b_composition",
     "decomposed_arm",
     "decomposed_request",
@@ -115,6 +116,29 @@ ROUTER_QUESTIONS = {
 
 #: 開發集修訂 1（09-27）：rev0 在開發集把記錄裡的標籤（patched、complete）當成支持、
 #: 把「未記錄」當成反證；改在 criteria 寫明標籤不是觀測、缺紀錄不是反證。
+#: r2（09-27）：r1 在 hidden 把「程式行為 AC＋只有觀測類證據」送給 JEV（unsafe route）。
+#: 新增一題只看 AC、不看證據清單的 R0；R0＝no 且 R1、R2 都指向非程式，才送 JEV。
+R0_SOFTWARE_BEHAVIOR = ChoiceQuestion(
+    instructions=(
+        "Consider only `acceptance_criterion` and ignore `evidence_manifest`. Is the criterion a statement "
+        "about how software behaves when it runs: what a function, method, API, command-line tool, script, "
+        "or code path does, returns, raises, writes, or outputs?"
+    ),
+    criteria={
+        "yes": "The criterion describes behavior of code or of a program when it runs, such as return "
+        "values, raised errors, exit statuses, side effects, output format, retries, or state changes.",
+        "no": "The criterion states a fact about records, configuration values, deployments, versions, "
+        "releases, issues, CI runs, processes, or operational events rather than how code behaves when it runs.",
+        "uncertain": "It is unclear which of these the criterion states.",
+    },
+)
+
+#: 路由問題依協定版本保存；r1 不變，已凍結的 r1 協定因此仍可驗證。
+ROUTER_REVISIONS = {
+    "r1": dict(ROUTER_QUESTIONS),
+    "r2": {"r0_software_behavior": R0_SOFTWARE_BEHAVIOR, **ROUTER_QUESTIONS},
+}
+
 RELATION_CRITERIA = {
     "supports": "The evidence directly observes that the claim is true. A label, status, or name that "
     "only asserts the outcome (for example 'patched', 'complete', 'verified', 'production') is not an "
@@ -151,21 +175,25 @@ def manifest(item: BankItem) -> list:
     return rows
 
 
-def route_request(item: BankItem, variant: str = "clean") -> StructuredRequest:
+def route_request(item: BankItem, variant: str = "clean", revision: str = "r1") -> StructuredRequest:
     return StructuredRequest(
         state={"acceptance_criterion": item.criterion, "evidence_manifest": manifest(item)},
-        questions=dict(ROUTER_QUESTIONS),
+        questions=dict(ROUTER_REVISIONS[revision]),
     )
 
 
 def _route_interpret(item: BankItem, response: StructuredResponse | None) -> dict:
     r1 = response.answers["r1_execution_reasoning"]
     r2 = response.answers["r2_direct_evidence_path"]
-    route = "JEV" if (r1.choice == "not_required" and r2.choice == "yes") else "LLM"
+    r0 = response.answers.get("r0_software_behavior")
+    eligible = r1.choice == "not_required" and r2.choice == "yes" and (r0 is None or r0.choice == "no")
+    details = {"route": "JEV" if eligible else "LLM"}
+    if r0 is not None:
+        details.update({"r0": r0.choice, "r0_confidence": r0.confidence})
     return {
         "verdict": None,
         "details": {
-            "route": route,
+            **details,
             "r1": r1.choice,
             "r1_confidence": r1.confidence,
             "r2": r2.choice,
@@ -174,8 +202,11 @@ def _route_interpret(item: BankItem, response: StructuredResponse | None) -> dic
     }
 
 
-def router_arm(adapter: StructuredJudgeAdapter) -> Arm:
-    return Arm(name="router", adapter=adapter, build=route_request, interpret=_route_interpret)
+def router_arm(adapter: StructuredJudgeAdapter, revision: str = "r1") -> Arm:
+    def build(item: BankItem, variant: str = "clean") -> StructuredRequest:
+        return route_request(item, variant, revision)
+
+    return Arm(name="router", adapter=adapter, build=build, interpret=_route_interpret)
 
 
 def _kept_evidence(item: BankItem) -> list:
@@ -222,10 +253,10 @@ def decomposed_arm(adapter: StructuredJudgeAdapter, name: str = "jdiag") -> Arm:
     return Arm(name=name, adapter=adapter, build=decomposed_request, interpret=_decomposed_interpret)
 
 
-def p1b_arms(*, jev: StructuredJudgeAdapter | None = None, codex=None, claude=None) -> dict:
+def p1b_arms(*, jev: StructuredJudgeAdapter | None = None, codex=None, claude=None, revision: str = "r1") -> dict:
     arms = {}
     if jev is not None:
-        arms["router"] = router_arm(jev)
+        arms["router"] = router_arm(jev, revision)
         arms["jdiag"] = decomposed_arm(jev)
     if codex is not None:
         arms["codex"] = whole_pack_arm("codex", codex)
@@ -246,14 +277,14 @@ def plan_p1b_tasks(bank: Bank, arm_names: list, *, split: str, item_ids: list | 
     return [Task(arm, item.id, "clean", run) for arm in arm_names for item in items for run in range(runs_for(item))]
 
 
-def count_calls(bank: Bank, tasks: list) -> dict:
+def count_calls(bank: Bank, tasks: list, revision: str = "r1") -> dict:
     """依 task 清單估算各 provider 呼叫量，用於開跑前檢查上限。"""
     items = bank.by_id()
     calls = Counter()
     for task in tasks:
         item = items[task.item_id]
         if task.provider == "router":
-            calls["jev_typed_judgments"] += len(ROUTER_QUESTIONS)
+            calls["jev_typed_judgments"] += len(ROUTER_REVISIONS[revision])
         elif task.provider == "jdiag":
             if _kept_evidence(item):
                 calls["jev_typed_judgments"] += len(item.clauses) or 1
@@ -294,15 +325,19 @@ def check_p1b_composition(bank: Bank) -> list:
     return problems
 
 
-def p1b_spec(*, codex_model: str, codex_effort: str, claude_model: str) -> dict:
-    return {
-        "router_questions": {qid: q.to_payload() for qid, q in ROUTER_QUESTIONS.items()},
+def p1b_spec(*, codex_model: str, codex_effort: str, claude_model: str, revision: str = "r1") -> dict:
+    spec = {
+        "router_questions": {qid: q.to_payload() for qid, q in ROUTER_REVISIONS[revision].items()},
         "relation_criteria": dict(RELATION_CRITERIA),
         "kind_class": dict(KIND_CLASS),
         "aggregation_revision": AGGREGATION_REVISION,
         "code_judge_spec": bank_mod.judge_spec(),
         "providers": {"jev": "jev-1.13.0", "codex": f"{codex_model}@{codex_effort}", "claude": claude_model},
     }
+    if revision != "r1":
+        # r1 的規格不含此欄，已凍結的 r1 digest 因此不變。
+        spec["revision"] = revision
+    return spec
 
 
 def _protocol(bank: Bank, spec: dict, thresholds: dict) -> dict:
@@ -324,6 +359,7 @@ def _protocol(bank: Bank, spec: dict, thresholds: dict) -> dict:
         "call_caps": dict(CALL_CAPS),
         "thresholds": dict(thresholds),
         "deadline": DEADLINE,
+        **({"protocol_revision": spec["revision"]} if "revision" in spec else {}),
     }
 
 
