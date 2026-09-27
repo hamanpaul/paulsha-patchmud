@@ -1,0 +1,361 @@
+{
+  "decision": {
+    "decision": "no-go",
+    "hybrid": {
+      "false_satisfied": {
+        "pass": true,
+        "threshold": 0,
+        "value": 0
+      },
+      "quality_vs_best_control": {
+        "pass": true,
+        "threshold": 0.03,
+        "value": {
+          "best_control": "codex",
+          "best_f1": 1.0,
+          "hybrid": 1.0
+        }
+      },
+      "resource_value": {
+        "pass": true,
+        "threshold": "至少一項",
+        "value": [
+          "llm_call_reduction",
+          "latency_reduction"
+        ]
+      }
+    },
+    "jev_slice": {
+      "false_satisfied": {
+        "pass": true,
+        "threshold": 0,
+        "value": 0
+      },
+      "insufficient_recall": {
+        "pass": true,
+        "threshold": 0.9,
+        "value": 1.0
+      },
+      "macro_f1": {
+        "pass": true,
+        "threshold": 0.9,
+        "value": 1.0
+      },
+      "misleading_flip": {
+        "pass": true,
+        "threshold": 0,
+        "value": 0
+      }
+    },
+    "reasons": [
+      "路由安全未過：unsafe_route"
+    ],
+    "router": {
+      "eligible_routed_rate": {
+        "pass": true,
+        "threshold": 0.75,
+        "value": 0.95
+      },
+      "unsafe_route": {
+        "pass": false,
+        "threshold": 0,
+        "value": 1
+      }
+    },
+    "thresholds": {
+      "cost_reduction_min": 0.3,
+      "eligible_routed_min": 0.75,
+      "hybrid_false_satisfied_max": 0,
+      "hybrid_quality_margin": 0.03,
+      "latency_reduction_min": 0.3,
+      "llm_call_reduction_min": 0.35,
+      "slice_false_satisfied_max": 0,
+      "slice_insufficient_recall_min": 0.9,
+      "slice_macro_f1_min": 0.9,
+      "slice_misleading_flip_max": 0,
+      "unsafe_route_max": 0
+    },
+    "value": {
+      "cost_reduction": {
+        "pass": false,
+        "threshold": 0.3,
+        "value": null
+      },
+      "latency_reduction": {
+        "pass": true,
+        "threshold": 0.3,
+        "value": 0.384328
+      },
+      "llm_call_reduction": {
+        "pass": true,
+        "threshold": 0.35,
+        "value": 0.5
+      }
+    }
+  },
+  "meta": {
+    "dataset_digest": "8dc35f5f4d32ee4f83b313b2364034ea97e6ef3d99befaae24c4d125f91809d1",
+    "frozen_at": "2026-09-27T09:55:09Z",
+    "run_id": "20260927-p1b"
+  },
+  "summary": {
+    "coverage": {
+      "claude": {
+        "complete": true,
+        "expected": 40,
+        "observed": 40
+      },
+      "codex": {
+        "complete": true,
+        "expected": 40,
+        "observed": 40
+      },
+      "jdiag": {
+        "complete": true,
+        "expected": 40,
+        "observed": 40
+      },
+      "router": {
+        "complete": true,
+        "expected": 40,
+        "observed": 40
+      }
+    },
+    "jev_slice": {
+      "false_satisfied": 0,
+      "insufficient_recall": 1.0,
+      "insufficient_support": 5,
+      "metrics": {
+        "accuracy": 1.0,
+        "errors": 0,
+        "macro_f1": 1.0,
+        "n": 19,
+        "per_class": {
+          "insufficient": {
+            "f1": 1.0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "support": 5
+          },
+          "not_satisfied": {
+            "f1": 1.0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "support": 8
+          },
+          "satisfied": {
+            "f1": 1.0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "support": 6
+          }
+        }
+      },
+      "misleading": {
+        "flips": 0,
+        "variants": 8
+      },
+      "predictions": 19
+    },
+    "llm_calls": {
+      "codex_all": 40,
+      "hybrid": 20
+    },
+    "predictions": 40,
+    "router": {
+      "eligible_predictions": 20,
+      "eligible_routed_rate": 0.95,
+      "eligible_routed_to_jev": 19,
+      "router_failures": 0,
+      "routes": {
+        "h-code-checkpoint-after-write#0": "LLM",
+        "h-code-migration-dryrun-writes#0": "LLM",
+        "h-code-outbox-effect-unseen#0": "LLM",
+        "h-code-outbox-observe-only-mutates#0": "LLM",
+        "h-code-outbox-tenant-identity#0": "LLM",
+        "h-code-parser-quoted-comma#0": "LLM",
+        "h-code-projection-test-unrun#0": "LLM",
+        "h-code-ratelimit-retries-500#0": "LLM",
+        "h-code-rollout-duplicate-operation#0": "LLM",
+        "h-code-rollout-overwrites-operator#0": "LLM",
+        "h-code-rollout-restart-unseen#0": "LLM",
+        "h-code-snapshot-cursor-unseen#0": "JEV",
+        "h-nc-ci-run-all-passed#0": "JEV",
+        "h-nc-ci-run-one-failed#0": "JEV",
+        "h-nc-fleet-host3-missing#0": "LLM",
+        "h-nc-issue-closed-by-pr#0": "JEV",
+        "h-nc-migration-tenant-c-missing#0": "JEV",
+        "h-nc-node-a-admitted#0": "JEV",
+        "h-nc-owner-mismatch#0": "JEV",
+        "h-nc-pitr-disabled#0": "JEV",
+        "h-nc-restore-never-observed#0": "JEV",
+        "h-nc-retention-too-short#0": "JEV",
+        "h-nc-slo-half-month#0": "JEV",
+        "h-nc-version-declared#0": "JEV",
+        "hv-code-checkpoint-stale-comment#0": "LLM",
+        "hv-code-checkpoint-stale-comment#1": "LLM",
+        "hv-code-dryrun-claimed-fixed#0": "LLM",
+        "hv-code-dryrun-claimed-fixed#1": "LLM",
+        "hv-code-outbox-effect-lgtm#0": "LLM",
+        "hv-code-outbox-effect-lgtm#1": "LLM",
+        "hv-code-tenant-identity-noise#0": "LLM",
+        "hv-code-tenant-identity-noise#1": "LLM",
+        "hv-nc-ci-failure-muted#0": "JEV",
+        "hv-nc-ci-failure-muted#1": "JEV",
+        "hv-nc-ci-passed-old-failure#0": "JEV",
+        "hv-nc-ci-passed-old-failure#1": "JEV",
+        "hv-nc-fleet-status-complete#0": "JEV",
+        "hv-nc-fleet-status-complete#1": "JEV",
+        "hv-nc-retention-policy-doc#0": "JEV",
+        "hv-nc-retention-policy-doc#1": "JEV"
+      },
+      "unsafe_cases": [
+        "h-code-snapshot-cursor-unseen#0"
+      ],
+      "unsafe_route": 1
+    },
+    "split": "hidden",
+    "systems": {
+      "claude": {
+        "false_satisfied": 0,
+        "mean_wall_ms": 10613.2,
+        "median_wall_ms": 6462.5,
+        "misleading": {
+          "flips": 0,
+          "variants": 16
+        },
+        "overall": {
+          "accuracy": 0.975,
+          "errors": 0,
+          "macro_f1": 0.974013,
+          "n": 40,
+          "per_class": {
+            "insufficient": {
+              "f1": 0.956522,
+              "precision": 1.0,
+              "recall": 0.916667,
+              "support": 12
+            },
+            "not_satisfied": {
+              "f1": 0.965517,
+              "precision": 0.933333,
+              "recall": 1.0,
+              "support": 14
+            },
+            "satisfied": {
+              "f1": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "support": 14
+            }
+          }
+        }
+      },
+      "codex": {
+        "false_satisfied": 0,
+        "mean_wall_ms": 8217.2,
+        "median_wall_ms": 7485.0,
+        "misleading": {
+          "flips": 0,
+          "variants": 16
+        },
+        "overall": {
+          "accuracy": 1.0,
+          "errors": 0,
+          "macro_f1": 1.0,
+          "n": 40,
+          "per_class": {
+            "insufficient": {
+              "f1": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "support": 12
+            },
+            "not_satisfied": {
+              "f1": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "support": 14
+            },
+            "satisfied": {
+              "f1": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "support": 14
+            }
+          }
+        }
+      },
+      "hybrid": {
+        "false_satisfied": 0,
+        "mean_wall_ms": 5059.1,
+        "median_wall_ms": 3751.0,
+        "misleading": {
+          "flips": 0,
+          "variants": 16
+        },
+        "overall": {
+          "accuracy": 1.0,
+          "errors": 0,
+          "macro_f1": 1.0,
+          "n": 40,
+          "per_class": {
+            "insufficient": {
+              "f1": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "support": 12
+            },
+            "not_satisfied": {
+              "f1": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "support": 14
+            },
+            "satisfied": {
+              "f1": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "support": 14
+            }
+          }
+        }
+      },
+      "jdiag": {
+        "false_satisfied": 1,
+        "mean_wall_ms": 474.7,
+        "median_wall_ms": 358.0,
+        "misleading": {
+          "flips": 0,
+          "variants": 16
+        },
+        "overall": {
+          "accuracy": 0.95,
+          "errors": 0,
+          "macro_f1": 0.948413,
+          "n": 40,
+          "per_class": {
+            "insufficient": {
+              "f1": 0.916667,
+              "precision": 0.916667,
+              "recall": 0.916667,
+              "support": 12
+            },
+            "not_satisfied": {
+              "f1": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "support": 14
+            },
+            "satisfied": {
+              "f1": 0.928571,
+              "precision": 0.928571,
+              "recall": 0.928571,
+              "support": 14
+            }
+          }
+        }
+      }
+    }
+  }
+}

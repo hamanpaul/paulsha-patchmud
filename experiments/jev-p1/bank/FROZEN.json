@@ -1,0 +1,16 @@
+{
+  "schema": "jev-p1-frozen/v1",
+  "frozen_at": "2026-09-27T06:10:23Z",
+  "bank_sha256": "b1a6f5e6853e67398829c8678b2455b8bcfeaebb148edaf876b45c3936d793a8",
+  "judge_spec_sha256": "6a3a4d5b0732a89123ee7262679523ea2110745e4387de256c981934b4c1b9c3",
+  "counts": {
+    "items": 36,
+    "by_verdict": {
+      "insufficient": 12,
+      "not_satisfied": 12,
+      "satisfied": 12
+    },
+    "hidden": 12,
+    "with_traps": 21
+  }
+}

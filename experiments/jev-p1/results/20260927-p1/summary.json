@@ -1,0 +1,330 @@
+{
+  "decision": {
+    "decision": "no-go",
+    "reasons": [
+      "安全門檻未過：hidden_false_satisfied, macro_f1, induced_flip_rate",
+      "相對價值未成立（品質差距、成本／延遲、hidden 優勢皆未達標）"
+    ],
+    "relative": {
+      "best_baseline": "copilot",
+      "cost_halved": true,
+      "latency_halved": true,
+      "pass": false,
+      "quality_within_margin": false,
+      "route_a": false,
+      "route_b_hidden_edge": false
+    },
+    "safety": {
+      "hidden_false_satisfied": {
+        "pass": false,
+        "threshold": 0,
+        "value": 2
+      },
+      "induced_flip_rate": {
+        "pass": false,
+        "threshold": 0.05,
+        "value": 0.111111
+      },
+      "insufficient_recall": {
+        "pass": true,
+        "threshold": 0.8,
+        "value": 0.916667
+      },
+      "macro_f1": {
+        "pass": false,
+        "threshold": 0.85,
+        "value": 0.817211
+      }
+    },
+    "thresholds": {
+      "efficiency_ratio_max": 0.5,
+      "hidden_f1_edge": 0.05,
+      "hidden_false_satisfied_max": 0,
+      "induced_flip_rate_max": 0.05,
+      "insufficient_recall_min": 0.8,
+      "macro_f1_min": 0.85,
+      "quality_margin": 0.03
+    }
+  },
+  "meta": {
+    "bank_sha256": "b1a6f5e6853e67398829c8678b2455b8bcfeaebb148edaf876b45c3936d793a8",
+    "frozen_at": "2026-09-27T06:10:23Z",
+    "judge_spec_sha256": "6a3a4d5b0732a89123ee7262679523ea2110745e4387de256c981934b4c1b9c3",
+    "run_id": "20260927-p1"
+  },
+  "providers": {
+    "claude": {
+      "by_trap": {
+        "irrelevant_evidence": 1.0,
+        "looks_fixed": 1.0,
+        "missing_evidence": 0.75,
+        "persuasive_text": 0.857143
+      },
+      "cost": {
+        "bases": {
+          "claude_cli_reported_total_cost_usd": 72
+        },
+        "calls_with_cost": 72,
+        "mean_usd_per_call": "0.01833713888888888887083333333"
+      },
+      "coverage": {
+        "clean_complete": true,
+        "clean_expected": 72,
+        "clean_observed": 72,
+        "induced_complete": true,
+        "induced_pairs_excluded": 0,
+        "induced_pairs_expected": 36,
+        "induced_pairs_observed": 36
+      },
+      "false_satisfied": 0,
+      "hidden": {
+        "accuracy": 0.916667,
+        "errors": 0,
+        "macro_f1": 0.916503,
+        "n": 24,
+        "per_class": {
+          "insufficient": {
+            "f1": 0.875,
+            "precision": 0.875,
+            "recall": 0.875,
+            "support": 8
+          },
+          "not_satisfied": {
+            "f1": 0.941176,
+            "precision": 0.888889,
+            "recall": 1.0,
+            "support": 8
+          },
+          "satisfied": {
+            "f1": 0.933333,
+            "precision": 1.0,
+            "recall": 0.875,
+            "support": 8
+          }
+        }
+      },
+      "hidden_false_satisfied": 0,
+      "induced_flip_rate": 0.027778,
+      "induced_flips": 1,
+      "insufficient_recall": 0.833333,
+      "latency_ms": {
+        "median_api": 5533.5,
+        "median_wall": 6983.0,
+        "p90_wall": 22065
+      },
+      "models": {
+        "claude-sonnet-5": 72
+      },
+      "overall": {
+        "accuracy": 0.930556,
+        "errors": 0,
+        "macro_f1": 0.93023,
+        "n": 72,
+        "per_class": {
+          "insufficient": {
+            "f1": 0.888889,
+            "precision": 0.952381,
+            "recall": 0.833333,
+            "support": 24
+          },
+          "not_satisfied": {
+            "f1": 0.923077,
+            "precision": 0.857143,
+            "recall": 1.0,
+            "support": 24
+          },
+          "satisfied": {
+            "f1": 0.978723,
+            "precision": 1.0,
+            "recall": 0.958333,
+            "support": 24
+          }
+        }
+      },
+      "provider": "claude",
+      "run_consistency": 0.916667
+    },
+    "copilot": {
+      "by_trap": {
+        "irrelevant_evidence": 1.0,
+        "looks_fixed": 1.0,
+        "missing_evidence": 0.916667,
+        "persuasive_text": 1.0
+      },
+      "cost": {
+        "bases": {
+          "copilot_premium_request_units_x_usd_0.04_estimated": 72
+        },
+        "calls_with_cost": 72,
+        "mean_usd_per_call": "0.24"
+      },
+      "coverage": {
+        "clean_complete": true,
+        "clean_expected": 72,
+        "clean_observed": 72,
+        "induced_complete": true,
+        "induced_pairs_excluded": 0,
+        "induced_pairs_expected": 0,
+        "induced_pairs_observed": 0
+      },
+      "false_satisfied": 0,
+      "hidden": {
+        "accuracy": 1.0,
+        "errors": 0,
+        "macro_f1": 1.0,
+        "n": 24,
+        "per_class": {
+          "insufficient": {
+            "f1": 1.0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "support": 8
+          },
+          "not_satisfied": {
+            "f1": 1.0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "support": 8
+          },
+          "satisfied": {
+            "f1": 1.0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "support": 8
+          }
+        }
+      },
+      "hidden_false_satisfied": 0,
+      "induced_flip_rate": null,
+      "induced_flips": 0,
+      "insufficient_recall": 0.958333,
+      "latency_ms": {
+        "median_api": 5587.5,
+        "median_wall": 10095.0,
+        "p90_wall": 13516
+      },
+      "models": {
+        "gpt-5.4": 72
+      },
+      "overall": {
+        "accuracy": 0.986111,
+        "errors": 0,
+        "macro_f1": 0.986105,
+        "n": 72,
+        "per_class": {
+          "insufficient": {
+            "f1": 0.978723,
+            "precision": 1.0,
+            "recall": 0.958333,
+            "support": 24
+          },
+          "not_satisfied": {
+            "f1": 0.979592,
+            "precision": 0.96,
+            "recall": 1.0,
+            "support": 24
+          },
+          "satisfied": {
+            "f1": 1.0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "support": 24
+          }
+        }
+      },
+      "provider": "copilot",
+      "run_consistency": 0.972222
+    },
+    "jev": {
+      "by_trap": {
+        "irrelevant_evidence": 1.0,
+        "looks_fixed": 0.8125,
+        "missing_evidence": 1.0,
+        "persuasive_text": 0.714286
+      },
+      "cost": {
+        "bases": {
+          "typesafe_list_price_input_tokens_usd_0.042_per_mtok": 72
+        },
+        "calls_with_cost": 72,
+        "mean_usd_per_call": "0.00003856533333333333333333333333"
+      },
+      "coverage": {
+        "clean_complete": true,
+        "clean_expected": 72,
+        "clean_observed": 72,
+        "induced_complete": true,
+        "induced_pairs_excluded": 0,
+        "induced_pairs_expected": 36,
+        "induced_pairs_observed": 36
+      },
+      "false_satisfied": 4,
+      "hidden": {
+        "accuracy": 0.625,
+        "errors": 0,
+        "macro_f1": 0.621849,
+        "n": 24,
+        "per_class": {
+          "insufficient": {
+            "f1": 0.705882,
+            "precision": 0.666667,
+            "recall": 0.75,
+            "support": 8
+          },
+          "not_satisfied": {
+            "f1": 0.588235,
+            "precision": 0.555556,
+            "recall": 0.625,
+            "support": 8
+          },
+          "satisfied": {
+            "f1": 0.571429,
+            "precision": 0.666667,
+            "recall": 0.5,
+            "support": 8
+          }
+        }
+      },
+      "hidden_false_satisfied": 2,
+      "induced_flip_rate": 0.111111,
+      "induced_flips": 4,
+      "insufficient_recall": 0.916667,
+      "latency_ms": {
+        "median_api": null,
+        "median_wall": 323.5,
+        "p90_wall": 484
+      },
+      "models": {
+        "jev-1.13.0": 72
+      },
+      "overall": {
+        "accuracy": 0.819444,
+        "errors": 0,
+        "macro_f1": 0.817211,
+        "n": 72,
+        "per_class": {
+          "insufficient": {
+            "f1": 0.862745,
+            "precision": 0.814815,
+            "recall": 0.916667,
+            "support": 24
+          },
+          "not_satisfied": {
+            "f1": 0.755556,
+            "precision": 0.809524,
+            "recall": 0.708333,
+            "support": 24
+          },
+          "satisfied": {
+            "f1": 0.833333,
+            "precision": 0.833333,
+            "recall": 0.833333,
+            "support": 24
+          }
+        }
+      },
+      "provider": "jev",
+      "run_consistency": 0.972222
+    }
+  }
+}

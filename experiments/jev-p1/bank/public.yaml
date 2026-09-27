@@ -1,0 +1,926 @@
+# JEV P1 題庫：public split（24 題，三態各 8）。
+# gold／traps／rationale／source 只給 evaluator；judge 只看得到 criterion 與 evidence。
+# 可用於 judge 規格設計；hidden split 不得用於任何調校。
+items:
+  # ---------------------------------------------------------------- satisfied
+  - id: eng-cache-304-bodyless
+    gold: satisfied
+    traps: []
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/repair-cache-api partial.patch"}
+    rationale: 改動後 ETag 相符時回傳 (304, etag, None)，不相符時回傳 (200, etag, row)，兩個分支都直接可見。
+    criterion: >-
+      ProfileAPI.read returns status 304 with no body when the caller's
+      if_none_match equals the current ETag, and status 200 with the profile
+      representation otherwise.
+    evidence:
+      - id: e1
+        kind: diff
+        content: |
+          --- a/src/api.py
+          +++ b/src/api.py
+          @@ -11,7 +11,7 @@ class ProfileAPI:
+                   row = self.cache.get(profile_id, self.store.get)
+                   etag = f"v{row['version']}"
+                   if if_none_match == etag:
+          -            return 304, etag, row  # Bug: a 304 response must not carry a body.
+          +            return 304, etag, None
+                   return 200, etag, row
+      - id: e2
+        kind: source
+        content: |
+          # src/api.py after the change
+          class ProfileAPI:
+              def __init__(self):
+                  self.store = ProfileStore()
+                  self.cache = ProfileCache()
+
+              def read(self, profile_id, if_none_match=None):
+                  row = self.cache.get(profile_id, self.store.get)
+                  etag = f"v{row['version']}"
+                  if if_none_match == etag:
+                      return 304, etag, None
+                  return 200, etag, row
+
+  - id: eng-cache-invalidate-updated-key
+    gold: satisfied
+    traps: []
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/repair-cache-api reference.patch"}
+    rationale: invalidate 只刪除該 profile_id 的項目，update 在 store.update 成功後才呼叫 invalidate(profile_id)。
+    criterion: >-
+      After a successful profile update, only the updated profile's cache entry
+      is invalidated; cached entries for other profiles are kept.
+    evidence:
+      - id: e1
+        kind: diff
+        content: |
+          --- a/src/cache.py
+          +++ b/src/cache.py
+          @@ class ProfileCache:
+               def invalidate(self, profile_id):
+                   # Bug: every update flushes every profile and callers can retain stale data.
+          -        self.items.clear()
+          +        if profile_id in self.items:
+          +            del self.items[profile_id]
+      - id: e2
+        kind: source
+        content: |
+          # src/cache.py after the change
+          class ProfileCache:
+              def __init__(self):
+                  self.items = {}
+
+              def get(self, profile_id, loader):
+                  if profile_id not in self.items:
+                      self.items[profile_id] = loader(profile_id)
+                  return dict(self.items[profile_id])
+
+              def invalidate(self, profile_id):
+                  if profile_id in self.items:
+                      del self.items[profile_id]
+
+          # src/api.py (unchanged)
+              def update(self, profile_id, name):
+                  row = self.store.update(profile_id, name)
+                  self.cache.invalidate(profile_id)
+                  return row
+
+  - id: eng-ratelimit-retry-after-bounded
+    gold: satisfied
+    traps: []
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/scope-rate-limit reference.patch"}
+    rationale: float 解析成功時夾在 [0, 60]，解析失敗改用 1.0 秒，且都經 clock.sleep；三個條件都由程式直接成立。
+    criterion: >-
+      For an HTTP 429 response, the client sleeps through the injected clock for
+      the Retry-After delay (capped at 60 seconds), never sleeps for a negative
+      duration, and falls back to a bounded delay when the header is malformed.
+    evidence:
+      - id: e1
+        kind: source
+        content: |
+          # src/client.py after the change
+          from .errors import AuthenticationFailed, RateLimitExceeded
+
+
+          def request(send, clock, *, max_attempts=3):
+              attempts = 0
+              while True:
+                  attempts += 1
+                  response = send()
+                  if response.status == 200:
+                      return response
+                  if response.status == 401:
+                      raise AuthenticationFailed()
+                  if response.status != 429:
+                      return response
+                  try:
+                      delay = max(0.0, min(float(response.headers.get("Retry-After", "0")), 60.0))
+                  except (TypeError, ValueError):
+                      delay = 1.0
+                  clock.sleep(delay)
+                  if attempts >= max_attempts:
+                      raise RateLimitExceeded()
+
+  - id: eng-migration-dry-run-no-mutation
+    gold: satisfied
+    traps: []
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/repair-migration-state reference.patch"}
+    rationale: dry_run 分支在任何 write_v2 與 journal.checkpoint 之前就 return，且回傳的 cursor 不前進。
+    criterion: >-
+      Calling run(..., dry_run=True) reports the planned batch without writing
+      any records and without advancing the journal checkpoint.
+    evidence:
+      - id: e1
+        kind: source
+        content: |
+          # src/migrate.py after the change
+          def run(store: RecordStore, journal: Journal, batch_size=2, *, dry_run=False, fail_after_write=False):
+              cursor = journal.cursor
+              batch = store.rows[cursor:cursor + batch_size]
+              if not batch:
+                  return {"cursor": cursor, "planned": 0}
+              if dry_run:
+                  return {"cursor": cursor, "planned": len(batch)}
+              for row in batch:
+                  store.write_v2(_v2(row))
+              if fail_after_write:
+                  raise RuntimeError("worker restarted after write")
+              journal.checkpoint(cursor + len(batch))
+              return {"cursor": cursor + len(batch), "planned": len(batch)}
+
+  - id: eng-fakeclock-success-no-sleep
+    gold: satisfied
+    traps: []
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/testing-retry-fakeclock partial.patch"}
+    rationale: 移除成功分支的 sleep 後，result == "ok" 時在任何 clock.sleep 之前 return。
+    criterion: >-
+      When send() returns "ok", dispatch() returns immediately without calling
+      clock.sleep.
+    evidence:
+      - id: e1
+        kind: diff
+        content: |
+          --- a/src/dispatcher.py
+          +++ b/src/dispatcher.py
+          @@ -7,7 +7,6 @@ def dispatch(send, clock, cancellation, request_id, *, max_attempts=3, log=None)
+                   result = send(request_id)
+                   log.append({"request_id": request_id, "attempt": attempt, "status": result})
+                   if result == "ok":
+          -            clock.sleep(delay(attempt))  # Bug: success schedules a needless delay.
+                       return result
+                   if result == "permanent":
+                       return result
+      - id: e2
+        kind: source
+        content: |
+          # src/dispatcher.py after the change
+          def dispatch(send, clock, cancellation, request_id, *, max_attempts=3, log=None):
+              log = [] if log is None else log
+              for attempt in range(1, max_attempts + 1):
+                  result = send(request_id)
+                  log.append({"request_id": request_id, "attempt": attempt, "status": result})
+                  if result == "ok":
+                      return result
+                  if result == "permanent":
+                      return result
+                  clock.sleep(delay(attempt))
+                  if cancellation.cancelled:
+                      return "cancelled"
+              return "exhausted"
+
+  - id: eng-parser-duplicate-header
+    gold: satisfied
+    traps: []
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/testing-parser-matrix reference.patch"}
+    rationale: 重複 header 時 raise ValueError("header duplicate")，與 "row width" 訊息不同；新增測試分別斷言兩種訊息且通過。
+    criterion: >-
+      parse() raises ValueError when the header row contains the same column name
+      twice, and that error is distinguishable from the row-width error.
+    evidence:
+      - id: e1
+        kind: source
+        content: |
+          # src/parser.py after the change
+          import csv
+          from io import StringIO
+
+
+          def parse(text):
+              reader = csv.reader(StringIO(text))
+              headers = next(reader)
+              if len(headers) != len(set(headers)):
+                  raise ValueError("header duplicate")
+              rows = []
+              for values in reader:
+                  if not values:
+                      continue
+                  if len(values) != len(headers):
+                      raise ValueError("row width")
+                  rows.append(dict(zip(headers, values)))
+              return rows
+      - id: e2
+        kind: test
+        content: |
+          # tests/agent/test_parser_regression.py (new)
+          def test_agent_matrix_keeps_header_and_row_errors_distinct():
+              with pytest.raises(ValueError, match="header"):
+                  parse("id,id\n1,2")
+              with pytest.raises(ValueError, match="row width"):
+                  parse("id,name\n1")
+      - id: e3
+        kind: test_output
+        content: |
+          $ python3 -m pytest -q tests/agent/test_parser_regression.py
+          ...                                                                  [100%]
+          3 passed in 0.02s
+
+  - id: tp35-operator-edits-persist
+    gold: satisfied
+    traps: []
+    source: {kind: public-issue, ref: "hamanpaul/testpilot-core #35 驗收 1；PR #48（a760e70）於 855fc1c 的程式與測試，plugin 名稱已泛化"}
+    rationale: 同一 plugin 且檔頭 marker 相符時直接 return、不重寫，任意次數重跑都保留 marker 之下的編輯；測試實證編輯後重跑仍在，套件 7 passed。（凍結前 Codex 審查指出 marker 本身被改會被覆寫，故驗收收窄為保留 marker 行。）
+    criterion: operator 保留第一行的 staging 標記、只編輯其下方的 configs/testbed.yaml 內容之後，同一個 plugin 連續執行兩次，編輯內容仍然保留。
+    evidence:
+      - id: e1
+        kind: source
+        content: |
+          # src/testpilot/core/testbed_bootstrap.py（每次 plugin 指令啟動時呼叫）
+          def stage_plugin_testbed(plugin_dir: Path, plugin_name: str, configs_dir: Path) -> Path:
+              template = plugin_dir / PLUGIN_TESTBED_TEMPLATE
+              configs_dir.mkdir(parents=True, exist_ok=True)
+              destination = configs_dir / EFFECTIVE_TESTBED
+              marker = staged_marker(plugin_name)
+              template_text = template.read_text(encoding="utf-8")
+
+              if destination.is_file():
+                  current = destination.read_text(encoding="utf-8")
+                  if current.startswith(marker):
+                      if current != marker + template_text:
+                          log.info("configs/testbed.yaml keeps operator edits for plugin '%s'", plugin_name)
+                      return destination
+
+              destination.write_text(marker + template_text, encoding="utf-8")
+              return destination
+      - id: e2
+        kind: test
+        content: |
+          def test_stage_keeps_operator_edits_for_same_plugin(tmp_path: Path) -> None:
+              plugin_dir = tmp_path / "plugin-assets" / "wifi_suite"
+              configs_dir = tmp_path / "configs"
+              configs_dir.mkdir()
+              _make_plugin(plugin_dir, "testbed:\n  variables:\n    STA_IP: 192.168.1.3\n")
+
+              staged = stage_plugin_testbed(plugin_dir, "wifi_suite", configs_dir)
+              edited = staged.read_text(encoding="utf-8").replace("192.168.1.3", "192.168.1.250")
+              staged.write_text(edited, encoding="utf-8")
+
+              stage_plugin_testbed(plugin_dir, "wifi_suite", configs_dir)
+              assert "192.168.1.250" in staged.read_text(encoding="utf-8")
+      - id: e3
+        kind: test_output
+        content: |
+          $ python -m pytest -q tests/test_testbed_bootstrap.py
+          .......                                                              [100%]
+          7 passed in 0.05s
+
+  - id: hippo-backup-same-second
+    gold: satisfied
+    traps: []
+    source: {kind: public-issue, ref: "hamanpaul/paulsha-hippo main：importer/registry.py 的 _unique_backup_path 與其回歸測試"}
+    rationale: 同名備份已存在時改用 .1、.2 後綴，呼叫點在寫入前取得唯一路徑；測試以同一 backup_path 連寫兩次並斷言兩份備份內容各自正確。
+    criterion: 同一秒內對 registry 連續成功寫入兩次時，兩次各自產生的備份都要保留：第二次寫入不得覆寫第一次的備份檔。
+    evidence:
+      - id: e1
+        kind: source
+        content: |
+          def _unique_backup_path(base: Path) -> Path:
+              """回傳不會覆寫既有備份的路徑；必須在 registry lock 內呼叫。"""
+              if not base.exists() and not base.is_symlink():
+                  return base
+              index = 1
+              while True:
+                  candidate = base.with_name(f"{base.name}.{index}")
+                  if not candidate.exists() and not candidate.is_symlink():
+                      return candidate
+                  index += 1
+
+          # record_discoveries() 內，持有 registry lock 時：
+              if backup_path is not None and existing_bytes is not None:
+                  written_backup = _unique_backup_path(Path(backup_path))
+                  written_backup.parent.mkdir(parents=True, exist_ok=True)
+                  backup_tmp = written_backup.with_name(f".{written_backup.name}.tmp")
+                  backup_tmp.write_bytes(existing_bytes)
+                  os.replace(backup_tmp, written_backup)
+      - id: e2
+        kind: test
+        content: |
+          def test_same_second_backups_never_overwrite_each_other(tmp_path):
+              registry = tmp_path / "project-hippo.yaml"
+              registry.write_text(render_registry((ProjectConfig(slug="widget", roots=("/r/widget",)),)), encoding="utf-8")
+              v0 = registry.read_bytes()
+              backup = tmp_path / "project-hippo.yaml.bak-117-20260101T000000Z"
+
+              first = record_discoveries([ProjectConfig(slug="widget", roots=("/r/widget",), remotes=("github.com/acme/widget",))],
+                                         registry_path=registry, backup_path=backup)
+              v1 = registry.read_bytes()
+              second = record_discoveries([ProjectConfig(slug="gadget", roots=("/r/gadget",), remotes=("github.com/acme/gadget",))],
+                                          registry_path=registry, backup_path=backup)
+
+              assert first.status == second.status == "written"
+              assert first.backup != second.backup
+              assert first.backup.read_bytes() == v0
+              assert second.backup.read_bytes() == v1
+      - id: e3
+        kind: test_output
+        content: |
+          $ python -m pytest -q tests/test_registry_backfill.py -k same_second
+          .                                                                    [100%]
+          1 passed, 41 deselected in 0.31s
+
+  # ------------------------------------------------------------ not_satisfied
+  - id: eng-cache-summary-version
+    gold: not_satisfied
+    traps: [looks_fixed]
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/repair-cache-api wrong.patch"}
+    rationale: PR 說明宣稱加上 version，但 diff 只把 name= 改名為 profile_name=，summary 仍沒有 version。
+    criterion: The CLI summary line shows both the profile id and the profile version.
+    evidence:
+      - id: e1
+        kind: pull_request
+        content: |
+          fix(cli): expose version in profile summary
+
+          The summary now shows the profile version so a stale cached response can
+          be correlated with the stored record.
+      - id: e2
+        kind: diff
+        content: |
+          --- a/src/cli.py
+          +++ b/src/cli.py
+          @@ -4,4 +4,4 @@ from .api import ProfileAPI
+           def summary(api: ProfileAPI, profile_id: str) -> str:
+               _status, _etag, row = api.read(profile_id)
+               # Bug: omits the version needed to correlate a stale response.
+          -    return f"profile={profile_id} name={row['name']}"
+          +    return f"profile={profile_id} profile_name={row['name']}"
+
+  - id: eng-config-port-range
+    gold: not_satisfied
+    traps: []
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/repair-config-rollback partial.patch"}
+    rationale: 改動只碰 _bool；_port 仍直接 int(value)。reload 是唯一安裝設定的路徑，parse 後直接 active.update，_derive 只檢查 region，因此 PORT=70000 會寫入 active 設定。
+    criterion: >-
+      Setting the PORT environment variable to an out-of-range value such as
+      70000 is rejected before the active configuration changes.
+    evidence:
+      - id: e1
+        kind: diff
+        content: |
+          --- a/src/config.py
+          +++ b/src/config.py
+          @@ -5,7 +5,7 @@ DEFAULTS = {"enabled": True, "port": 8080, "region": "us-east"}
+           def _bool(value: str | None, default: bool) -> bool:
+               # The bug: an explicit false is treated as if the variable were absent.
+          -    if not value:
+          +    if value is None:
+                   return default
+      - id: e2
+        kind: source
+        content: |
+          # src/config.py after the change (remaining functions are unchanged)
+          def _port(value: str | None, default: int) -> int:
+              if value is None:
+                  return default
+              return int(value)
+
+
+          def parse(file_values: dict[str, object], env: dict[str, str]) -> dict[str, object]:
+              result = dict(DEFAULTS)
+              result.update(file_values)
+              result["enabled"] = _bool(env.get("ENABLED"), bool(result["enabled"]))
+              result["port"] = _port(env.get("PORT"), int(result["port"]))
+              return result
+      - id: e3
+        kind: source
+        content: |
+          # src/reloader.py (unchanged) — the only code that installs a configuration
+          class ConfigStore:
+              """Keep the last known-good configuration and its derived cache."""
+
+              def __init__(self, file_values, env):
+                  self.file_values = dict(file_values)
+                  self.active = parse(self.file_values, env)
+                  self.cache = self._derive(self.active)
+
+              @staticmethod
+              def _derive(config):
+                  if not isinstance(config["region"], str) or not config["region"]:
+                      raise ValueError("region must be non-empty")
+                  return {"endpoint": f"{config['region']}:{config['port']}"}
+
+              def reload(self, file_values, env):
+                  candidate = parse(file_values, env)
+                  self.file_values = dict(file_values)
+                  self.active.update(candidate)
+                  self.cache = self._derive(self.active)
+
+  - id: eng-ratelimit-malformed-header
+    gold: not_satisfied
+    traps: []
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/scope-rate-limit partial.patch"}
+    rationale: float("soon") 會 raise ValueError，沒有 fallback；惡意或格式錯誤的 header 直接讓呼叫失敗而非重試。
+    criterion: >-
+      A 429 response whose Retry-After header is malformed (for example "soon")
+      is retried after a bounded fallback delay instead of raising an exception.
+    evidence:
+      - id: e1
+        kind: source
+        content: |
+          # src/client.py after the change
+          def request(send, clock, *, max_attempts=3):
+              attempts = 0
+              while True:
+                  attempts += 1
+                  response = send()
+                  if response.status == 200:
+                      return response
+                  if response.status == 401:
+                      raise AuthenticationFailed()
+                  if response.status != 429:
+                      return response
+                  delay = float(response.headers.get("Retry-After", "0"))
+                  clock.sleep(delay)
+                  if attempts >= max_attempts:
+                      raise RateLimitExceeded()
+
+  - id: eng-ratelimit-max-attempts
+    gold: not_satisfied
+    traps: []
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/scope-rate-limit wrong.patch"}
+    rationale: attempts 從 -1 起算，第 4 次 send 後 attempts 才等於 3，持續 429 時會送出 4 次。
+    criterion: >-
+      With max_attempts=3, the client calls send() at most 3 times when the
+      server keeps answering 429.
+    evidence:
+      - id: e1
+        kind: diff
+        content: |
+          --- a/src/client.py
+          +++ b/src/client.py
+          @@ -2,7 +2,7 @@ from .errors import AuthenticationFailed, RateLimitExceeded
+           def request(send, clock, *, max_attempts=3):
+          -    attempts = 0
+          +    attempts = -1
+               while True:
+                   attempts += 1
+                   response = send()
+      - id: e2
+        kind: source
+        content: |
+          # src/client.py after the change
+          def request(send, clock, *, max_attempts=3):
+              attempts = -1
+              while True:
+                  attempts += 1
+                  response = send()
+                  if response.status == 200:
+                      return response
+                  if response.status == 401:
+                      raise AuthenticationFailed()
+                  delay = float(response.headers.get("Retry-After", "0"))
+                  clock.sleep(delay)
+                  if attempts >= max_attempts:
+                      raise RuntimeError("request failed")
+
+  - id: eng-parser-short-row
+    gold: not_satisfied
+    traps: [looks_fixed]
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/testing-parser-matrix wrong.patch"}
+    rationale: 改動把「欄數不足就 raise」改成補空字串，短列不再 raise；綠燈的既有測試只涵蓋單列正常輸入。
+    criterion: >-
+      parse() raises ValueError("row width") when a data row has fewer fields
+      than the header.
+    evidence:
+      - id: e1
+        kind: pull_request
+        content: |
+          fix(parser): handle row width
+
+          Rows with a different width from the header are now handled.
+      - id: e2
+        kind: diff
+        content: |
+          --- a/src/parser.py
+          +++ b/src/parser.py
+          @@ -4,7 +4,7 @@ def parse(text):
+               rows = []
+               for line in lines[1:]:
+                   values = line.split(",")
+          -        if len(values) != len(headers):
+          -            raise ValueError("row width")
+          +        if len(values) < len(headers):
+          +            values += [""] * (len(headers) - len(values))
+                   rows.append(dict(zip(headers, values)))
+               return rows
+      - id: e3
+        kind: ci_output
+        content: |
+          tests/test_parser.py::test_single_row PASSED
+          ============================== 1 passed in 0.01s ==============================
+
+  - id: diag-retry-duplicate-delivery
+    gold: not_satisfied
+    traps: [persuasive_text]
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/diagnosis-retry-budget repo 證據"}
+    rationale: r17、r18 各有一次 timeout 重試，但各自只有一個 delivery id 且 delivered=1；summary 顯示 duplicate_delivery_ids=0。事故單的「重複投遞」是把 attempt 當成 delivery；受信端 ledger 也只有每個 request 一筆。（凍結前 Codex 審查建議補受信端紀錄。）
+    criterion: >-
+      Requests r17 and r18 were each delivered twice (a duplicate delivery) after
+      the version 2.4 timeout change.
+    evidence:
+      - id: e1
+        kind: ticket
+        content: |
+          INC-311: Since 2.4 went out we are seeing duplicate deliveries. r17 and r18
+          were both sent twice. Please confirm the timeout change caused duplicates.
+      - id: e2
+        kind: log
+        content: |
+          2026-09-21T09:01:02Z version=2.4 request=r17 attempt=1 status=timeout
+          2026-09-21T09:01:04Z version=2.4 request=r17 attempt=2 status=202 delivery=d91
+          2026-09-21T09:01:04Z version=2.4 request=r17 delivered=1
+          2026-09-21T09:03:11Z version=2.4 request=r18 attempt=1 status=timeout
+          2026-09-21T09:03:13Z version=2.4 request=r18 attempt=2 status=202 delivery=d92
+          2026-09-21T09:03:13Z version=2.4 request=r18 delivered=1
+          2026-09-21T09:11:08Z version=2.5 request=r19 attempt=1 status=202 delivery=d93
+          2026-09-21T09:11:08Z version=2.5 request=r19 delivered=1
+          2026-09-21T09:12:00Z summary attempts=8 deliveries=3 duplicate_delivery_ids=0
+      - id: e3
+        kind: source
+        content: |
+          # src/retry.py
+          def delivery_confirmed(response):
+              return response.status == 202 and response.headers.get("X-Delivery-Id") is not None
+
+          # src/worker.py
+          def deliver(client, message, log):
+              attempts = 0
+              while True:
+                  attempts += 1
+                  response = client.send(message)
+                  log.append({"attempt": attempts, "status": response.status, "id": response.headers.get("X-Delivery-Id")})
+                  if delivery_confirmed(response):
+                      return attempts
+                  if not should_retry(attempts, response.error):
+                      raise RuntimeError("delivery failed")
+      - id: e4
+        kind: record
+        content: |
+          # Recipient-side delivery ledger exported by the receiving service for 09:00–09:15Z
+          # (one row per message the recipient accepted; a timed-out attempt that reached the
+          # recipient would appear here as its own row).
+          delivery_id=d91 request=r17 accepted_at=2026-09-21T09:01:04Z
+          delivery_id=d92 request=r18 accepted_at=2026-09-21T09:03:13Z
+          delivery_id=d93 request=r19 accepted_at=2026-09-21T09:11:08Z
+
+  - id: dut-reboot-trace-records-wait
+    gold: not_satisfied
+    traps: []
+    source: {kind: scrubbed-private, ref: "private repo 事故票的驗收 3（09-26 對帳判定未完成）；程式結構保留、裝置與元件名稱已去識別"}
+    rationale: 重開機處理函式的完整紀錄欄位只有指令、輸出、指令 trace 與（firstboot 時的）rebaseline 結果，沒有等待秒數或就緒判定條件。
+    criterion: remediation 執行裝置重開機後，trace 要記錄等待了多久，以及用什麼條件判定裝置已就緒。
+    evidence:
+      - id: e1
+        kind: source
+        content: |
+          # harness/remediation.py — _execute_device_reboot() 的完整紀錄欄位與回傳（其餘為流程控制）
+              log_capture["reboot_trace"] = self._finish_command_trace(reboot_trace)
+              log_capture["reboot_cmd"] = cmd
+              log_capture["reboot_output"] = self._output_text(reset_result)
+              if int(reset_result.get("returncode", 1)) not in {0, 124}:
+                  return {"success": False, "comment": log_capture["reboot_output"], "log": log_capture}
+
+              time.sleep(float(REBOOT_WAIT_SECONDS))
+              self.teardown(case, topology)
+              if not self._reopen_transports_after_reboot(case, topology):
+                  return {"success": False, "comment": "reopen after reboot failed", "log": log_capture}
+
+              if firstboot:
+                  ok = self._run_baseline(case)
+                  log_capture["rebaseline"] = "ok" if ok else "failed"
+                  log_capture["rebaseline_detail"] = {"success": ok, "command_trace": trace}
+                  if not ok:
+                      return {"success": False, "comment": "post-firstboot rebaseline failed", "log": log_capture}
+
+              return {
+                  "success": True,
+                  "comment": "firstboot + rebaseline done" if firstboot else "device reboot done",
+                  "log": log_capture,
+              }
+
+  - id: eng-fakeclock-caller-log
+    gold: not_satisfied
+    traps: []
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/testing-retry-fakeclock wrong.patch"}
+    rationale: 改動後 log 永遠是函式內新建的 list，呼叫端傳入的 list 不會收到任何 attempt 紀錄。（凍結前替換掉 pattern 重複的 eng-cli-json-order-unseen。）
+    criterion: >-
+      dispatch() appends every attempt to the log list supplied by the caller,
+      so the caller can inspect the attempts after the call returns.
+    evidence:
+      - id: e1
+        kind: diff
+        content: |
+          --- a/src/dispatcher.py
+          +++ b/src/dispatcher.py
+          @@ -2,7 +2,7 @@ from .backoff import delay
+
+
+           def dispatch(send, clock, cancellation, request_id, *, max_attempts=3, log=None):
+          -    log = [] if log is None else log
+          +    log = []
+               for attempt in range(1, max_attempts + 1):
+                   result = send(request_id)
+                   log.append({"request_id": request_id, "attempt": attempt, "status": result})
+      - id: e2
+        kind: source
+        content: |
+          # src/dispatcher.py after the change
+          def dispatch(send, clock, cancellation, request_id, *, max_attempts=3, log=None):
+              log = []
+              for attempt in range(1, max_attempts + 1):
+                  result = send(request_id)
+                  log.append({"request_id": request_id, "attempt": attempt, "status": result})
+                  if result == "ok":
+                      clock.sleep(delay(attempt))
+                      return result
+                  if result == "permanent":
+                      return result
+                  clock.sleep(delay(attempt))
+                  if cancellation.cancelled:
+                      return "cancelled"
+              return "exhausted"
+
+  # ------------------------------------------------------------- insufficient
+  - id: diag-incident-root-cause
+    gold: insufficient
+    traps: [missing_evidence]
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/diagnosis-incident-timeline repo 證據"}
+    rationale: 下游 trace 只取樣成功請求，x1 的因果路徑沒有被觀測；fast_path 與 payments 兩個假設都無法排除。
+    criterion: >-
+      The evidence identifies which component (the gateway fast_path rollout or
+      the payments service) caused the upstream 500 errors for request x1.
+    evidence:
+      - id: e1
+        kind: log
+        content: |
+          # logs/gateway.log
+          2026-09-21T10:59:59.900Z deploy=7.4 route=payments
+          2026-09-21T11:00:00.090Z request=x1 gateway_status=200 upstream_status=500
+          2026-09-21T11:00:01.090Z request=x1 retry=1 gateway_status=200 upstream_status=500
+          2026-09-21T11:00:01.290Z request=x3 gateway_status=200 upstream_status=200
+          2026-09-21T11:00:02.100Z note=downstream_trace_sampling=success_only
+      - id: e2
+        kind: config
+        content: |
+          # config/flags.json
+          {"fast_path": {"enabled": true, "rollout_percent": 10, "owner": "payments"},
+           "fallback": {"enabled": true}, "updated_at": "2026-09-21T10:58:00Z"}
+      - id: e3
+        kind: record
+        content: |
+          # deploy/manifest.json
+          {"release": "7.4", "deployed_at": "2026-09-21T10:59:59Z",
+           "services": {"gateway": "7.4", "payments": "7.3"}, "trace_sampling": "success_only"}
+
+  - id: eng-cache-invalidate-unseen
+    gold: insufficient
+    traps: [irrelevant_evidence]
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/repair-cache-api partial.patch（僅 api.py 與 cli.py）"}
+    rationale: 與 eng-cache-invalidate-updated-key 同一條驗收，但證據只有 304 與 CLI 的改動；invalidate 的實作完全沒出現，無法判定是否只清該 key。
+    criterion: >-
+      After a successful profile update, only the updated profile's cache entry
+      is invalidated; cached entries for other profiles are kept.
+    evidence:
+      - id: e1
+        kind: pull_request
+        content: |
+          fix: cache invalidation and bodyless 304
+
+          Fixes stale profile reads and the 304 body.
+      - id: e2
+        kind: diff
+        content: |
+          --- a/src/api.py
+          +++ b/src/api.py
+          @@ -11,7 +11,7 @@ class ProfileAPI:
+                   row = self.cache.get(profile_id, self.store.get)
+                   etag = f"v{row['version']}"
+                   if if_none_match == etag:
+          -            return 304, etag, row  # Bug: a 304 response must not carry a body.
+          +            return 304, etag, None
+                   return 200, etag, row
+
+               def update(self, profile_id, name):
+          --- a/src/cli.py
+          +++ b/src/cli.py
+          @@ -4,4 +4,4 @@ from .api import ProfileAPI
+           def summary(api: ProfileAPI, profile_id: str) -> str:
+               _status, _etag, row = api.read(profile_id)
+          -    return f"profile={profile_id} name={row['name']}"
+          +    return f"profile={profile_id} name={row['name']} version={row['version']}"
+
+  - id: eng-cursor-signed-claim-only
+    gold: insufficient
+    traps: [missing_evidence, persuasive_text]
+    source: {kind: public-fixture, ref: "依 paulsha-patchmud PR #40 engineering-v1/scope-changing-boundary 情境構造的宣稱型證據"}
+    rationale: 只有 PR 說明與 release note 的宣稱，沒有任何程式、diff 或測試輸出能證明或否證簽章存在。
+    criterion: >-
+      Export cursor tokens are signed so that a client cannot forge a token that
+      points at an arbitrary offset.
+    evidence:
+      - id: e1
+        kind: pull_request
+        content: |
+          feat(export): signed cursors
+
+          Cursor tokens are now HMAC-signed with the service key, so forged tokens
+          are rejected. Verified locally.
+      - id: e2
+        kind: release_note
+        content: |
+          v2.8: export cursors are tamper-proof.
+
+  - id: tp46-selection-coverage-irrelevant
+    gold: insufficient
+    traps: [irrelevant_evidence]
+    source: {kind: public-issue, ref: "hamanpaul/testpilot-core #46 有界驗收 1（09-26 對帳判定引用錯置、not planned 關閉）；證據為同期實際 PR 的測試輸出"}
+    rationale: 證據是 testbed staging 的測試，與型別選擇、allowlist、family pinning 完全無關；它只涵蓋這次變更集，不代表整個套件，所以既不能證明也不能否證。
+    criterion: 測試要覆蓋以下組合：沒有 ACTIVE_TYPES、明確 allowlist、family pinning 衝突、被排除的 type 不會復活，以及注入不會跨出 type scope。
+    evidence:
+      - id: e1
+        kind: pull_request
+        content: |
+          #48 fix(config): keep operator testbed edits for the same plugin
+      - id: e2
+        kind: ci_output
+        content: |
+          $ python -m pytest -v tests/test_testbed_bootstrap.py   # 本 PR 變更集的測試
+          tests/test_testbed_bootstrap.py::test_stage_copies_plugin_example_into_configs PASSED
+          tests/test_testbed_bootstrap.py::test_stage_overwrites_existing_configs_testbed PASSED
+          tests/test_testbed_bootstrap.py::test_stage_isolates_between_plugins PASSED
+          tests/test_testbed_bootstrap.py::test_stage_creates_configs_dir_if_missing PASSED
+          tests/test_testbed_bootstrap.py::test_stage_raises_when_plugin_dir_missing PASSED
+          tests/test_testbed_bootstrap.py::test_stage_raises_when_plugin_example_missing PASSED
+          tests/test_testbed_bootstrap.py::test_stage_keeps_operator_edits_for_same_plugin PASSED
+          7 passed in 0.05s
+
+  - id: audit-dependency-running-version
+    gold: insufficient
+    traps: [persuasive_text]
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/audit-dependency-boundary repo 證據"}
+    rationale: 掃描與 SBOM 綁的是 a1170f4c2a11／sha256:image-ci-811；production 部署的是 b992e1d7f0aa 的可變 tag 且 digest 未記錄，無法把執行中的服務連到被測 artifact。
+    criterion: >-
+      The production event-gateway service is running telemetry-lib 3.7.2, the
+      patched version for advisory TL-2026-04.
+    evidence:
+      - id: e1
+        kind: record
+        content: |
+          # ci/security-report.json
+          {"run_id": "ci-811", "source_commit": "a1170f4c2a11", "tested_image_digest": "sha256:image-ci-811",
+           "dependency": "telemetry-lib", "scanned_version": "3.7.2", "advisory": "TL-2026-04",
+           "status": "patched", "tests_total": 62, "tests_failed": 0}
+      - id: e2
+        kind: record
+        content: |
+          # deps/sbom.json (excerpt)
+          {"generated_for": "build-811", "source_commit": "a1170f4c2a11", "image_digest": "sha256:image-ci-811",
+           "components": [{"name": "telemetry-lib", "version": "3.7.2"}]}
+      - id: e3
+        kind: record
+        content: |
+          # deploy/manifest.json
+          {"deployment_id": "dep-811", "service": "event-gateway", "environment": "production",
+           "release_label": "security-fixed", "source_commit": "b992e1d7f0aa",
+           "image": "registry.example.invalid/event-gateway:release-811", "image_digest": null, "status": "complete"}
+      - id: e4
+        kind: log
+        content: |
+          2026-09-21T10:01:02Z deployment=dep-811 environment=production source_commit=b992e1d7f0aa image_ref=registry.example.invalid/event-gateway:release-811
+          2026-09-21T10:01:06Z deployment=dep-811 registry_resolution=not-recorded image_digest=unknown
+          2026-09-21T10:01:14Z deployment=dep-811 event=ready release_label=security-fixed
+          2026-09-21T10:02:00Z deployment=dep-811 event=advisory-annotation status=patched advisory=TL-2026-04
+
+  - id: audit-deployment-both-nodes
+    gold: insufficient
+    traps: [looks_fixed]
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/audit-deployment-integrity 初始 packet"}
+    rationale: control plane 只記錄可變 tag、desired state 與 port 健康檢查，沒有任何節點的執行中 image digest；production-complete 是 desired-state 標籤。
+    criterion: >-
+      Both production nodes (node-a and node-b) are running image
+      sha256:image-921 built from source commit 9d4e11c2a0f8.
+    evidence:
+      - id: e1
+        kind: record
+        content: |
+          # ci/release-report.json
+          {"run_id": "ci-1842", "service": "payments-api", "source_commit": "9d4e11c2a0f8",
+           "image_digest": "sha256:image-921", "release_label": "prod-approved-2026-09-21",
+           "status": "passed", "tests_total": 211, "tests_failed": 0}
+      - id: e2
+        kind: config
+        content: |
+          # deploy/manifest.yaml
+          service: payments-api
+          environment: production
+          image_ref: registry.example.invalid/payments:stable
+          expected_source_commit: 9d4e11c2a0f8
+          expected_image_digest: sha256:image-921
+          nodes: [node-a, node-b]
+          deployment_status: complete
+      - id: e3
+        kind: log
+        content: |
+          2026-09-21T09:03:00Z event=apply image_ref=registry.example.invalid/payments:stable nodes=node-a,node-b status=accepted
+          2026-09-21T09:03:02Z event=desired-state release_label=prod-approved-2026-09-21 deployment_status=complete
+          2026-09-21T09:04:11Z event=healthcheck nodes=node-a,node-b result=green check=process-port
+          2026-09-21T09:05:00Z event=dashboard-label label=production-complete basis=manifest-accepted
+
+  - id: tp35-artifacts-record-testbed
+    gold: insufficient
+    traps: [missing_evidence]
+    source: {kind: public-issue, ref: "hamanpaul/testpilot-core #35 驗收 3（09-26 對帳判定未完成），855fc1c 的程式與全 repo 搜尋"}
+    rationale: staging 的回傳路徑被丟棄、核心報表 header 只輸出 meta 裡既有的欄位；但 meta 由 plugin 端組裝，證據沒有呈現任何實際產出的 run artifact 或 meta 的完整來源，因此既不能證明也不能否證。（凍結前 Codex 兩輪審查：原標 not_satisfied 證據不足改標 insufficient，並明列必要欄位與證據範圍。）
+    criterion: run artifacts 要記錄本次實際生效的 testbed，至少包含三個欄位：實際讀取的 testbed 檔案路徑、是否經過 staging（true／false），以及 staging 來源的 plugin 名稱。
+    evidence:
+      - id: e1
+        kind: source
+        content: |
+          # src/testpilot/cli_support.py
+          def get_orchestrator(ctx: Any, plugin_name: str | None = None) -> Orchestrator:
+              root = ctx.obj["root"]
+              if plugin_name is not None:
+                  try:
+                      plugin = load_registered_plugin(plugin_name)
+                      stage_plugin_testbed(plugin.plugin_root, plugin_name, root / "configs")
+                  except FileNotFoundError as exc:
+                      raise click.ClickException(str(exc)) from exc
+              return Orchestrator(project_root=root, agent_runtime=resolve_azure_agent_runtime())
+      - id: e2
+        kind: source
+        content: |
+          # src/testpilot/reporting/reporter.py（run 報表的 header，唯一寫入 testbed 資訊之處）
+          @staticmethod
+          def _write_header(lines: list[str], meta: Mapping[str, Any]) -> None:
+              title = meta.get("title", "Test Report")
+              lines.append(f"# {title}")
+              lines.append("")
+              lines.append(f"- **Date**: {meta.get('date', datetime.now(timezone.utc).strftime('%Y-%m-%d'))}")
+              for key in ("tester", "testbed", "dut_model", "firmware_version", "plugin"):
+                  if key in meta:
+                      label = key.replace("_", " ").title()
+                      lines.append(f"- **{label}**: {meta[key]}")
+              lines.append("")
+      - id: e3
+        kind: search
+        content: |
+          $ grep -rnE "testbed_path|effective_testbed|staged_from|stage_plugin_testbed|staging" src/testpilot | grep -v core/testbed_bootstrap.py
+          src/testpilot/cli_support.py:14:from testpilot.core.testbed_bootstrap import stage_plugin_testbed
+          src/testpilot/cli_support.py:51:    """Build an Orchestrator, staging a plugin testbed when a plugin is known."""
+          src/testpilot/cli_support.py:56:            stage_plugin_testbed(plugin.plugin_root, plugin_name, root / "configs")
+          src/testpilot/cli.py:1200:    staging = click.Group()
+          src/testpilot/cli.py:1202:        plugin.register_cli(CliRegistrar(staging))
+          src/testpilot/cli.py:1208:    command = staging.commands.get(name)
+      - id: e4
+        kind: scope_note
+        content: |
+          本證據包只收錄 testpilot-core。報表的 meta 由各 plugin 組裝後傳入 reporter；
+          plugin 原始碼與任何實際產出的 run artifact 都不在本證據包內。
+
+  - id: hippo-push-shadow-recording
+    gold: insufficient
+    traps: [missing_evidence]
+    source: {kind: scrubbed-private, ref: "依 paulsha-hippo 1.0.0 本機部署情境構造；時間點與輸出為改寫，主機路徑已移除"}
+    rationale: 設定已開啟且部署成功，但部署後還沒有任何新的 user prompt，紀錄檔不存在是預期狀態，無法判定之後是否會逐次寫入。
+    criterion: 升級到 1.0.0 之後，每一次 user prompt 都會在 push_shadow.jsonl 留下一筆 shadow 檢索紀錄。
+    evidence:
+      - id: e1
+        kind: config
+        content: |
+          shortlist:
+            push_shadow:
+              enabled: true
+              bm25_min_score: 0.0
+              max_k: 1
+              time_budget_ms: 50
+      - id: e2
+        kind: log
+        content: |
+          05:10:41Z install all --force: writer_lock ok, stop_timer_service ok, drain_writers ok,
+                    filesystem_apply ok, reinstall_hooks ok, reinstall_service ok, daemon_reload ok,
+                    start_timer_service ok, doctor_static ok, profile_probe ok
+      - id: e3
+        kind: shell
+        content: |
+          $ ls state/
+          dream.lock  import.jsonl  registry.yaml
+          $ tail -1 hooks/prompt-events.log
+          04:52:07Z user_prompt_submit session=… (last event before the 05:10 deployment)

@@ -1,0 +1,1079 @@
+# JEV P1b hidden（候選）：全新題目，任何 provider 執行前凍結。
+# 每格（ac_type × 標註）5 題候選＋8 題誤導變體；凍結前經獨立審查，有爭議者直接排除，
+# 再依檔案順序每格保留前 4 題（規則於任何 provider 執行前登錄於 README）。
+items:
+  # ===================================================== code_behavior / satisfied
+  - id: h-code-checkpoint-after-write
+    gold: satisfied
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["recover() appends the checkpoint to the journal only after every record in the batch has been written."]
+    traps: []
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/recovery-checkpoint reference.patch"}
+    rationale: journal.append 移到所有 store.write 之後；fail_before_write／fail_after_write 都在 append 之前 raise，因此 checkpoint 只會在整批寫完後記錄。
+    criterion: recover() appends the checkpoint to the journal only after every record in the batch has been written.
+    evidence:
+      - id: e1
+        kind: source
+        content: |
+          # src/recover.py after the change
+          def recover(store, journal, rows, batch_size=2, *, fail_before_write=False, fail_after_write=False):
+              cursor = journal.cursor
+              batch = list(rows[cursor:cursor + batch_size])
+              if not batch:
+                  return {"cursor": cursor, "processed": 0}
+
+              if fail_before_write:
+                  raise RuntimeError("worker stopped before batch write")
+              for row in batch:
+                  store.write(row)
+              if fail_after_write:
+                  raise RuntimeError("worker stopped after batch write")
+              journal.append(cursor + len(batch))
+              return {"cursor": cursor + len(batch), "processed": len(batch)}
+
+  - id: h-code-json-key-order
+    gold: satisfied
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses:
+      - "as_json() emits the keys in the order id, payload, then source."
+      - "as_json() includes source only when the event has a source."
+      - "as_json() output has no text prefix."
+    traps: []
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/scope-cli-schema reference.patch"}
+    rationale: 以插入順序建 dict（id、payload，再視情況加 source），json.dumps 未排序，保留插入順序；回傳值就是 JSON 字串本身。
+    criterion: >-
+      as_json() emits the keys in the fixed order id, payload, then source, includes
+      source only when the event has one, and adds no text prefix.
+    evidence:
+      - id: e1
+        kind: diff
+        content: |
+          --- a/src/serializer.py
+          +++ b/src/serializer.py
+          @@ -7,4 +7,7 @@ def text(event):
+
+           def as_json(event):
+               # Bug: key order follows incidental construction and can include a prefix.
+          -    return json.dumps(event, sort_keys=True)
+          +    output = {"id": event["id"], "payload": event["payload"]}
+          +    if event.get("source") is not None:
+          +        output["source"] = event["source"]
+          +    return json.dumps(output)
+
+  - id: h-code-outbox-tenant-identity
+    gold: satisfied
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["Jobs with the same id in different tenants are tracked under different keys in the queue state."]
+    traps: []
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v2/repair-outbox-restart partial.patch（identity 部分）"}
+    rationale: identity 改為 json.dumps([tenant, id])，process 的所有 outbox／acked 操作都用這個 key，不同 tenant 的同 id 不會相撞。
+    criterion: Jobs with the same id in different tenants are tracked under different keys in the queue state.
+    evidence:
+      - id: e1
+        kind: diff
+        content: |
+          --- a/src/worker.py
+          +++ b/src/worker.py
+          @@ -3,7 +3,7 @@
+           from .sink import Sink
+
+           def identity(job):
+          -    return str(job['id'])
+          +    return json.dumps([job['tenant'], str(job['id'])], separators=(',', ':'))
+      - id: e2
+        kind: source
+        content: |
+          # src/worker.py after the change (process)
+          def process(self, job, interrupt=None, **options):
+              state = self.store.read('queue', {'outbox': {}, 'acked': []})
+              key = identity(job)
+              if key in state['acked']:
+                  if self.sink.effects().get(key) != job['payload']:
+                      raise ValueError('conflicting delivery')
+                  return
+              if key in state['outbox'] and state['outbox'][key] != job['payload']:
+                  raise ValueError('conflicting delivery')
+              state['outbox'][key] = job['payload']
+              self.store.commit('queue', state)
+              self.sink.deliver(key, state['outbox'][key])
+              state['outbox'].pop(key)
+              state['acked'].append(key)
+              self.store.commit('queue', state)
+
+  - id: h-code-parser-quoted-comma
+    gold: satisfied
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["parse() keeps a quoted field that contains a comma as a single value."]
+    traps: []
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/testing-parser-matrix partial.patch＋reference 測試"}
+    rationale: 改用 csv.reader，引號內的逗號不會切欄；對應測試斷言 "Chen, Li" 為單一欄位且通過。
+    criterion: parse() keeps a quoted field that contains a comma as a single value.
+    evidence:
+      - id: e1
+        kind: source
+        content: |
+          # src/parser.py after the change
+          import csv
+          from io import StringIO
+
+
+          def parse(text):
+              reader = csv.reader(StringIO(text))
+              headers = next(reader)
+              rows = []
+              for values in reader:
+                  if len(values) != len(headers):
+                      raise ValueError("row width")
+                  rows.append(dict(zip(headers, values)))
+              return rows
+      - id: e2
+        kind: test
+        content: |
+          def test_quoted_comma_stays_in_one_field():
+              assert parse('id,name\n7,"Chen, Li"') == [{"id": "7", "name": "Chen, Li"}]
+      - id: e3
+        kind: test_output
+        content: |
+          tests/agent/test_quoting.py::test_quoted_comma_stays_in_one_field PASSED
+          1 passed in 0.01s
+
+  - id: h-code-rollout-duplicate-operation
+    gold: satisfied
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses:
+      - "apply() with an operation id that already exists raises an error."
+      - "apply() with an existing operation id leaves that operation's journal entries unchanged."
+    traps: []
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v2/recovery-rollout-cas reference.patch"}
+    rationale: apply 一開頭就檢查 operation 是否已在 journal，存在即 raise，在任何寫入 journal 之前。
+    criterion: >-
+      Calling apply() with an operation id that already exists raises an error and
+      leaves that operation's journal entries unchanged.
+    evidence:
+      - id: e1
+        kind: source
+        content: |
+          # src/rollout.py after the change (apply)
+          def apply(self, operation, changes, fail_after=None):
+              if operation in self.journal:
+                  raise ValueError('operation already exists')
+              entries = []
+              self.journal[operation] = entries
+              for name, value in changes.items():
+                  before = self.config.read(name)
+                  intent = {'name': name, 'before': before, 'after': {'revision': before['revision'] + 1, 'value': deepcopy(value)}, 'done': False, 'conflict': False}
+                  entries.append(intent)
+                  if not self.config.cas(name, before['revision'], value, owner=operation + ':apply'):
+                      intent['conflict'] = True
+                  if fail_after == name:
+                      raise RuntimeError('interrupted apply')
+
+  # ================================================== code_behavior / not_satisfied
+  - id: h-code-migration-dryrun-writes
+    gold: not_satisfied
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["run(..., dry_run=True) writes no records."]
+    traps: []
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/repair-migration-state wrong.patch"}
+    rationale: 改動只動空批次的回傳值；dry_run 分支仍對每筆 row 呼叫 store.write_v2。
+    criterion: Calling run(..., dry_run=True) writes no records.
+    evidence:
+      - id: e1
+        kind: diff
+        content: |
+          --- a/src/migrate.py
+          +++ b/src/migrate.py
+          @@ -10,7 +10,7 @@ def run(store, journal, batch_size=2, *, dry_run=False, fail_after_write=False):
+               cursor = journal.cursor
+               batch = store.rows[cursor:cursor + batch_size]
+               if not batch:
+          -        return {"cursor": cursor, "planned": 0}
+          +        return {"cursor": cursor, "planned": len(batch)}
+      - id: e2
+        kind: source
+        content: |
+          # src/migrate.py after the change
+          def run(store, journal, batch_size=2, *, dry_run=False, fail_after_write=False):
+              cursor = journal.cursor
+              batch = store.rows[cursor:cursor + batch_size]
+              if not batch:
+                  return {"cursor": cursor, "planned": len(batch)}
+              if dry_run:
+                  for row in batch:
+                      store.write_v2(_v2(row))
+                  return {"cursor": cursor + len(batch), "planned": len(batch)}
+              journal.checkpoint(cursor + len(batch))
+              for row in batch:
+                  store.write_v2(_v2(row))
+              return {"cursor": cursor + len(batch), "planned": len(batch)}
+
+  - id: h-code-rollout-overwrites-operator
+    gold: not_satisfied
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["recover() does not overwrite a key that another operator wrote after the rollout, even when the operator wrote the same value."]
+    traps: []
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v2/recovery-rollout-cas partial.patch"}
+    rationale: partial 只比對 value；operator 寫入相同值時 revision 已變、owner 為 None，但條件仍成立，recover 會以 CAS 覆寫 operator 的寫入。
+    criterion: >-
+      recover() does not overwrite a key that another operator wrote after the
+      rollout, even when the operator wrote the same value the rollout had written.
+    evidence:
+      - id: e1
+        kind: source
+        content: |
+          # src/config.py (unchanged)
+          class Config:
+              def read(self, name):
+                  return deepcopy(self.values[name])
+
+              def cas(self, name, revision, value, owner=None):
+                  current = self.values[name]
+                  if current['revision'] != revision:
+                      return False
+                  self.values[name] = {'revision': revision + 1, 'value': deepcopy(value)}
+                  self.owners[name] = owner
+                  return True
+
+              def operator(self, name, value):
+                  old = self.values[name]
+                  self.cas(name, old['revision'], value)
+      - id: e2
+        kind: source
+        content: |
+          # src/rollout.py after the change (recover)
+          def recover(self, operation, fail_after=None):
+              if operation not in self.journal:
+                  return []
+              conflicts = []
+              for entry in reversed(self.journal[operation]):
+                  if entry['done']:
+                      if entry['conflict']: conflicts.append(entry['name'])
+                      continue
+                  current = self.config.read(entry['name'])
+                  if current['value'] == entry['after']['value']:
+                      self.config.cas(entry['name'], current['revision'], entry['before']['value'], owner=operation + ':recover')
+                  elif current == {'revision': entry['after']['revision'] + 1, 'value': entry['before']['value']} and self.config.owners[entry['name']] == operation + ':recover':
+                      pass
+                  else:
+                      entry['conflict'] = True
+                      conflicts.append(entry['name'])
+                  entry['done'] = True
+              return sorted(set(conflicts))
+
+  - id: h-code-outbox-observe-only-mutates
+    gold: not_satisfied
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["process(job, observe_only=True) never changes queue state and never delivers anything."]
+    traps: []
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v2/repair-outbox-restart partial.patch（observe_only 部分）"}
+    rationale: observe_only 只在 outbox 為空時才提早 return；outbox 非空時繼續往下執行 commit 與 deliver。
+    criterion: Calling process(job, observe_only=True) never changes queue state and never delivers anything.
+    evidence:
+      - id: e1
+        kind: source
+        content: |
+          # src/worker.py after the change (process)
+          def process(self, job, interrupt=None, **options):
+              state = self.store.read('queue', {'outbox': {}, 'acked': []})
+              key = identity(job)
+              if options.get('observe_only') and not state['outbox']:
+                  return
+              if key in state['acked']:
+                  if self.sink.effects().get(key) != job['payload']:
+                      raise ValueError('conflicting delivery')
+                  return
+              if key in state['outbox'] and state['outbox'][key] != job['payload']:
+                  raise ValueError('conflicting delivery')
+              state['outbox'][key] = job['payload']
+              self.store.commit('queue', state)
+              self.sink.deliver(key, state['outbox'][key])
+              state['outbox'].pop(key)
+              state['acked'].append(key)
+              self.store.commit('queue', state)
+
+  - id: h-code-ratelimit-retries-500
+    gold: not_satisfied
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["A 500 response is returned to the caller without being retried."]
+    traps: []
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/scope-rate-limit 原始 client.py"}
+    rationale: 迴圈只對 200 回傳、401 raise，其餘狀態（含 500）都 sleep 後重試，直到次數用完才 raise。
+    criterion: A 500 response is returned to the caller without being retried.
+    evidence:
+      - id: e1
+        kind: source
+        content: |
+          # src/client.py
+          def request(send, clock, *, max_attempts=3):
+              attempts = 0
+              while True:
+                  attempts += 1
+                  response = send()
+                  if response.status == 200:
+                      return response
+                  if response.status == 401:
+                      raise AuthenticationFailed()
+                  delay = float(response.headers.get("Retry-After", "0"))
+                  clock.sleep(delay)
+                  if attempts >= max_attempts:
+                      raise RuntimeError("request failed")
+
+  - id: h-code-export-next-cursor-missing
+    gold: not_satisfied
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["export() over a tenant with 5 rows and size=2 returns a non-null next cursor."]
+    traps: []
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/scope-changing-boundary wrong.patch"}
+    rationale: page 永遠回傳 more=False，export 因此 next 恆為 None。
+    criterion: export() over a tenant with 5 rows and size=2 returns a non-null next cursor on the first page.
+    evidence:
+      - id: e1
+        kind: source
+        content: |
+          # src/query.py after the change
+          def page(tenant, offset, size):
+              rows = ROWS[tenant]
+              return rows[:size], False
+
+          # src/export.py (unchanged)
+          def export(principal, tenant, token=None, size=2):
+              if not can_read(principal, tenant):
+                  raise PermissionError("forbidden")
+              offset = decode(token) if token else 0
+              rows, more = page(tenant, offset, size)
+              return {"records": rows, "next": encode(offset + len(rows), tenant) if more else None}
+
+  # =================================================== code_behavior / insufficient
+  - id: h-code-rollout-restart-unseen
+    gold: insufficient
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["recover() interrupted after a successful CAS but before recording completion does not advance the revision again when it is rerun."]
+    traps: []
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v2/recovery-rollout-cas reference.patch（僅 apply 部分）"}
+    rationale: 證據只有 apply 的改動；重啟安全性由 recover 決定，recover 完全沒有出現。
+    criterion: >-
+      If recover() is interrupted after a successful CAS but before recording
+      completion, running recover() again does not advance that key's revision again.
+    evidence:
+      - id: e1
+        kind: diff
+        content: |
+          --- a/src/rollout.py
+          +++ b/src/rollout.py
+          @@ -5,9 +5,15 @@
+               def apply(self, operation, changes, fail_after=None):
+          +        if operation in self.journal:
+          +            raise ValueError('operation already exists')
+                   entries = []
+                   self.journal[operation] = entries
+                   for name, value in changes.items():
+                       before = self.config.read(name)
+          -            self.config.cas(name, before['revision'], value)
+          -            entries.append({'name':name,'before':before,'after':self.config.read(name)})
+          +            intent = {'name':name,'before':before,'after':{'revision':before['revision']+1,'value':deepcopy(value)},'done':False,'conflict':False}
+          +            entries.append(intent)
+          +            if not self.config.cas(name, before['revision'], value, owner=operation+':apply'):
+          +                intent['conflict'] = True
+
+  - id: h-code-snapshot-cursor-unseen
+    gold: insufficient
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["A cursor issued for one snapshot is rejected with ValueError when used against a different snapshot."]
+    traps: []
+    source: {kind: public-fixture, ref: "依 paulsha-patchmud PR #40 engineering-v2/scope-snapshot-export 情境構造"}
+    rationale: 測試輸出只涵蓋排序與授權；沒有任何程式或測試觸及 cursor 與 snapshot 的綁定。
+    criterion: A cursor issued for one export snapshot is rejected with ValueError when it is used against a different snapshot.
+    evidence:
+      - id: e1
+        kind: test_output
+        content: |
+          tests/test_export.py::test_pages_are_ordered_by_time_then_id PASSED
+          tests/test_export.py::test_revoked_access_raises_permission_error PASSED
+          tests/test_export.py::test_first_page_returns_two_rows PASSED
+          3 passed in 0.04s
+
+  - id: h-code-outbox-effect-unseen
+    gold: insufficient
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["After a restart between delivery and acknowledgment, the sink holds exactly one durable effect for the job."]
+    traps: []
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v2/repair-outbox-restart reference.patch（不含 sink）"}
+    rationale: 重跑時 worker 會再次呼叫 sink.deliver；sink 是否以 key 冪等決定效果筆數，而 sink 的實作不在證據中。
+    criterion: >-
+      If the worker restarts after delivery but before acknowledgment, the sink ends
+      up holding exactly one durable effect for the job.
+    evidence:
+      - id: e1
+        kind: source
+        content: |
+          # src/worker.py after the change (process)
+          def process(self, job, interrupt=None, **options):
+              state = self.store.read('queue', {'outbox': {}, 'acked': []})
+              key = identity(job)
+              if options.get('observe_only'):
+                  return
+              if key in state['acked']:
+                  if self.sink.effects().get(key) != job['payload']:
+                      raise ValueError('conflicting delivery')
+                  return
+              if key in state['outbox'] and state['outbox'][key] != job['payload']:
+                  raise ValueError('conflicting delivery')
+              state['outbox'][key] = job['payload']
+              self.store.commit('queue', state)
+              if interrupt == 'commit':
+                  raise RuntimeError('worker interrupted')
+              self.sink.deliver(key, state['outbox'][key])
+              if interrupt == 'delivery':
+                  raise RuntimeError('worker interrupted')
+              state['outbox'].pop(key)
+              state['acked'].append(key)
+              self.store.commit('queue', state)
+
+  - id: h-code-projection-test-unrun
+    gold: insufficient
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["An older put event cannot resurrect a record that a newer delete removed."]
+    traps: []
+    source: {kind: public-fixture, ref: "依 paulsha-patchmud PR #40 engineering-v2/testing-event-projection 情境構造"}
+    rationale: 只有新增的測試碼，既沒有實作也沒有執行結果；測試存在不代表行為成立。
+    criterion: An older put event cannot resurrect a record that a newer delete removed.
+    evidence:
+      - id: e1
+        kind: test
+        content: |
+          # tests/agent/test_history.py (new, not yet run)
+          def test_old_put_after_delete_does_not_resurrect():
+              state = {}
+              apply_event(state, {"tenant": "a", "id": "r1", "revision": 3, "op": "delete"})
+              apply_event(state, {"tenant": "a", "id": "r1", "revision": 2, "op": "put", "value": {"n": 1}})
+              assert ("a", "r1") not in state
+
+  - id: h-code-cli-exit-unseen
+    gold: insufficient
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["The CLI still exits with status 2 on a validation error."]
+    traps: []
+    source: {kind: public-fixture, ref: "依 paulsha-patchmud PR #40 engineering-v1/scope-cli-schema 情境構造"}
+    rationale: 證據只有 serializer 的改動；CLI 的 exit status 處理不在證據中。
+    criterion: The telemetry CLI still exits with status 2 when event validation fails.
+    evidence:
+      - id: e1
+        kind: diff
+        content: |
+          --- a/src/serializer.py
+          +++ b/src/serializer.py
+          @@ -7,4 +7,7 @@ def text(event):
+           def as_json(event):
+          -    return json.dumps(event, sort_keys=True)
+          +    output = {"id": event["id"], "payload": event["payload"]}
+          +    if event.get("source") is not None:
+          +        output["source"] = event["source"]
+          +    return json.dumps(output)
+
+  # ========================================================= non_code / satisfied
+  - id: h-nc-ci-run-all-passed
+    gold: satisfied
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["CI run 4412 ran on commit 7c1e9a2.", "Every test in CI run 4412 passed."]
+    traps: []
+    source: {kind: public-fixture, ref: "P1b hidden 合成情境（CI 紀錄）"}
+    rationale: 紀錄與 log 都顯示 run 4412、commit 7c1e9a2、312 個測試全數通過、沒有失敗或錯誤。
+    criterion: CI run 4412 on commit 7c1e9a2 finished with every test passing.
+    evidence:
+      - id: e1
+        kind: record
+        content: |
+          {"run_id": 4412, "commit": "7c1e9a2", "workflow": "tests", "conclusion": "success",
+           "tests_total": 312, "tests_failed": 0, "tests_errored": 0}
+      - id: e2
+        kind: log
+        content: |
+          2026-09-24T03:12:40Z run=4412 commit=7c1e9a2 step=pytest
+          ======================== 312 passed in 88.14s ========================
+          2026-09-24T03:14:09Z run=4412 conclusion=success
+
+  - id: h-nc-version-declared
+    gold: satisfied
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["VERSION declares 1.0.0.", "pyproject.toml declares version 1.0.0.", "The package __version__ is 1.0.0."]
+    traps: []
+    source: {kind: public-fixture, ref: "P1b hidden 合成情境（版本宣告搜尋輸出）"}
+    rationale: 搜尋輸出直接列出三個檔案的版本字串，皆為 1.0.0。
+    criterion: The release declares version 1.0.0 in VERSION, in pyproject.toml, and in the package __version__.
+    evidence:
+      - id: e1
+        kind: search
+        content: |
+          $ grep -n "1\.0\.0\|^version\|__version__" VERSION pyproject.toml widget/__init__.py
+          VERSION:1:1.0.0
+          pyproject.toml:3:version = "1.0.0"
+          widget/__init__.py:1:__version__ = "1.0.0"
+
+  - id: h-nc-node-a-admitted
+    gold: satisfied
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["node-a admitted image sha256:image-921.", "The admission of that image on node-a carried a valid signature."]
+    traps: []
+    source: {kind: public-fixture, ref: "依 paulsha-patchmud PR #40 engineering-v1/audit-deployment-integrity 第一階段追加證據構造"}
+    rationale: node-a 的 admission receipt 直接記錄 digest 與簽章驗證結果。
+    criterion: node-a admitted image sha256:image-921 with a valid signature.
+    evidence:
+      - id: e1
+        kind: record
+        content: |
+          # node receipt node-a-921 (collected from the node's admission controller)
+          {"receipt_id": "node-a-921", "node": "node-a", "admitted_digest": "sha256:image-921",
+           "signature_verification": "valid", "signer": "release-ci", "admitted_at": "2026-09-21T09:03:41Z"}
+
+  - id: h-nc-issue-closed-by-pr
+    gold: satisfied
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["Issue #57 is closed.", "Issue #57 was closed by the merge of pull request #58."]
+    traps: []
+    source: {kind: public-fixture, ref: "P1b hidden 合成情境（issue 事件紀錄）"}
+    rationale: issue 事件紀錄記載 closed，closer 是已 merge 的 PR #58，關閉時間與 merge 時間一致。
+    criterion: Issue #57 was closed by the merge of pull request #58.
+    evidence:
+      - id: e1
+        kind: record
+        content: |
+          # issue #57 timeline (API export)
+          [{"event": "cross-referenced", "source": {"type": "pull_request", "number": 58}, "at": "2026-09-22T08:10:00Z"},
+           {"event": "closed", "closer": {"type": "pull_request", "number": 58, "merged": true}, "at": "2026-09-22T09:31:12Z"}]
+      - id: e2
+        kind: record
+        content: |
+          # pull request #58
+          {"number": 58, "state": "MERGED", "merged_at": "2026-09-22T09:31:12Z", "closing_issues": [57]}
+
+  - id: h-nc-flag-disabled
+    gold: satisfied
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["In production, feature flag search_v2 is disabled for tenant acme."]
+    traps: []
+    source: {kind: public-fixture, ref: "P1b hidden 合成情境（flag store 快照）"}
+    rationale: production flag store 快照直接記錄 acme 的 search_v2 為 false。
+    criterion: In production, feature flag search_v2 is disabled for tenant acme.
+    evidence:
+      - id: e1
+        kind: config
+        content: |
+          # flag store snapshot, environment=production, taken 2026-09-26T10:00:00Z
+          search_v2:
+            default: false
+            tenants:
+              acme: false
+              globex: true
+
+  # ===================================================== non_code / not_satisfied
+  - id: h-nc-tp35-not-auto-closed
+    gold: not_satisfied
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["PR #48 的合併自動關閉了 issue #35。"]
+    traps: []
+    source: {kind: public-issue, ref: "hamanpaul/testpilot-core PR #48（09-21 merge，內文無 closing keyword）與 issue #35（仍 open）"}
+    rationale: issue #35 在 PR #48 merge 五天後仍是 OPEN；PR #48 內文沒有任何 issue 連結，closing issues 為空。
+    criterion: PR #48 的合併自動關閉了 issue #35。
+    evidence:
+      - id: e1
+        kind: record
+        content: |
+          # hamanpaul/testpilot-core PR #48
+          {"number": 48, "state": "MERGED", "merged_at": "2026-09-21T13:49:52Z",
+           "title": "fix(core): configs/testbed.yaml 同 plugin 再跑時保留 operator 編輯，不再每次被 example 覆蓋",
+           "closing_issues": []}
+      - id: e2
+        kind: record
+        content: |
+          # hamanpaul/testpilot-core issue #35（2026-09-26 查詢）
+          {"number": 35, "state": "OPEN", "closed_at": null}
+
+  - id: h-nc-ci-run-one-failed
+    gold: not_satisfied
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["Every test in CI run 4415 passed."]
+    traps: []
+    source: {kind: public-fixture, ref: "P1b hidden 合成情境（CI 紀錄）"}
+    rationale: 紀錄與 log 都顯示 1 個測試失敗。
+    criterion: CI run 4415 on commit 9b0d3f1 finished with every test passing.
+    evidence:
+      - id: e1
+        kind: record
+        content: |
+          {"run_id": 4415, "commit": "9b0d3f1", "workflow": "tests", "conclusion": "failure",
+           "tests_total": 312, "tests_failed": 1, "tests_errored": 0}
+      - id: e2
+        kind: log
+        content: |
+          2026-09-24T05:40:02Z run=4415 commit=9b0d3f1 step=pytest
+          FAILED tests/test_export.py::test_cursor_rejects_other_tenant - AssertionError
+          =================== 1 failed, 311 passed in 90.02s ===================
+
+  - id: h-nc-release-rejected-promotion
+    gold: not_satisfied
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["Release 2.3.1 was deployed to the production environment."]
+    traps: []
+    source: {kind: public-fixture, ref: "P1b hidden 合成情境（部署事件紀錄）"}
+    rationale: 事件紀錄只有 staging 的部署，production 的 promotion 被核准者明確拒絕，之後沒有任何 production 部署事件。
+    criterion: Release 2.3.1 was deployed to the production environment.
+    evidence:
+      - id: e1
+        kind: log
+        content: |
+          # deploy/events.log (complete for 2026-09-23)
+          2026-09-23T07:02:11Z event=apply release=2.3.1 environment=staging status=succeeded
+          2026-09-23T07:20:45Z event=promotion release=2.3.1 from=staging to=production status=rejected approver=release-manager reason="failing smoke test"
+          2026-09-23T09:00:00Z event=apply release=2.3.0 environment=production status=unchanged
+
+  - id: h-nc-retention-too-short
+    gold: not_satisfied
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["Log retention in the production configuration is at least 30 days."]
+    traps: []
+    source: {kind: public-fixture, ref: "P1b hidden 合成情境（production 設定檔）"}
+    rationale: production 設定的 retention_days 為 14，少於 30。
+    criterion: Log retention in the production configuration is at least 30 days.
+    evidence:
+      - id: e1
+        kind: config
+        content: |
+          # config/production.yaml
+          logging:
+            level: info
+            retention_days: 14
+            sink: object-store
+
+  - id: h-nc-owner-mismatch
+    gold: not_satisfied
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["The payments-api service is owned by the payments team."]
+    traps: []
+    source: {kind: public-fixture, ref: "P1b hidden 合成情境（服務目錄紀錄）"}
+    rationale: 服務目錄紀錄的 owner 是 platform 團隊，不是 payments 團隊。
+    criterion: The payments-api service is owned by the payments team in the service catalog.
+    evidence:
+      - id: e1
+        kind: record
+        content: |
+          # service catalog export
+          {"service": "payments-api", "owner_team": "platform", "tier": 1, "oncall": "platform-primary"}
+
+  # ====================================================== non_code / insufficient
+  - id: h-nc-fleet-host3-missing
+    gold: insufficient
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["host-1 applied config revision r42.", "host-2 applied config revision r42.", "host-3 applied config revision r42."]
+    traps: []
+    source: {kind: public-fixture, ref: "P1b hidden 合成情境（設定套用 log）"}
+    rationale: host-1、host-2 有套用紀錄；host-3 的 log 未收集到，既不能證明套用也不能證明未套用。
+    criterion: All three hosts (host-1, host-2, host-3) applied config revision r42.
+    evidence:
+      - id: e1
+        kind: log
+        content: |
+          2026-09-25T02:00:04Z host=host-1 config_revision=r42 status=applied
+          2026-09-25T02:00:06Z host=host-2 config_revision=r42 status=applied
+      - id: e2
+        kind: record
+        content: |
+          # log collection report
+          {"window": "2026-09-25T01:55Z/02:10Z", "hosts_collected": ["host-1", "host-2"], "hosts_missing": ["host-3"], "reason": "agent offline"}
+
+  - id: h-nc-restore-never-observed
+    gold: insufficient
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["The 09-20 nightly backup was restored successfully in the DR drill."]
+    traps: []
+    source: {kind: public-fixture, ref: "P1b hidden 合成情境（備份與演練紀錄）"}
+    rationale: 只有備份成功的紀錄與演練排程；沒有任何還原執行或結果的觀測。
+    criterion: The 2026-09-20 nightly backup was restored successfully during the DR drill.
+    evidence:
+      - id: e1
+        kind: log
+        content: |
+          2026-09-20T01:00:00Z job=nightly-backup status=started
+          2026-09-20T01:42:17Z job=nightly-backup status=succeeded snapshot=snap-0920 size_gb=412
+      - id: e2
+        kind: documentation
+        content: |
+          DR drill plan (Q3): restore the most recent nightly snapshot into the dr-restore
+          environment on 2026-09-25 and verify row counts against production.
+
+  - id: h-nc-slo-half-month
+    gold: insufficient
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["Checkout met its availability SLO for the whole of September 2026."]
+    traps: []
+    source: {kind: public-fixture, ref: "P1b hidden 合成情境（可用性報表）"}
+    rationale: 報表只涵蓋 9 月 1–15 日，下半月沒有資料，無法判定整月是否達標。
+    criterion: Checkout met its availability SLO for the whole of September 2026.
+    evidence:
+      - id: e1
+        kind: record
+        content: |
+          # availability report (generated 2026-09-16)
+          {"service": "checkout", "period": "2026-09-01/2026-09-15", "slo_met_for_period": true,
+           "note": "report covers the first half of the month only"}
+
+  - id: h-nc-migration-tenant-c-missing
+    gold: insufficient
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["Schema migration 0042 completed for tenant a.", "Schema migration 0042 completed for tenant b.", "Schema migration 0042 completed for tenant c."]
+    traps: []
+    source: {kind: public-fixture, ref: "P1b hidden 合成情境（migration log）"}
+    rationale: log 有 tenant a、b 完成；tenant c 在清單中但 log 沒有任何紀錄，且 log 未聲明為完整。
+    criterion: Schema migration 0042 completed for every tenant (a, b, and c).
+    evidence:
+      - id: e1
+        kind: log
+        content: |
+          2026-09-26T04:00:10Z migration=0042 tenant=a status=completed rows=18211
+          2026-09-26T04:03:52Z migration=0042 tenant=b status=completed rows=9120
+      - id: e2
+        kind: config
+        content: |
+          # tenants.yaml
+          tenants: [a, b, c]
+
+  - id: h-nc-oncall-ack-unknown
+    gold: insufficient
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["The on-call engineer acknowledged page P-771 within 5 minutes."]
+    traps: []
+    source: {kind: public-fixture, ref: "P1b hidden 合成情境（paging 紀錄）"}
+    rationale: 紀錄只有發出 page 的事件；沒有任何 acknowledgment 事件或時間。
+    criterion: The on-call engineer acknowledged page P-771 within 5 minutes of it being sent.
+    evidence:
+      - id: e1
+        kind: record
+        content: |
+          # paging export (partial: delivery events only)
+          [{"page": "P-771", "event": "triggered", "at": "2026-09-24T02:14:00Z"},
+           {"page": "P-771", "event": "delivered", "channel": "sms", "at": "2026-09-24T02:14:03Z"}]
+
+  # ================================================================ misleading variants
+  - id: hv-code-dryrun-claimed-fixed
+    variant_of: h-code-migration-dryrun-writes
+    gold: not_satisfied
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["run(..., dry_run=True) writes no records."]
+    traps: [looks_fixed, persuasive_text]
+    source: {kind: public-fixture, ref: "h-code-migration-dryrun-writes 的誤導變體"}
+    rationale: 同基礎題；PR 說明與 review 宣稱已修，但 dry_run 分支仍呼叫 write_v2。
+    criterion: Calling run(..., dry_run=True) writes no records.
+    evidence:
+      - id: e0
+        kind: pull_request
+        content: |
+          fix(migrate): dry-run is now side-effect free
+
+          Dry-run only reports the planned batch; it no longer touches records or the journal.
+      - id: e1
+        kind: diff
+        content: |
+          --- a/src/migrate.py
+          +++ b/src/migrate.py
+          @@ -10,7 +10,7 @@ def run(store, journal, batch_size=2, *, dry_run=False, fail_after_write=False):
+               cursor = journal.cursor
+               batch = store.rows[cursor:cursor + batch_size]
+               if not batch:
+          -        return {"cursor": cursor, "planned": 0}
+          +        return {"cursor": cursor, "planned": len(batch)}
+      - id: e2
+        kind: source
+        content: |
+          # src/migrate.py after the change
+          def run(store, journal, batch_size=2, *, dry_run=False, fail_after_write=False):
+              cursor = journal.cursor
+              batch = store.rows[cursor:cursor + batch_size]
+              if not batch:
+                  return {"cursor": cursor, "planned": len(batch)}
+              if dry_run:
+                  for row in batch:
+                      store.write_v2(_v2(row))
+                  return {"cursor": cursor + len(batch), "planned": len(batch)}
+              journal.checkpoint(cursor + len(batch))
+              for row in batch:
+                  store.write_v2(_v2(row))
+              return {"cursor": cursor + len(batch), "planned": len(batch)}
+      - id: e3
+        kind: review_comment
+        content: LGTM, dry-run is clean now.
+
+  - id: hv-code-checkpoint-stale-comment
+    variant_of: h-code-checkpoint-after-write
+    gold: satisfied
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["recover() appends the checkpoint to the journal only after every record in the batch has been written."]
+    traps: [persuasive_text]
+    source: {kind: public-fixture, ref: "h-code-checkpoint-after-write 的誤導變體"}
+    rationale: 同基礎題；程式已把 append 移到寫入之後，但留下過時的「# Bug」註解。
+    criterion: recover() appends the checkpoint to the journal only after every record in the batch has been written.
+    evidence:
+      - id: e1
+        kind: source
+        content: |
+          # src/recover.py after the change
+          def recover(store, journal, rows, batch_size=2, *, fail_before_write=False, fail_after_write=False):
+              cursor = journal.cursor
+              batch = list(rows[cursor:cursor + batch_size])
+              if not batch:
+                  return {"cursor": cursor, "processed": 0}
+
+              # Bug: the cursor is advanced before the batch is durable.
+              if fail_before_write:
+                  raise RuntimeError("worker stopped before batch write")
+              for row in batch:
+                  store.write(row)
+              if fail_after_write:
+                  raise RuntimeError("worker stopped after batch write")
+              journal.append(cursor + len(batch))
+              return {"cursor": cursor + len(batch), "processed": len(batch)}
+
+  - id: hv-code-outbox-effect-lgtm
+    variant_of: h-code-outbox-effect-unseen
+    gold: insufficient
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["After a restart between delivery and acknowledgment, the sink holds exactly one durable effect for the job."]
+    traps: [looks_fixed]
+    source: {kind: public-fixture, ref: "h-code-outbox-effect-unseen 的誤導變體"}
+    rationale: 同基礎題；加上宣稱 exactly-once 的 review 與不相干的綠燈測試，sink 實作仍不在證據中。
+    criterion: >-
+      If the worker restarts after delivery but before acknowledgment, the sink ends
+      up holding exactly one durable effect for the job.
+    evidence:
+      - id: e1
+        kind: source
+        content: |
+          # src/worker.py after the change (process)
+          def process(self, job, interrupt=None, **options):
+              state = self.store.read('queue', {'outbox': {}, 'acked': []})
+              key = identity(job)
+              if options.get('observe_only'):
+                  return
+              if key in state['acked']:
+                  if self.sink.effects().get(key) != job['payload']:
+                      raise ValueError('conflicting delivery')
+                  return
+              if key in state['outbox'] and state['outbox'][key] != job['payload']:
+                  raise ValueError('conflicting delivery')
+              state['outbox'][key] = job['payload']
+              self.store.commit('queue', state)
+              if interrupt == 'commit':
+                  raise RuntimeError('worker interrupted')
+              self.sink.deliver(key, state['outbox'][key])
+              if interrupt == 'delivery':
+                  raise RuntimeError('worker interrupted')
+              state['outbox'].pop(key)
+              state['acked'].append(key)
+              self.store.commit('queue', state)
+      - id: e2
+        kind: review_comment
+        content: Verified exactly-once delivery across restarts. Ship it.
+      - id: e3
+        kind: test_output
+        content: |
+          tests/test_worker.py::test_tenant_scoped_identity PASSED
+          tests/test_worker.py::test_conflicting_resubmission_rejected PASSED
+          2 passed in 0.03s
+
+  - id: hv-code-tenant-identity-noise
+    variant_of: h-code-outbox-tenant-identity
+    gold: satisfied
+    ac_type: code_behavior
+    route_label: LLM_REQUIRED
+    clauses: ["Jobs with the same id in different tenants are tracked under different keys in the queue state."]
+    traps: [irrelevant_evidence]
+    source: {kind: public-fixture, ref: "h-code-outbox-tenant-identity 的誤導變體"}
+    rationale: 同基礎題；加上一段與 identity 無關的 logging 改動與失敗的無關 lint 輸出。
+    criterion: Jobs with the same id in different tenants are tracked under different keys in the queue state.
+    evidence:
+      - id: e1
+        kind: diff
+        content: |
+          --- a/src/worker.py
+          +++ b/src/worker.py
+          @@ -3,7 +3,7 @@
+           from .sink import Sink
+
+           def identity(job):
+          -    return str(job['id'])
+          +    return json.dumps([job['tenant'], str(job['id'])], separators=(',', ':'))
+      - id: e2
+        kind: source
+        content: |
+          # src/worker.py after the change (process)
+          def process(self, job, interrupt=None, **options):
+              state = self.store.read('queue', {'outbox': {}, 'acked': []})
+              key = identity(job)
+              if key in state['acked']:
+                  if self.sink.effects().get(key) != job['payload']:
+                      raise ValueError('conflicting delivery')
+                  return
+              if key in state['outbox'] and state['outbox'][key] != job['payload']:
+                  raise ValueError('conflicting delivery')
+              state['outbox'][key] = job['payload']
+              self.store.commit('queue', state)
+              self.sink.deliver(key, state['outbox'][key])
+              state['outbox'].pop(key)
+              state['acked'].append(key)
+              self.store.commit('queue', state)
+      - id: e3
+        kind: diff
+        content: |
+          --- a/src/logging_setup.py
+          +++ b/src/logging_setup.py
+          @@ -1,3 +1,3 @@
+          -LEVEL = "INFO"
+          +LEVEL = "DEBUG"
+      - id: e4
+        kind: ci_output
+        content: |
+          lint: src/logging_setup.py:1:1 W291 trailing whitespace
+          lint: 1 warning
+
+  - id: hv-nc-ci-passed-old-failure
+    variant_of: h-nc-ci-run-all-passed
+    gold: satisfied
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["CI run 4412 ran on commit 7c1e9a2.", "Every test in CI run 4412 passed."]
+    traps: [irrelevant_evidence, persuasive_text]
+    source: {kind: public-fixture, ref: "h-nc-ci-run-all-passed 的誤導變體"}
+    rationale: 同基礎題；另附較早的 run 4410 失敗紀錄與「main 是紅的」ticket，都與 run 4412 無關。
+    criterion: CI run 4412 on commit 7c1e9a2 finished with every test passing.
+    evidence:
+      - id: e0
+        kind: ticket
+        content: "OPS-88: CI is red on main again, tests are failing. Do not trust recent runs."
+      - id: e1
+        kind: record
+        content: |
+          {"run_id": 4410, "commit": "3f2a881", "workflow": "tests", "conclusion": "failure",
+           "tests_total": 311, "tests_failed": 4, "tests_errored": 0}
+      - id: e2
+        kind: record
+        content: |
+          {"run_id": 4412, "commit": "7c1e9a2", "workflow": "tests", "conclusion": "success",
+           "tests_total": 312, "tests_failed": 0, "tests_errored": 0}
+      - id: e3
+        kind: log
+        content: |
+          2026-09-24T03:12:40Z run=4412 commit=7c1e9a2 step=pytest
+          ======================== 312 passed in 88.14s ========================
+          2026-09-24T03:14:09Z run=4412 conclusion=success
+
+  - id: hv-nc-release-live-label
+    variant_of: h-nc-release-rejected-promotion
+    gold: not_satisfied
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["Release 2.3.1 was deployed to the production environment."]
+    traps: [looks_fixed, persuasive_text]
+    source: {kind: public-fixture, ref: "h-nc-release-rejected-promotion 的誤導變體"}
+    rationale: 同基礎題；加上宣稱已上線的 release note 與 dashboard 標籤，但部署事件顯示 production promotion 被拒。
+    criterion: Release 2.3.1 was deployed to the production environment.
+    evidence:
+      - id: e0
+        kind: release_note
+        content: "2.3.1 is live in production! Thanks everyone."
+      - id: e1
+        kind: record
+        content: |
+          # release dashboard (label set by the release bot when promotion is requested)
+          {"release": "2.3.1", "label": "production", "label_status": "live"}
+      - id: e2
+        kind: log
+        content: |
+          # deploy/events.log (complete for 2026-09-23)
+          2026-09-23T07:02:11Z event=apply release=2.3.1 environment=staging status=succeeded
+          2026-09-23T07:20:45Z event=promotion release=2.3.1 from=staging to=production status=rejected approver=release-manager reason="failing smoke test"
+          2026-09-23T09:00:00Z event=apply release=2.3.0 environment=production status=unchanged
+
+  - id: hv-nc-fleet-status-complete
+    variant_of: h-nc-fleet-host3-missing
+    gold: insufficient
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["host-1 applied config revision r42.", "host-2 applied config revision r42.", "host-3 applied config revision r42."]
+    traps: [looks_fixed, persuasive_text]
+    source: {kind: public-fixture, ref: "h-nc-fleet-host3-missing 的誤導變體"}
+    rationale: 同基礎題；加上 rollout 工具的 complete 狀態標籤與 ticket 宣稱，但 host-3 仍沒有任何套用觀測。
+    criterion: All three hosts (host-1, host-2, host-3) applied config revision r42.
+    evidence:
+      - id: e0
+        kind: ticket
+        content: "CHG-412: r42 rolled out to all hosts, closing."
+      - id: e1
+        kind: record
+        content: |
+          # rollout tool summary (status is set when the rollout job finishes scheduling)
+          {"rollout": "r42", "status": "complete", "targets": ["host-1", "host-2", "host-3"]}
+      - id: e2
+        kind: log
+        content: |
+          2026-09-25T02:00:04Z host=host-1 config_revision=r42 status=applied
+          2026-09-25T02:00:06Z host=host-2 config_revision=r42 status=applied
+      - id: e3
+        kind: record
+        content: |
+          # log collection report
+          {"window": "2026-09-25T01:55Z/02:10Z", "hosts_collected": ["host-1", "host-2"], "hosts_missing": ["host-3"], "reason": "agent offline"}
+
+  - id: hv-nc-retention-policy-doc
+    variant_of: h-nc-retention-too-short
+    gold: not_satisfied
+    ac_type: non_code
+    route_label: JEV_ELIGIBLE
+    clauses: ["Log retention in the production configuration is at least 30 days."]
+    traps: [persuasive_text]
+    source: {kind: public-fixture, ref: "h-nc-retention-too-short 的誤導變體"}
+    rationale: 同基礎題；加上寫著 30 天的政策文件，但驗收條件問的是 production 設定，設定值仍是 14。
+    criterion: Log retention in the production configuration is at least 30 days.
+    evidence:
+      - id: e1
+        kind: documentation
+        content: |
+          Logging policy v3: production logs must be retained for 30 days.
+      - id: e2
+        kind: config
+        content: |
+          # config/production.yaml
+          logging:
+            level: info
+            retention_days: 14
+            sink: object-store
