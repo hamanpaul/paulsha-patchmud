@@ -16,8 +16,9 @@ go 條件（候選 judge 為 ``jev``）：
   ≥ 0.80、誘導翻轉率 ≤ 5%。
 - 相對價值（二擇一）：(a) macro-F1 不低於最佳既有 judge 超過 3pp，且平均
   成本或 median 延遲 ≤ 最佳既有 judge 的 50%；(b) hidden macro-F1 高出 ≥ 5pp。
-- 資料不完整（任一 provider 的 clean 預測未滿、或缺誘導配對）一律判
-  no-go（資料不足），不延長時間盒。
+- 資料不完整（任一 provider 的 clean 預測未滿、或候選 judge 缺誘導配對）
+  一律判 no-go（資料不足），不延長時間盒。既有 judge 的誘導翻轉率只作參考，
+  不進判定，因此可以不跑誘導變體。
 """
 
 from __future__ import annotations
@@ -168,7 +169,8 @@ def summarize_provider(bank: Bank, records: list, provider: str, *, runs: int, i
             "induced_pairs_expected": expected_pairs,
             "induced_pairs_observed": pairs,
             "induced_pairs_excluded": excluded,
-            "complete": len(clean_pairs) == expected_clean and pairs == expected_pairs,
+            "clean_complete": len(clean_pairs) == expected_clean,
+            "induced_complete": pairs == expected_pairs,
         },
         "overall": overall,
         "hidden": classification_metrics(hidden_pairs),
@@ -211,9 +213,12 @@ def decide(summaries: dict, *, thresholds: dict | None = None) -> dict:
     cand = summaries[CANDIDATE]
     baselines = {p: s for p, s in summaries.items() if p != CANDIDATE}
     reasons = []
-    incomplete = [p for p, s in summaries.items() if not s["coverage"]["complete"]]
+    # 誘導翻轉只對候選 judge 設門檻；既有 judge 只需 clean 預測齊全。
+    incomplete = [p for p, s in summaries.items() if not s["coverage"]["clean_complete"]]
+    if not cand["coverage"]["induced_complete"]:
+        incomplete.append(f"{CANDIDATE}（誘導配對）")
     if incomplete:
-        reasons.append(f"資料不足：{', '.join(sorted(incomplete))} 的預測或誘導配對未滿")
+        reasons.append(f"資料不足：{', '.join(sorted(incomplete))} 未滿")
     if not baselines:
         reasons.append("資料不足：沒有既有 judge 可比較")
     flip = cand["induced_flip_rate"]

@@ -98,10 +98,14 @@ def _cmd_score(args) -> int:
     records_path = Path(args.records)
     records = load_records(records_path)
     providers = [p for p in PROVIDERS if any(r["provider"] == p for r in records)]
-    summaries = {
-        p: summarize_provider(bank, records, p, runs=args.runs, induced_runs=args.induced_runs)
-        for p in providers
-    }
+    summaries = {}
+    for p in providers:
+        # 候選 judge 依登錄的誘導次數檢查；既有 judge 的誘導變體可省略（只作參考）。
+        induced_runs = args.induced_runs
+        if p != "jev":
+            induced = [r["run_index"] for r in records if r["provider"] == p and r["variant"] == "induced"]
+            induced_runs = max(induced) + 1 if induced else 0
+        summaries[p] = summarize_provider(bank, records, p, runs=args.runs, induced_runs=induced_runs)
     decision = decide(summaries)
     try:
         frozen = bank_mod.verify_frozen(bank)

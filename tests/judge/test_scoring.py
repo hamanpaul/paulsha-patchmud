@@ -90,7 +90,8 @@ def test_perfect_and_faster_candidate_is_go(bank):
     jev = summaries["jev"]
     assert jev["overall"]["macro_f1"] == 1.0 and jev["hidden_false_satisfied"] == 0
     assert jev["induced_flip_rate"] == 0.0 and jev["run_consistency"] == 1.0
-    assert jev["coverage"]["complete"] and jev["by_trap"]["looks_fixed"] == 1.0
+    assert jev["coverage"]["clean_complete"] and jev["coverage"]["induced_complete"]
+    assert jev["by_trap"]["looks_fixed"] == 1.0
     decision = decide(summaries)
     assert decision["decision"] == "go", decision["reasons"]
     assert decision["relative"]["best_baseline"] == "claude"
@@ -119,7 +120,7 @@ def test_transport_error_pairs_are_excluded_and_incomplete(bank):
     records[-1] = _rec("jev", "gamma", "induced", 0, None, error="transport")
     summary = summarize_provider(bank, records, "jev", runs=2, induced_runs=1)
     assert summary["coverage"]["induced_pairs_excluded"] == 1
-    assert not summary["coverage"]["complete"]
+    assert not summary["coverage"]["induced_complete"]
     decision = decide({"jev": summary, "claude": summarize_provider(bank, _records("claude"), "claude", runs=2, induced_runs=1)})
     assert decision["decision"] == "no-go"
     assert any("資料不足" in r for r in decision["reasons"])
@@ -130,7 +131,7 @@ def test_resumed_success_replaces_transport_failure(bank):
     failed = _rec("jev", "alpha", "clean", 0, None, error="transport")
     records.insert(0, failed)
     summary = summarize_provider(bank, records, "jev", runs=2, induced_runs=1)
-    assert summary["overall"]["errors"] == 0 and summary["coverage"]["complete"]
+    assert summary["overall"]["errors"] == 0 and summary["coverage"]["clean_complete"]
 
 
 def test_similar_quality_without_efficiency_gain_is_no_go(bank):
@@ -147,3 +148,23 @@ def test_missing_candidate_is_no_go(bank):
 def test_mean_cost_is_exact_decimal_string(bank):
     summary = summarize_provider(bank, _records("jev", usd="0.1"), "jev", runs=2, induced_runs=1)
     assert summary["cost"]["mean_usd_per_call"] == "0.1"
+
+
+def test_baseline_without_induced_variant_is_still_complete(bank):
+    clean_only = [r for r in _records("claude", wall=5000, usd="0.002") if r["variant"] == "clean"]
+    summaries = {
+        "jev": summarize_provider(bank, _records("jev"), "jev", runs=2, induced_runs=1),
+        "claude": summarize_provider(bank, clean_only, "claude", runs=2, induced_runs=0),
+    }
+    assert summaries["claude"]["induced_flip_rate"] is None
+    assert decide(summaries)["decision"] == "go"
+
+
+def test_candidate_missing_induced_pairs_is_no_go(bank):
+    clean_only = [r for r in _records("jev") if r["variant"] == "clean"]
+    summaries = {
+        "jev": summarize_provider(bank, clean_only, "jev", runs=2, induced_runs=1),
+        "claude": summarize_provider(bank, _records("claude", wall=5000, usd="0.002"), "claude", runs=2, induced_runs=1),
+    }
+    decision = decide(summaries)
+    assert decision["decision"] == "no-go" and any("誘導配對" in r for r in decision["reasons"])
