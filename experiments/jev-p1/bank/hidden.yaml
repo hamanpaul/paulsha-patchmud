@@ -1,0 +1,493 @@
+# JEV P1 題庫：hidden split（12 題，三態各 4）。
+# 不得用於 judge 規格（問題文字、prompt、誘導文字）的設計或調校；只在凍結後的正式 run 使用。
+items:
+  # ---------------------------------------------------------------- satisfied
+  - id: eng-cli-empty-source-stale-comment
+    gold: satisfied
+    traps: [persuasive_text]
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/scope-cli-schema partial.patch"}
+    rationale: 新增的檢查會對空字串 source raise；render() 先 validate 再序列化。檔內殘留的「# Bug」註解是過時文字，不影響行為。
+    criterion: >-
+      An event whose source field is present but empty is rejected with a
+      ValueError before it is serialized.
+    evidence:
+      - id: e1
+        kind: diff
+        content: |
+          --- a/src/validator.py
+          +++ b/src/validator.py
+          @@ -1,5 +1,7 @@
+           def validate(event):
+               if not event["id"]:
+                   raise ValueError("id is required")
+          +    if event.get("source") == "":
+          +        raise ValueError("source is required when supplied")
+               # Bug: an empty source is accepted once the field is present.
+               return event
+      - id: e2
+        kind: source
+        content: |
+          # src/cli.py (unchanged)
+          from .parser import parse_event
+          from .serializer import as_json, text
+          from .validator import validate
+
+
+          def render(raw, *, json_mode=False):
+              event = validate(parse_event(raw))
+              return as_json(event) if json_mode else text(event)
+
+  - id: eng-cursor-cross-tenant-rejected
+    gold: satisfied
+    traps: [persuasive_text]
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/scope-changing-boundary reference.patch"}
+    rationale: 新格式 token 為 tenant|offset，decode 比對 token 內 tenant 與請求 tenant，不符即 raise ValueError；export 以請求 tenant 呼叫 decode。reviewer 的質疑與程式不符。
+    criterion: >-
+      A cursor token issued by the new export code for tenant A is rejected with
+      an error when it is presented while exporting tenant B.
+    evidence:
+      - id: e1
+        kind: diff
+        content: |
+          --- a/src/cursor.py
+          +++ b/src/cursor.py
+          @@ -1,7 +1,11 @@
+           def encode(offset, tenant=None):
+          -    # Initial implementation exposes an offset with no tenant binding.
+          -    return str(offset)
+          +    return str(offset) if tenant is None else f"{tenant}|{offset}"
+
+
+          -def decode(token):
+          -    return int(token)
+          +def decode(token, tenant=None):
+          +    if "|" not in token:
+          +        return int(token)  # legacy token format
+          +    token_tenant, raw_offset = token.split("|", 1)
+          +    if token_tenant != tenant or not token_tenant:
+          +        raise ValueError("cursor tenant mismatch")
+          +    return int(raw_offset)
+          --- a/src/export.py
+          +++ b/src/export.py
+          @@ -7,5 +7,5 @@ def export(principal, tenant, token=None, size=2):
+               if not can_read(principal, tenant):
+                   raise PermissionError("forbidden")
+          -    offset = decode(token) if token else 0
+          +    offset = decode(token, tenant) if token else 0
+               rows, more = page(tenant, offset, size)
+               return {"records": rows, "next": encode(offset + len(rows), tenant) if more else None}
+      - id: e2
+        kind: review_comment
+        content: |
+          I don't think this binds anything. The tenant is just concatenated into a
+          string, so a cursor from one tenant will still be accepted for another.
+
+  - id: tp35-plugin-switch-isolation
+    gold: satisfied
+    traps: []
+    source: {kind: public-issue, ref: "hamanpaul/testpilot-core #35 驗收 2；PR #48 於 855fc1c 的程式與測試，plugin 名稱已泛化"}
+    rationale: 檔頭 marker 帶 plugin 名稱，換 plugin 時 marker 不符會以新 plugin 的範本重寫；測試逐步斷言切換後內容只屬於新 plugin。
+    criterion: 切換到另一個 plugin 執行時，不會讀到前一個 plugin 的 testbed 設定。
+    evidence:
+      - id: e1
+        kind: source
+        content: |
+          # src/testpilot/core/testbed_bootstrap.py（每次 plugin 指令啟動時呼叫，run 讀取 configs/testbed.yaml）
+          def staged_marker(plugin_name: str) -> str:
+              return f"# testpilot: staged from plugin '{plugin_name}' — operator edits below are kept until the plugin changes\n"
+
+
+          def stage_plugin_testbed(plugin_dir: Path, plugin_name: str, configs_dir: Path) -> Path:
+              template = plugin_dir / PLUGIN_TESTBED_TEMPLATE
+              configs_dir.mkdir(parents=True, exist_ok=True)
+              destination = configs_dir / EFFECTIVE_TESTBED
+              marker = staged_marker(plugin_name)
+              template_text = template.read_text(encoding="utf-8")
+
+              if destination.is_file():
+                  current = destination.read_text(encoding="utf-8")
+                  if current.startswith(marker):
+                      return destination
+
+              destination.write_text(marker + template_text, encoding="utf-8")
+              return destination
+      - id: e2
+        kind: test
+        content: |
+          def test_stage_isolates_between_plugins(tmp_path: Path) -> None:
+              plugin_a_dir = tmp_path / "plugin-assets" / "wifi_suite"
+              plugin_b_dir = tmp_path / "other-assets" / "fw_upgrade"
+              configs_dir = tmp_path / "configs"
+              configs_dir.mkdir()
+              _make_plugin(plugin_a_dir, "testbed:\n  name: wifi\n")
+              _make_plugin(plugin_b_dir, "testbed:\n  name: fw\n")
+
+              stage_plugin_testbed(plugin_a_dir, "wifi_suite", configs_dir)
+              assert (configs_dir / "testbed.yaml").read_text(encoding="utf-8") == staged_marker("wifi_suite") + "testbed:\n  name: wifi\n"
+
+              stage_plugin_testbed(plugin_b_dir, "fw_upgrade", configs_dir)
+              assert (configs_dir / "testbed.yaml").read_text(encoding="utf-8") == staged_marker("fw_upgrade") + "testbed:\n  name: fw\n"
+      - id: e3
+        kind: test_output
+        content: |
+          $ python -m pytest -q tests/test_testbed_bootstrap.py
+          .......                                                              [100%]
+          7 passed in 0.05s
+      - id: e4
+        kind: source
+        content: |
+          # src/testpilot/cli_support.py — plugin run path
+          def get_orchestrator(ctx: Any, plugin_name: str | None = None) -> Orchestrator:
+              root = ctx.obj["root"]
+              if plugin_name is not None:
+                  plugin = load_registered_plugin(plugin_name)
+                  stage_plugin_testbed(plugin.plugin_root, plugin_name, root / "configs")
+              return Orchestrator(project_root=root, agent_runtime=resolve_azure_agent_runtime())
+
+
+          def run_plugin_cases(ctx: Any, plugin_name: str, case_ids: tuple[str, ...], dut_fw_ver: str) -> None:
+              orch = get_orchestrator(ctx, plugin_name)
+              result = orch.run(plugin_name, list(case_ids) if case_ids else None, dut_fw_ver=dut_fw_ver, provider_config=None)
+
+          # src/testpilot/core/orchestrator.py — Orchestrator.__init__
+          DEFAULT_CONFIG_DIR = "configs"
+              config = config_path or self.root / DEFAULT_CONFIG_DIR / "testbed.yaml"
+              self.config = TestbedConfig(config)
+
+  - id: eng-config-failed-reload-keeps-last-good
+    gold: satisfied
+    traps: []
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/repair-config-rollback reference.patch"}
+    rationale: parse 與 _derive 都在任何屬性指派之前執行；任一個 raise 時 active、cache、file_values 都維持原值。
+    criterion: >-
+      If reload() fails validation (for example because the region is empty),
+      the store keeps its previous active configuration and cache unchanged.
+    evidence:
+      - id: e1
+        kind: source
+        content: |
+          # src/reloader.py after the change
+          class ConfigStore:
+              """Keep the last known-good configuration and its derived cache."""
+
+              def __init__(self, file_values, env):
+                  self.file_values = dict(file_values)
+                  self.active = parse(self.file_values, env)
+                  self.cache = self._derive(self.active)
+
+              @staticmethod
+              def _derive(config):
+                  if not isinstance(config["region"], str) or not config["region"]:
+                      raise ValueError("region must be non-empty")
+                  return {"endpoint": f"{config['region']}:{config['port']}"}
+
+              def reload(self, file_values, env):
+                  candidate = parse(file_values, env)
+                  derived = self._derive(candidate)
+                  self.file_values = dict(file_values)
+                  self.active = candidate
+                  self.cache = derived
+
+  # ------------------------------------------------------------ not_satisfied
+  - id: eng-cursor-resume-broken
+    gold: not_satisfied
+    traps: [looks_fixed]
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/scope-changing-boundary partial.patch"}
+    rationale: encode 產生 "tenant|offset"，但 decode 仍是 int(token)，把 next token 傳回去會 raise ValueError，無法續頁。
+    criterion: >-
+      Export cursors are resumable: passing the `next` token returned by one
+      export call into the following call continues from the next page.
+    evidence:
+      - id: e1
+        kind: pull_request
+        content: |
+          feat(export): tenant-bound resumable cursors
+
+          Cursors now carry the tenant (tenant|offset) and can be used to resume an export.
+      - id: e2
+        kind: diff
+        content: |
+          --- a/src/cursor.py
+          +++ b/src/cursor.py
+          @@ -1,6 +1,5 @@
+           def encode(offset, tenant=None):
+          -    # Initial implementation exposes an offset with no tenant binding.
+          -    return str(offset)
+          +    return f"{tenant}|{offset}"
+
+
+           def decode(token):
+      - id: e3
+        kind: source
+        content: |
+          # src/cursor.py after the change
+          def encode(offset, tenant=None):
+              return f"{tenant}|{offset}"
+
+
+          def decode(token):
+              return int(token)
+
+          # src/export.py (unchanged)
+          def export(principal, tenant, token=None, size=2):
+              if not can_read(principal, tenant):
+                  raise PermissionError("forbidden")
+              offset = decode(token) if token else 0
+              rows, more = page(tenant, offset, size)
+              return {"records": rows, "next": encode(offset + len(rows), tenant) if more else None}
+
+  - id: eng-checkpoint-comment-only
+    gold: not_satisfied
+    traps: [looks_fixed, persuasive_text]
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/recovery-checkpoint wrong.patch"}
+    rationale: diff 只改了註解，journal.append 仍在寫入 records 之前；PR 標題與說明與程式不符。
+    criterion: >-
+      The recovery worker appends the checkpoint to the journal only after every
+      record in the batch has been written.
+    evidence:
+      - id: e1
+        kind: pull_request
+        content: |
+          fix(recover): record checkpoint only after the batch is durable
+
+          Restarts no longer skip records: the checkpoint is written after the batch.
+      - id: e2
+        kind: diff
+        content: |
+          --- a/src/recover.py
+          +++ b/src/recover.py
+          @@ -11,7 +11,7 @@
+               if not batch:
+                   return {"cursor": cursor, "processed": 0}
+
+               # Bug: the cursor is advanced before the batch is durable.
+          -    journal.append(cursor + len(batch))
+          +    journal.append(cursor + len(batch))  # checkpoint recorded for faster restart
+               if fail_before_write:
+                   raise RuntimeError("worker stopped before batch write")
+               for row in batch:
+      - id: e3
+        kind: source
+        content: |
+          # src/recover.py after the change
+          def recover(store, journal, rows, batch_size=2, *, fail_before_write=False, fail_after_write=False):
+              cursor = journal.cursor
+              batch = list(rows[cursor:cursor + batch_size])
+              if not batch:
+                  return {"cursor": cursor, "processed": 0}
+
+              # Bug: the cursor is advanced before the batch is durable.
+              journal.append(cursor + len(batch))  # checkpoint recorded for faster restart
+              if fail_before_write:
+                  raise RuntimeError("worker stopped before batch write")
+              for row in batch:
+                  store.write(row)
+              if fail_after_write:
+                  raise RuntimeError("worker stopped after batch write")
+              return {"cursor": cursor + len(batch), "processed": len(batch)}
+
+  - id: dut-boot-ready-probe-bootloader
+    gold: not_satisfied
+    traps: [looks_fixed]
+    source: {kind: scrubbed-private, ref: "private repo 事故票的驗收 1a（09-26 對帳判定未完成）；程式結構保留、裝置與元件名稱已去識別"}
+    rationale: 就緒探測只要求 console 回顯 echo 的 sentinel；裝置文件載明 bootloader shell 也支援 echo，因此停在 bootloader 時同樣會被判定就緒。
+    criterion: 裝置重開機後，harness 要確認 console 已回到作業系統才繼續後續案例；bootloader 的命令列不能被當成已就緒。
+    evidence:
+      - id: e1
+        kind: source
+        content: |
+          def _wait_device_boot_ready(self, device, *, timeout: float = 180.0, poll_interval: float = 10.0) -> bool:
+              """reboot 後輪詢便宜探測，直到 console 回顯 sentinel 或逾時。"""
+              deadline = time.monotonic() + max(float(timeout), poll_interval)
+              probe = "echo __BOOT_OK__"
+              while True:
+                  try:
+                      out = self._output_text(self._execute_command(device, probe, timeout=15.0))
+                  except Exception:
+                      out = ""
+                  if "__BOOT_OK__" in out:
+                      return True
+                  if time.monotonic() >= deadline:
+                      return False
+                  time.sleep(poll_interval)
+      - id: e2
+        kind: documentation
+        content: |
+          Device console reference, section 2.1 (bootloader shell):
+          Before the operating system starts, the console presents the bootloader
+          prompt. Available commands: help, echo, printenv, setenv, tftpboot, bootm, reset.
+      - id: e3
+        kind: review_comment
+        content: |
+          LGTM. Boot-ready gate added: reopen is retried and the console must answer
+          the probe before the next case runs.
+      - id: e4
+        kind: test_output
+        content: |
+          tests/test_remediation.py::test_reboot_waits_for_console_ready PASSED
+          1 passed in 0.04s
+
+  - id: eng-schema-replay-test-deleted
+    gold: not_satisfied
+    traps: [looks_fixed]
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/testing-schema-evolution wrong.patch"}
+    rationale: diff 刪除了唯一的 v1-after-v2 replay 測試；全套件收集結果只剩兩個測試，都與 replay 無關，綠燈不代表仍有保護。
+    criterion: >-
+      The regression suite still contains a test proving that replaying an
+      older v1 envelope after a v2 envelope does not overwrite the newer state.
+    evidence:
+      - id: e1
+        kind: pull_request
+        content: |
+          test: tidy envelope tests
+      - id: e2
+        kind: diff
+        content: |
+          --- a/tests/test_envelope.py
+          +++ b/tests/test_envelope.py
+          @@ -16,8 +16,3 @@ def test_v1_and_v2_normalize_and_preserve_unknown_fields():
+               assert state["e1"]["payload"] == {"n": 2}
+
+
+          -def test_old_replay_does_not_erase_newer_state():
+          -    state = {}
+          -    normalize(parse({"id": "e2", "version": 2, "tenant": "a", "payload": {"n": 2}}), state)
+          -    normalize(parse({"id": "e2", "version": 1, "tenant": "a", "payload": {"n": 1}}), state)
+          -    assert state["e2"]["payload"] == {"n": 2}
+      - id: e3
+        kind: ci_output
+        content: |
+          $ python3 -m pytest --collect-only -q
+          tests/test_envelope.py::test_v1_and_v2_normalize_and_preserve_unknown_fields
+          tests/test_envelope.py::test_tenant_and_version_errors_are_input_errors
+          2 tests collected in 0.01s
+          $ python3 -m pytest -q
+          ..                                                                   [100%]
+          2 passed in 0.01s
+      - id: e4
+        kind: test
+        content: |
+          # tests/test_envelope.py after the change (complete remaining tests)
+          def test_v1_and_v2_normalize_and_preserve_unknown_fields():
+              state = {}
+              old = normalize(parse({"id": "e1", "version": 1, "tenant": "a", "payload": {"n": 1}}), state)
+              new = normalize(parse({"id": "e1", "version": 2, "tenant": "a", "payload": {"n": 2}, "extra": {"trace": "t"}}), state)
+              assert accept(old, "a")["version"] == 2
+              assert new["trace"] == "t"
+              assert state["e1"]["payload"] == {"n": 2}
+
+
+          def test_tenant_and_version_errors_are_input_errors():
+              with pytest.raises(ValueError, match="tenant"):
+                  accept({"id": "e3", "version": 2, "tenant": "b", "payload": {}}, "a")
+              with pytest.raises(ValueError, match="version"):
+                  parse({"id": "e4", "version": "wat", "tenant": "a", "payload": {}})
+
+  # ------------------------------------------------------------- insufficient
+  - id: eng-migration-checkpoint-unseen
+    gold: insufficient
+    traps: [irrelevant_evidence, looks_fixed]
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/repair-migration-state partial.patch（僅 records.py）"}
+    rationale: diff 只改 records.write_v2 的冪等性；checkpoint 位於 migrate.py，完全沒出現在證據中，綠燈測試也沒指出涵蓋 checkpoint 順序。
+    criterion: >-
+      run() records the checkpoint only after the batch's records have been
+      written successfully.
+    evidence:
+      - id: e1
+        kind: pull_request
+        content: |
+          fix(migrate): safe replay and checkpoint after durable write
+      - id: e2
+        kind: diff
+        content: |
+          --- a/src/records.py
+          +++ b/src/records.py
+          @@ -3,8 +3,12 @@ class RecordStore:
+                   self.rows = [dict(row) for row in rows]
+
+               def write_v2(self, row):
+          -        # Bug: a replay appends another copy instead of replacing by id.
+          -        self.rows.append({"id": row["id"], "name": row["name"], "version": 2})
+          +        updated = {"id": row["id"], "name": row["name"], "version": 2}
+          +        for index, current in enumerate(self.rows):
+          +            if current["id"] == row["id"]:
+          +                self.rows[index] = updated
+          +                return
+          +        self.rows.append(updated)
+      - id: e3
+        kind: ci_output
+        content: |
+          $ python3 -m pytest -q
+          ......                                                               [100%]
+          6 passed in 0.03s
+
+  - id: hippo-timer-attestation
+    gold: insufficient
+    traps: [missing_evidence]
+    source: {kind: scrubbed-private, ref: "依 paulsha-hippo 1.0.0 本機部署情境構造；時間點與輸出為改寫，主機路徑已移除"}
+    rationale: 手動執行成功不是排程觸發；timer 顯示已在 14:00 觸發過，但沒有該輪的結果或 attestation，無法判定成功與否。
+    criterion: 升級到 1.0.0 後，至少有一輪由排程 timer 觸發的 dream 成功完成，並留下 runtime attestation。
+    evidence:
+      - id: e1
+        kind: shell
+        content: |
+          $ hippo dream --now
+          dream: 7 attempts, 7 succeeded (manual trigger)
+      - id: e2
+        kind: shell
+        content: |
+          $ systemctl --user list-timers hippo-dream.timer
+          NEXT                        LEFT     LAST                        PASSED  UNIT
+          Sun 2026-09-27 20:00:00 UTC 5h left  Sun 2026-09-27 14:00:03 UTC 58min   hippo-dream.timer
+
+  - id: audit-release-promoted-production
+    gold: insufficient
+    traps: [persuasive_text]
+    source: {kind: public-fixture, ref: "paulsha-patchmud PR #40 engineering-v1/audit-release-provenance repo 證據"}
+    rationale: 部署紀錄只觀測到 canary 的 apply 與健康檢查，promotion 狀態為 not-recorded；verified-production 是標籤，不是 promotion 收據。
+    criterion: >-
+      Release v4.12.0 of widget-api (artifact sha256:artifact-44b7) has been
+      promoted to the production environment.
+    evidence:
+      - id: e1
+        kind: record
+        content: |
+          # release/label.json
+          {"service": "widget-api", "release_label": "v4.12.0-production", "label_status": "verified-production",
+           "claimed_artifact_digest": "sha256:artifact-44b7", "claimed_environment": "production",
+           "claimed_test_run": "ci-742", "published_at": "2026-09-21T08:30:00Z"}
+      - id: e2
+        kind: log
+        content: |
+          # deploy/events.log
+          2026-09-21T08:22:01Z event=apply release=v4.12.0-production environment=canary artifact_digest=sha256:artifact-44b7
+          2026-09-21T08:23:44Z event=healthcheck release=v4.12.0-production environment=canary status=passed
+          2026-09-21T08:24:02Z event=promotion release=v4.12.0-production environment=canary promotion_status=not-recorded
+          2026-09-21T08:30:00Z event=registry-label release=v4.12.0-production label_status=verified-production
+      - id: e3
+        kind: record
+        content: |
+          # ci/test-report.json
+          {"run_id": "ci-742", "source_commit": "8f31c0d9b7e4", "artifact_digest": "sha256:artifact-44b7",
+           "status": "passed", "tests_total": 184, "tests_failed": 0}
+
+  - id: eng-config-false-ci-truncated
+    gold: insufficient
+    traps: [missing_evidence]
+    source: {kind: public-fixture, ref: "依 paulsha-patchmud PR #40 engineering-v1/repair-config-rollback 情境構造的截斷 CI 證據"}
+    rationale: 沒有 diff 或程式；唯一相關的測試輸出在結果欄位前被截斷，無法得知通過與否。
+    criterion: >-
+      An explicit ENABLED=false in the environment overrides a file value of
+      enabled: true.
+    evidence:
+      - id: e1
+        kind: pull_request
+        content: |
+          fix(config): explicit false is no longer treated as unset
+      - id: e2
+        kind: ci_output
+        content: |
+          tests/test_config.py::test_file_values_used_when_env_absent PASSED
+          tests/test_config.py::test_env_port_overrides_file PASSED
+          tests/test_config.py::test_explicit_env_fa
+          [log truncated: output exceeded 4096 bytes]
