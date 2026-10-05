@@ -27,3 +27,4 @@ testpaths = ["tests"]
 
 [tool.setuptools.package-data]
 "patchmud.adapters" = ["data/*.yaml", "data/*.json"]
+"patchmud.cortex_dispatch" = ["data/*.yaml", "data/*.json"]
