@@ -127,3 +127,11 @@ class TestTwoTurnFix:
         assert profile["descriptor"]["model"]["id"] == "offline-scripted"
         assert {"requested", "resolved", "observed"} <= profile.keys()
         assert profile["actual_condition_key"] is None
+        # run 結束後另封存 post-run profile；scripted adapter 沒有 provider 觀測，
+        # observed 仍是 unknown，resolved／profile_id 與開局快照一致。
+        post_run = json.loads(
+            (run_dir / "execution_profile.json").read_text(encoding="utf-8")
+        )
+        assert post_run["profile_id"] == profile["profile_id"]
+        assert post_run["resolved"] == profile["resolved"]
+        assert post_run["actual_condition_key"] is None

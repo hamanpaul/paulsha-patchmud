@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "purpose": "Cortex execution adapter identity (descriptor_fields) source of truth, vendored byte-for-byte",
+  "vendored_file": "cortex-execution-adapters.yaml",
+  "source_repo": "hamanpaul/paulsha-cortex",
+  "source_path": "paulsha_cortex/coordinator/data/execution-adapters.yaml",
+  "source_revision": "d41aee93981b4e808e811aba808865f62a204c40",
+  "source_last_changed_revision": "f5ed67f91548a2fb5313d8ae213a7d6388c0c8e5",
+  "sha256": "e69fd320df9ba3faa309f5a155fde79a2ddf67ea5c7f5ab2be14b6b7e6c2baaf",
+  "consumed_executors": ["codex"]
+}

@@ -365,12 +365,14 @@ class TestClaudeCliAdapter:
         assert "value" not in evidence["fields"]["output_visible"]
 
 
-def _codex_jsonl(text: str, usage: dict | None = None) -> str:
+def _codex_jsonl(
+    text: str, usage: dict | None = None, *, thread_id: str = "thread-0001"
+) -> str:
     """codex exec --json 的 JSONL 事件串（含前導雜訊事件）。"""
     import json
 
     lines = [
-        {"type": "thread.started", "thread_id": "t1"},
+        {"type": "thread.started", "thread_id": thread_id},
         {"type": "turn.started"},
         {
             "type": "item.completed",
@@ -415,7 +417,8 @@ class TestCodexCliAdapter:
         assert "model_reasoning_effort=high" in captured
         # 純補全模式的硬性旗標：不得寫入、不得沾染使用者設定與 git repo。
         assert captured[captured.index("--sandbox") + 1] == "read-only"
-        assert "--ephemeral" in captured
+        # paulsha-cortex#842：thread 必須由 codex 持久化，事後才能讀回實際 model／effort。
+        assert "--ephemeral" not in captured
         assert "--skip-git-repo-check" in captured
         assert "--ignore-user-config" in captured
         assert captured[captured.index("--cd") + 1] == "/tmp/pm-work"
@@ -546,6 +549,201 @@ class TestCodexCliAdapter:
             )
             adapter.complete(MESSAGES)
             assert os.path.isdir(owned)
+
+
+class TestCodexThreadIdentityObservation:
+    """paulsha-cortex#842 Gap B：observed model／effort 只取 provider 持久化的 thread。"""
+
+    USAGE = {"input_tokens": 1, "output_tokens": 1}
+
+    def _adapter(self, reader, replies=None):
+        from patchmud.adapters.codex_cli import CodexCliAdapter
+
+        replies = list(replies or [("ACTION: LOOK", "thread-0001")])
+
+        def runner(_cmd: list[str]) -> str:
+            text, thread_id = replies.pop(0)
+            return _codex_jsonl(text, self.USAGE, thread_id=thread_id)
+
+        return CodexCliAdapter(
+            model="gpt-6-luna", effort="max", runner=runner, thread_reader=reader
+        )
+
+    @staticmethod
+    def _thread(thread_id: str, **overrides) -> dict:
+        return {
+            "id": thread_id,
+            "model": "gpt-6-luna",
+            "reasoningEffort": "max",
+            "modelProvider": "openai",
+            **overrides,
+        }
+
+    def test_consistent_provider_identity_is_observed(self) -> None:
+        import hashlib
+
+        seen: list[str] = []
+
+        def reader(thread_id: str) -> dict:
+            seen.append(thread_id)
+            return self._thread(thread_id)
+
+        adapter = self._adapter(
+            reader, [("ACTION: LOOK", "thread-0001"), ("ACTION: COMMIT", "thread-0002")]
+        )
+        adapter.complete(MESSAGES)
+        adapter.complete(MESSAGES)
+
+        observation = adapter.runtime_observation()
+        assert seen == ["thread-0001", "thread-0002"]
+        assert observation.source == "codex-app-server:thread/read"
+        assert observation.model_id == "gpt-6-luna"
+        assert observation.effort == "max"
+        assert [item["thread_sha256"] for item in observation.evidence] == [
+            hashlib.sha256(b"thread-0001").hexdigest(),
+            hashlib.sha256(b"thread-0002").hexdigest(),
+        ]
+        # evidence 不保存 thread id 原文。
+        assert "thread-0001" not in repr(observation.evidence)
+
+    def test_requested_settings_never_fill_missing_observation(self) -> None:
+        adapter = self._adapter(None)
+        adapter.complete(MESSAGES)
+
+        observation = adapter.runtime_observation()
+        assert observation.model_id is None
+        assert observation.effort is None
+        assert observation.model_reason == "provider-identity-unavailable:1/1-calls"
+
+    def test_reader_failure_does_not_fail_turn_but_stays_unknown(self) -> None:
+        def reader(_thread_id: str) -> dict:
+            raise RuntimeError("app-server down")
+
+        adapter = self._adapter(reader)
+        assert adapter.complete(MESSAGES).text == "ACTION: LOOK"
+        observation = adapter.runtime_observation()
+        assert observation.model_id is None
+        assert observation.evidence[0]["reason"] == "thread-read-failed:RuntimeError"
+
+    def test_any_unobserved_call_makes_whole_run_unknown(self) -> None:
+        calls = iter([self._thread("thread-0001"), {"id": "thread-0002"}])
+
+        adapter = self._adapter(
+            lambda _thread_id: next(calls),
+            [("ACTION: LOOK", "thread-0001"), ("ACTION: COMMIT", "thread-0002")],
+        )
+        adapter.complete(MESSAGES)
+        adapter.complete(MESSAGES)
+        observation = adapter.runtime_observation()
+        assert observation.model_id is None
+        assert observation.effort is None
+        assert observation.model_reason == "provider-identity-unavailable:1/2-calls"
+
+    def test_inconsistent_calls_are_not_merged(self) -> None:
+        threads = iter(
+            [
+                self._thread("thread-0001"),
+                self._thread("thread-0002", model="gpt-6-astra", reasoningEffort="low"),
+            ]
+        )
+        adapter = self._adapter(
+            lambda _thread_id: next(threads),
+            [("ACTION: LOOK", "thread-0001"), ("ACTION: COMMIT", "thread-0002")],
+        )
+        adapter.complete(MESSAGES)
+        adapter.complete(MESSAGES)
+        observation = adapter.runtime_observation()
+        assert observation.model_id is None
+        assert observation.effort is None
+        assert observation.model_reason == "provider-model-inconsistent-across-calls"
+
+    def test_unexpected_model_provider_is_not_observed(self) -> None:
+        adapter = self._adapter(
+            lambda thread_id: self._thread(thread_id, modelProvider="custom-proxy")
+        )
+        adapter.complete(MESSAGES)
+        observation = adapter.runtime_observation()
+        assert observation.model_id is None
+        assert observation.model_reason == "unexpected-model-provider"
+
+    def test_missing_or_mismatched_thread_id_is_not_observed(self) -> None:
+        reads: list[str] = []
+        adapter = self._adapter(
+            lambda thread_id: (reads.append(thread_id), self._thread("other-thread-id"))[1],
+            [("ACTION: LOOK", "bad id")],
+        )
+        adapter.complete(MESSAGES)
+        assert reads == []  # thread id 格式不合法：不讀
+        assert adapter.runtime_observation().evidence[0]["reason"] == "thread-id-not-unique"
+
+        adapter = self._adapter(lambda _thread_id: self._thread("other-thread-id"))
+        adapter.complete(MESSAGES)
+        assert (
+            adapter.runtime_observation().evidence[0]["reason"]
+            == "thread-identity-incomplete"
+        )
+
+
+class TestCodexAppServerThreadReader:
+    """``thread/read`` 走 stdio JSON-RPC；以假 app-server 腳本驗證協定，不啟真 codex。"""
+
+    FAKE_SERVER = r"""
+import json, sys
+for line in sys.stdin:
+    msg = json.loads(line)
+    if msg.get("method") == "initialize":
+        print(json.dumps({"id": msg["id"], "result": {"userAgent": "fake"}}), flush=True)
+    elif msg.get("method") == "thread/read":
+        assert msg["params"] == {"threadId": "thread-0001", "includeTurns": False}
+        print(json.dumps({"method": "thread/status/changed", "params": {}}), flush=True)
+        print(json.dumps({"id": msg["id"], "result": {"thread": {
+            "id": "thread-0001", "model": "gpt-6-luna",
+            "reasoningEffort": "max", "modelProvider": "openai"}}}), flush=True)
+"""
+
+    def _fake_binary(self, tmp_path, body: str):
+        import sys
+
+        script = tmp_path / "fake_server.py"
+        script.write_text(body, encoding="utf-8")
+        binary = tmp_path / "codex"
+        binary.write_text(
+            f"#!/bin/sh\n# argv: $@\nexec {sys.executable} {script}\n", encoding="utf-8"
+        )
+        binary.chmod(0o755)
+        return str(binary)
+
+    def test_reads_persisted_thread_identity(self, tmp_path) -> None:
+        from patchmud.adapters.codex_cli import build_app_server_thread_reader
+
+        reader = build_app_server_thread_reader(self._fake_binary(tmp_path, self.FAKE_SERVER))
+        thread = reader("thread-0001")
+        assert thread["model"] == "gpt-6-luna"
+        assert thread["reasoningEffort"] == "max"
+
+    def test_error_response_and_timeout_raise(self, tmp_path) -> None:
+        from patchmud.adapters.base import AdapterError
+        from patchmud.adapters.codex_cli import build_app_server_thread_reader
+
+        error_server = (
+            "import json, sys\n"
+            "for line in sys.stdin:\n"
+            "    msg = json.loads(line)\n"
+            "    if 'id' in msg:\n"
+            "        print(json.dumps({'id': msg['id'], 'error': {'code': -1}}), flush=True)\n"
+        )
+        reader = build_app_server_thread_reader(self._fake_binary(tmp_path, error_server))
+        with pytest.raises(AdapterError):
+            reader("thread-0001")
+
+        silent_server = "import sys, time\nfor line in sys.stdin:\n    time.sleep(0)\n"
+        silent_dir = tmp_path / "silent"
+        silent_dir.mkdir()
+        reader = build_app_server_thread_reader(
+            self._fake_binary(silent_dir, silent_server), timeout_s=0.5
+        )
+        with pytest.raises(AdapterError, match="逾時"):
+            reader("thread-0001")
 
 
 class TestAgyCliAdapter:
