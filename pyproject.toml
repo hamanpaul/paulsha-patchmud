@@ -24,3 +24,6 @@ include = ["patchmud*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.setuptools.package-data]
+"patchmud.adapters" = ["data/*.yaml", "data/*.json"]

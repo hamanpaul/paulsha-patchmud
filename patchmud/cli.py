@@ -93,8 +93,11 @@ from patchmud.adapters.base import AdapterError, ModelAdapter
 from patchmud.adapters.human import HumanAdapter
 from patchmud.adapters.profile import (
     AdapterResolutionError,
+    ProfileRecordError,
     build_execution_profile_record,
     build_registered_adapter,
+    finalize_execution_profile_record,
+    verify_execution_profile_record,
 )
 from patchmud.authoring import AuthoringError, build_encounter, load_source
 from patchmud.deck.loader import load_card
@@ -415,7 +418,8 @@ def main(argv: list[str] | None = None) -> int:
             return _interactive_menu()
         print(
             f"patchmud {_package_version()} — 子命令：validate-deck / author-encounter / "
-            "score-diff / run / versus / play / watch / replay / report / pilot / schema；其餘見 "
+            "score-diff / run / versus / play / watch / replay / report / pilot / "
+            "profile-binding / schema；其餘見 "
             "docs/superpowers/plans/2026-07-16-patchmud-mvp.md"
         )
         return 0
@@ -458,6 +462,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_pilot(args[1:])
     if args[0] == "calibrate":
         return _cmd_calibrate(args[1:])
+    if args[0] == "profile-binding":
+        return _cmd_profile_binding(args[1:])
     print(f"patchmud: 子命令尚未實作：{args[0]}", file=sys.stderr)
     return 2
 
@@ -1385,7 +1391,117 @@ def _wire_and_run_encounter(
             run_agent_tests=build_agent_test_runner(runner, pytest_argv=pytest_argv),
             spectator=spectator,
         )
-        return run_encounter(card, adapter, loadout, config, store, human=human)
+        result = run_encounter(card, adapter, loadout, config, store, human=human)
+        # run.yaml 是開局快照（當時還沒有任何 provider 回應）；run 結束後以 adapter
+        # 彙總的 provider 觀測補 observed plane，另寫不可變的 execution_profile.json
+        # （paulsha-cortex#842 Gap B）。resolved／profile_id 必須與開局一致。
+        pre_run_profile = record_extra.get("execution_profile")
+        if isinstance(pre_run_profile, dict):
+            try:
+                store.write_execution_profile(
+                    finalize_execution_profile_record(adapter, pre_run_profile)
+                )
+            except (ProfileRecordError, AdapterResolutionError) as exc:
+                raise RunCliError(f"post-run execution profile 無法封存：{exc}") from exc
+        return result
+
+
+# ---------------------------------------------------------------------------
+# profile-binding 子命令（paulsha-cortex#842：qualification import --profile-binding）
+# ---------------------------------------------------------------------------
+
+
+class ProfileBindingError(Exception):
+    """run 封存無法組成單一 exact profile 的 binding（fail-closed）。"""
+
+
+def build_profile_binding(run_dirs: list[Path]) -> dict:
+    """從 run 結束後封存的 ``execution_profile.json`` 組 Cortex binding。
+
+    每場 run 都重新解析並重算 key；多場 run 必須是同一 resolved profile，且
+    observed 條件、requirements 與 provenance 完全一致（provider 觀測不一致就不
+    合併）。observed metadata 的逐次呼叫 evidence 依 run 順序合併並標 run_id；
+    metadata 不進任何 key。缺 post-run 記錄（舊 run、play、未完成）一律拒收，
+    不退回 ``run.yaml`` 的開局快照。
+    """
+    if not run_dirs:
+        raise ProfileBindingError("至少需要一個 run 目錄")
+    records: list[tuple[str, dict]] = []
+    for run_dir in run_dirs:
+        run_dir = Path(run_dir)
+        store = RunStore.open(run_dir)
+        raw = store.load_execution_profile()
+        if raw is None:
+            raise ProfileBindingError(
+                f"{run_dir.name} 缺 execution_profile.json（舊 run、play 或未完成），"
+                "沒有 post-run provider 觀測"
+            )
+        run_record = yaml.safe_load((run_dir / "run.yaml").read_text(encoding="utf-8"))
+        run_id = str(run_record.get("run_id", run_dir.name))
+        pre_run = run_record.get("execution_profile")
+        record = verify_execution_profile_record(raw)
+        if not isinstance(pre_run, dict) or pre_run.get("profile_id") != record["profile_id"]:
+            raise ProfileBindingError(
+                f"{run_dir.name} 的 execution_profile.json 與 run.yaml profile_id 不一致"
+            )
+        records.append((run_id, record))
+
+    _, first = records[0]
+    merged_evidence: list[dict] = []
+    for run_id, record in records:
+        for key in ("descriptor", "requested", "resolved", "profile_id"):
+            if record[key] != first[key]:
+                raise ProfileBindingError(f"run {run_id} 的 {key} 與其他 run 不同")
+        observed = record["observed"]
+        for key in ("conditions", "requirements", "provenance"):
+            if observed[key] != first["observed"][key]:
+                raise ProfileBindingError(
+                    f"run {run_id} 的 observed {key} 與其他 run 不同，不能合併成單一 binding"
+                )
+        for item in observed["metadata"].get("evidence_refs", []):
+            merged_evidence.append({"run_id": run_id, **item})
+
+    binding = json.loads(json.dumps(first))
+    metadata = dict(binding["observed"]["metadata"])
+    if merged_evidence:
+        metadata["evidence_refs"] = merged_evidence
+    binding["observed"]["metadata"] = metadata
+    return verify_execution_profile_record(binding)
+
+
+def _cmd_profile_binding(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="patchmud profile-binding",
+        description=(
+            "輸出 execution-profile binding JSON（供 Cortex "
+            "`model qualification import --profile-binding`）：讀 run 結束後封存的 "
+            "execution_profile.json，重算所有 profile key；多場 run 必須同一 resolved "
+            "profile 且 provider 觀測一致。"
+        ),
+    )
+    parser.add_argument("run_dirs", nargs="+", type=Path, help="run 目錄（runs/<run_id>）")
+    parser.add_argument("--out", type=Path, default=None, help="輸出檔（預設 stdout）")
+    ns = parser.parse_args(argv)
+    try:
+        binding = build_profile_binding(ns.run_dirs)
+    except (ProfileBindingError, ProfileRecordError, StoreError, OSError) as exc:
+        print(f"profile-binding 失敗：{exc}", file=sys.stderr)
+        return 2
+    text = (
+        json.dumps(binding, ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False)
+        + "\n"
+    )
+    if ns.out is None:
+        sys.stdout.write(text)
+        return 0
+    ns.out.parent.mkdir(parents=True, exist_ok=True)
+    ns.out.write_text(text, encoding="utf-8")
+    print(f"profile-binding 輸出：{ns.out}")
+    print(
+        f"profile_id={binding['profile_id']} "
+        f"actual_condition_key={binding['actual_condition_key']}"
+    )
+    return 0
 
 
 def _stdin_reply() -> str:

@@ -15,6 +15,12 @@ from types import MappingProxyType
 from typing import Protocol, cast
 
 from patchmud.adapters.base import AdapterError, AdapterResponse, ModelAdapter
+from patchmud.adapters.cortex_catalog import (
+    CortexAdapterIdentity,
+    CortexCatalogError,
+    cortex_adapter_identity,
+)
+from patchmud.adapters.observation import RuntimeObservation
 from patchmud.execution_profile import (
     ExecutionProfileDescriptor,
     ExecutionProfileError,
@@ -29,17 +35,24 @@ __all__ = [
     "AdapterCapabilities",
     "AdapterRegistration",
     "AdapterResolutionError",
+    "ProfileRecordError",
     "ProfiledAdapter",
     "ParsedAdapterSpec",
     "build_default_registrations",
     "build_execution_profile_record",
     "build_registered_adapter",
+    "finalize_execution_profile_record",
     "require_profiled_adapter",
+    "verify_execution_profile_record",
 ]
 
 
 class AdapterResolutionError(ValueError):
     """adapter spec 或 capability 不符合宣告。"""
+
+
+class ProfileRecordError(ValueError):
+    """execution profile 封存記錄的 descriptor／plane／key 不一致（fail-closed）。"""
 
 
 @dataclass(frozen=True)
@@ -68,6 +81,10 @@ class AdapterCapabilities:
     permissions: tuple[Mapping[str, object], ...]
     toolchain: Mapping[str, object]
     model_parameters: Mapping[str, object] = field(default_factory=dict)
+    #: 非 None 時 descriptor.adapter 逐欄採用此外部身分（paulsha-cortex#842 Gap A：
+    #: Cortex ``descriptor_fields()``），PatchMUD harness runtime 改記在
+    #: ``metadata.discovery.harness_runtime``，不再拼進 adapter.runtime_version。
+    cortex_identity: CortexAdapterIdentity | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "effort_grammar", _freeze(self.effort_grammar))
@@ -104,26 +121,38 @@ class AdapterCapabilities:
             allow_nan=False,
         ).encode("utf-8")
         parameter_digest = hashlib.sha256(parameter_bytes).hexdigest()
+        harness_runtime = f"{self.runtime_version};parameters-sha256:{parameter_digest}"
+        provenance = [
+            {"kind": "descriptor-source", "ref": "patchmud:adapter-profile-v1"}
+        ]
+        discovery: dict[str, object] = {"model_parameters": _thaw(self.model_parameters)}
+        if self.cortex_identity is None:
+            adapter = {
+                "id": self.adapter_id,
+                "protocol_id": self.protocol_id,
+                "protocol_version": self.protocol_version,
+                "runtime_version": harness_runtime,
+            }
+        else:
+            # Cortex 以 descriptor_fields() 逐欄比對 adapter 身分；PatchMUD 的
+            # harness 實作 revision 由 report cohort 的 evaluator_revision 區分，
+            # 這裡只留作 discovery provenance，不進 profile key。
+            adapter = dict(self.cortex_identity.descriptor_fields)
+            provenance.append(
+                {"kind": "adapter-identity-source", "ref": self.cortex_identity.source_ref}
+            )
+            discovery["harness_adapter"] = self.adapter_id
+            discovery["harness_runtime"] = harness_runtime
+            discovery["adapter_catalog_sha256"] = self.cortex_identity.sha256
         return parse_descriptor(
             {
                 "schema_version": 1,
                 "id": descriptor_id,
-                "adapter": {
-                    "id": self.adapter_id,
-                    "protocol_id": self.protocol_id,
-                    "protocol_version": self.protocol_version,
-                    "runtime_version": (
-                        f"{self.runtime_version};parameters-sha256:{parameter_digest}"
-                    ),
-                },
+                "adapter": adapter,
                 "model": {"id": model_id, "revision": model_revision},
                 "effort_grammar": _thaw(self.effort_grammar),
-                "provenance": [
-                    {"kind": "descriptor-source", "ref": "patchmud:adapter-profile-v1"}
-                ],
-                "metadata": {
-                    "discovery": {"model_parameters": _thaw(self.model_parameters)}
-                },
+                "provenance": provenance,
+                "metadata": {"discovery": discovery},
             }
         )
 
@@ -237,6 +266,7 @@ def _capabilities(
     permissions: tuple[Mapping[str, object], ...] = (),
     model_parameters: Mapping[str, object] | None = None,
     source_modules: tuple[str, ...] = (),
+    cortex_identity: CortexAdapterIdentity | None = None,
 ) -> AdapterCapabilities:
     version = _patchmud_version()
     source_digest = _adapter_source_digest(source_modules)
@@ -257,6 +287,7 @@ def _capabilities(
         permissions=permissions,
         toolchain={"id": "patchmud", "version": version},
         model_parameters=model_parameters or {},
+        cortex_identity=cortex_identity,
     )
 
 
@@ -305,14 +336,27 @@ def build_default_registrations() -> tuple[AdapterRegistration, ...]:
             source_modules=adapter_modules[adapter_id],
         )
 
+    # paulsha-cortex#842 Gap A：codex 的 adapter 身分與原生 effort 值域取自 vendored
+    # Cortex catalog（descriptor_fields() 逐欄一致）；省略 effort 時仍沿用 PatchMUD
+    # 明示的 `high` 預設，不採 Cortex 的 model 預設（避免靜默改變既有 run 的預算）。
+    try:
+        codex_identity = cortex_adapter_identity("codex")
+    except CortexCatalogError as exc:
+        raise AdapterResolutionError(str(exc)) from exc
     codex_caps = _capabilities(
         "patchmud.codex-cli",
-        effort_grammar={"type": "string", "enum": ["low", "medium", "high", "xhigh"]},
+        effort_grammar={"type": "string", "enum": list(codex_identity.efforts)},
         default_effort="high",
         sandbox_id="codex.read-only",
         permissions=({"id": "workspace.read-only", "version": "1"},),
-        model_parameters={"tool_access": "none", "ephemeral": True},
-        source_modules=("patchmud.adapters.codex_cli", "patchmud.adapters.cli_base"),
+        model_parameters={"tool_access": "none", "session": "persisted-thread"},
+        source_modules=(
+            "patchmud.adapters.codex_cli",
+            "patchmud.adapters.cli_base",
+            "patchmud.adapters.cortex_catalog",
+            "patchmud.adapters.observation",
+        ),
+        cortex_identity=codex_identity,
     )
     agy_caps = _capabilities(
         "patchmud.agy-cli",
@@ -349,7 +393,15 @@ def build_default_registrations() -> tuple[AdapterRegistration, ...]:
     def make_codex(model_id: str, effort: object | None, _options: dict[str, object]) -> ModelAdapter:
         if not isinstance(effort, str):
             raise AdapterResolutionError("codex effort 必須是原生字串")
-        return CodexCliAdapter(model=model_id, effort=effort)
+        from patchmud.adapters.codex_cli import build_app_server_thread_reader
+
+        binary = shutil.which("codex") or "codex"
+        return CodexCliAdapter(
+            model=model_id,
+            effort=effort,
+            codex_binary=binary,
+            thread_reader=build_app_server_thread_reader(binary),
+        )
 
     def make_agy(model_id: str, effort: object | None, _options: dict[str, object]) -> ModelAdapter:
         if not isinstance(effort, str):
@@ -574,8 +626,19 @@ def _requirements() -> dict[str, object]:
     }
 
 
-def build_execution_profile_record(adapter: ModelAdapter, loadout: str) -> dict[str, object]:
-    """建 requested/resolved/observed v1 records，不推定 provider 回報值。"""
+def build_execution_profile_record(
+    adapter: ModelAdapter,
+    loadout: str,
+    *,
+    observation: RuntimeObservation | None = None,
+) -> dict[str, object]:
+    """建 requested/resolved/observed v1 records，不推定 provider 回報值。
+
+    ``observation`` 是 provider 確認的實際 model／effort（run 結束後由 adapter
+    彙總）；缺席時 observed 的 model／effort 維持 unknown。provider 回報的 model
+    與 descriptor 不同、或 effort 不在 descriptor grammar 內時同樣維持 unknown，
+    絕不以 requested／resolved 補洞。
+    """
     profiled = require_profiled_adapter(adapter)
     descriptor = profiled.execution_profile_descriptor
     capabilities = profiled.execution_profile_capabilities
@@ -622,22 +685,56 @@ def build_execution_profile_record(adapter: ModelAdapter, loadout: str) -> dict[
             "toolset": toolset,
             "toolchain": toolchain_condition,
         }
+        provenance = [
+            {"kind": "profile-source", "ref": "patchmud:adapter-resolver-v1"}
+        ]
+        metadata: dict[str, object] = {}
         if plane == "observed":
-            conditions["model"] = _unknown("provider response did not identify effective model revision")
-            conditions["effort"] = effort_value(None)
+            conditions["model"], conditions["effort"] = _observed_model_effort(
+                observation
+            )
+            if observation is not None:
+                provenance.append({"kind": "observer", "ref": observation.source})
+                metadata["evidence_refs"] = [dict(item) for item in observation.evidence]
         return parse_profile(
             {
                 "schema_version": 1,
                 "plane": plane,
                 "conditions": conditions,
                 "requirements": _requirements(),
-                "provenance": [
-                    {"kind": "profile-source", "ref": "patchmud:adapter-resolver-v1"}
-                ],
-                "metadata": {},
+                "provenance": provenance,
+                "metadata": metadata,
             },
             descriptor,
         )
+
+    def _observed_model_effort(
+        observed: RuntimeObservation | None,
+    ) -> tuple[dict[str, object], dict[str, object]]:
+        if observed is None:
+            return (
+                _unknown("provider response did not identify effective model revision"),
+                effort_value(None),
+            )
+        model_id = descriptor.to_dict()["model"]["id"]
+        if observed.model_id is None:
+            model = _unknown(observed.model_reason or "provider did not confirm effective model")
+        elif observed.model_id != model_id:
+            model = _unknown("provider-reported model differs from descriptor model")
+        else:
+            model = _known(descriptor.to_dict()["model"])
+        if grammar["type"] == "none":
+            effort: dict[str, object] = {"state": "not_applicable"}
+        elif observed.effort is None:
+            effort = _unknown(observed.effort_reason or "provider did not confirm effective effort")
+        else:
+            try:
+                validate_effort_value(descriptor, observed.effort)
+            except ExecutionProfileError:
+                effort = _unknown("provider-reported effort is outside descriptor grammar")
+            else:
+                effort = _known(observed.effort)
+        return model, effort
 
     requested = profile(
         "requested",
@@ -665,4 +762,86 @@ def build_execution_profile_record(adapter: ModelAdapter, loadout: str) -> dict[
         "observed": observed.to_dict(),
         "observed_key": profile_key(observed),
         "actual_condition_key": actual_condition_key(observed),
+    }
+
+
+_RECORD_KEYS = frozenset(
+    {
+        "schema_version",
+        "descriptor",
+        "profile_id",
+        "requested",
+        "requested_key",
+        "resolved",
+        "resolved_key",
+        "observed",
+        "observed_key",
+        "actual_condition_key",
+    }
+)
+
+
+def finalize_execution_profile_record(
+    adapter: ModelAdapter, pre_run: Mapping[str, object]
+) -> dict[str, object]:
+    """run 結束後以 adapter 的 provider 觀測重建 record（resolved 必須不變）。
+
+    ``run.yaml`` 在開局寫入且不可變，當時尚無任何 provider 回應；post-run record
+    只更新 observed plane（與其 key），``profile_id``／resolved 必須與開局完全一致。
+    """
+    verified = verify_execution_profile_record(pre_run)
+    loadout = verified["resolved"]["conditions"]["loadout"]
+    if loadout.get("state") != "known":
+        raise ProfileRecordError("開局 profile 的 resolved loadout 不是 known")
+    observe = getattr(adapter, "runtime_observation", None)
+    observation = observe() if callable(observe) else None
+    if observation is not None and not isinstance(observation, RuntimeObservation):
+        raise ProfileRecordError("adapter runtime_observation() 必須回傳 RuntimeObservation")
+    record = build_execution_profile_record(
+        adapter, str(loadout["value"]["id"]), observation=observation
+    )
+    for key in ("descriptor", "requested", "resolved", "profile_id", "resolved_key"):
+        if record[key] != verified[key]:
+            raise ProfileRecordError(f"post-run profile 的 {key} 與開局不一致")
+    return record
+
+
+def verify_execution_profile_record(record: object) -> dict[str, object]:
+    """重新解析 descriptor 與三個 plane、重算所有 key，任何不符即拒收。"""
+    if not isinstance(record, Mapping) or set(record) != _RECORD_KEYS:
+        raise ProfileRecordError("execution profile record 欄位不符")
+    if record["schema_version"] != 1:
+        raise ProfileRecordError("execution profile record schema_version 不支援")
+    try:
+        descriptor = parse_descriptor(record["descriptor"])
+        planes = {
+            name: parse_profile(record[name], descriptor)
+            for name in ("requested", "resolved", "observed")
+        }
+    except ExecutionProfileError as exc:
+        raise ProfileRecordError(f"execution profile record 無法解析：{exc.code}") from exc
+    for name, profile in planes.items():
+        if profile.plane != name:
+            raise ProfileRecordError(f"execution profile record {name} plane 不符")
+    expected = {
+        "requested_key": profile_key(planes["requested"]),
+        "resolved_key": profile_key(planes["resolved"]),
+        "observed_key": profile_key(planes["observed"]),
+        "actual_condition_key": actual_condition_key(planes["observed"]),
+        "profile_id": profile_key(planes["resolved"]),
+    }
+    for key, value in expected.items():
+        if record[key] != value:
+            raise ProfileRecordError(f"execution profile record {key} 與內容不符")
+    return {
+        "schema_version": 1,
+        "descriptor": descriptor.to_dict(),
+        "profile_id": expected["profile_id"],
+        "requested": planes["requested"].to_dict(),
+        "requested_key": expected["requested_key"],
+        "resolved": planes["resolved"].to_dict(),
+        "resolved_key": expected["resolved_key"],
+        "observed": planes["observed"].to_dict(),
+        "observed_key": expected["observed_key"],
+        "actual_condition_key": expected["actual_condition_key"],
     }

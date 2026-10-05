@@ -21,6 +21,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # paulsha-cortex#842 conformance：以 Cortex 真實的 qualification import／approve
+      # blocker 程式驗收 PatchMUD 產物。只供測試（PatchMUD 對 Cortex 零 runtime 依賴）；
+      # ref 必須等於 patchmud/adapters/data/cortex-execution-adapters.provenance.json
+      # 的 source_revision（tests/adapters/test_cortex_catalog.py 會檢查）。
+      - name: Checkout paulsha-cortex（conformance 測試用，釘 vendored catalog revision）
+        uses: actions/checkout@v4
+        with:
+          repository: hamanpaul/paulsha-cortex
+          ref: d41aee93981b4e808e811aba808865f62a204c40
+          path: .ci/paulsha-cortex
+          persist-credentials: false
+
       - name: Install bubblewrap (namespace 隔離 acceptance 依賴，F7)
         run: |
           sudo apt-get update
@@ -54,4 +66,6 @@ jobs:
           python -c "from pathlib import Path; from patchmud.sandbox.isolate import IsolationRunner; c = IsolationRunner(Path('/tmp')).capabilities(); print('capabilities:', c); assert c.mount_ns and c.net_ns and c.pid_ns, f'namespace 能力不足：{c}'"
 
       - name: Run test suite
+        env:
+          PATCHMUD_CORTEX_SRC: ${{ github.workspace }}/.ci/paulsha-cortex
         run: python -m pytest tests/ -q

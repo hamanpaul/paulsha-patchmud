@@ -2,6 +2,8 @@
 
 - ``events.jsonl`` append-only；``seq`` 由 store 配發、讀取驗證連續性。
 - ``run.yaml`` / ``result.yaml`` 一次寫入即不可變。
+- ``execution_profile.json``：run 結束後的 execution profile（含 provider 觀測的
+  observed plane），一次寫入即不可變；``run.yaml`` 內的是開局快照。
 - ``archive_private``：run 目錄 + content-addressed evaluator bundle
   （hidden bytes、reference timings、card rubric、執行環境描述）。
 - ``archive_public``：同上，但 hidden 資產 bytes 以 content hash 佔位。
@@ -42,6 +44,7 @@ _EVENTS_FILE = "events.jsonl"
 _USAGE_FILE = "usage_evidence.jsonl"
 _RUN_FILE = "run.yaml"
 _RESULT_FILE = "result.yaml"
+_PROFILE_FILE = "execution_profile.json"
 _BUNDLE_DIR = "evaluator_bundle"
 _HIDDEN_DIR = "hidden"
 _CARD_FILE = "card.yaml"
@@ -191,6 +194,40 @@ class RunStore:
             yaml.safe_dump(record, sort_keys=True, allow_unicode=True),
             encoding="utf-8",
         )
+
+    # -- post-run execution profile ---------------------------------------
+
+    def write_execution_profile(self, record: dict) -> None:
+        """寫入 run 結束後的 execution profile record（一次寫入、不可覆寫）。
+
+        內容驗證（descriptor／plane／key 一致）由 adapters.profile 負責；store
+        只守 JSON 可序列化與不可覆寫。
+        """
+        if not isinstance(record, dict) or not isinstance(record.get("profile_id"), str):
+            raise StoreError("execution profile record 必須是含 profile_id 的 mapping")
+        dest = self.run_dir / _PROFILE_FILE
+        if dest.exists():
+            raise StoreError(f"{_PROFILE_FILE} 已存在，不可覆寫：{dest}")
+        try:
+            text = json.dumps(
+                record, ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False
+            )
+        except (TypeError, ValueError) as exc:
+            raise StoreError(f"execution profile 無法 JSON 序列化：{exc}") from exc
+        dest.write_text(text + "\n", encoding="utf-8")
+
+    def load_execution_profile(self) -> dict | None:
+        """讀 post-run execution profile；缺檔（舊 run 或 play）回傳 None。"""
+        path = self.run_dir / _PROFILE_FILE
+        if not path.is_file():
+            return None
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise StoreError(f"{_PROFILE_FILE} 非合法 JSON：{exc}") from exc
+        if not isinstance(record, dict):
+            raise StoreError(f"{_PROFILE_FILE} 內容必須是 mapping")
+        return record
 
     # -- 封存 ---------------------------------------------------------------
 
