@@ -286,15 +286,18 @@ def build_app_server_thread_reader(
     *,
     timeout_s: float = 60.0,
     disabled_features: tuple[str, ...] = CodexCliAdapter.DISABLED_FEATURES,
+    command_prefix: tuple[str, ...] = (),
 ) -> ThreadReader:
     """以 ``codex app-server``（stdio JSON-RPC）的 ``thread/read`` 讀 thread metadata。
 
     只讀 provider 持久化的 thread（``includeTurns: false``），不 resume、不開新回合，
     因此不產生模型呼叫。每次呼叫獨立啟動並收掉 app-server process group；
     逾時、協定錯誤或 thread id 不符一律拋例外（由 adapter 轉成 unknown）。
+    ``command_prefix``（例如 builder lane 的 bwrap 沙箱前綴）讓 app-server 在與
+    builder session 相同的 ``CODEX_HOME``／邊界內執行。
     """
 
-    argv = [binary, "app-server"]
+    argv = [*command_prefix, binary, "app-server"]
     for feature in disabled_features:
         argv += ["--disable", feature]
 

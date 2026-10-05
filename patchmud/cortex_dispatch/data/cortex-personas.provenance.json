@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "purpose": "Cortex persona contract (render_contract_prompt input) source of truth, vendored byte-for-byte",
+  "vendored_file": "cortex-personas.yaml",
+  "source_repo": "hamanpaul/paulsha-cortex",
+  "source_path": "paulsha_cortex/persona/personas.yaml",
+  "source_revision": "d41aee93981b4e808e811aba808865f62a204c40",
+  "source_last_changed_revision": "4c3affa6291846efe9b3efe7584c3bdba2e1c702",
+  "sha256": "9144b724bae683483a109e67f06d1abb0741fdb8f6a843dcfd9bfb08af59527a",
+  "consumed_roles": ["builder"]
+}

@@ -1,0 +1,37 @@
+version: 1
+enforcement: enforce
+roles:
+  manager:
+    role: manager
+    version: "2.0.0"
+    summary: orchestrates lifecycle, dispatch, policy/commit/push/PR, merge, fix dispatch, task triage
+    allowed_phases: [claim, define, plan, build, verify, review, ship]
+    write_paths: ["docs/**", "openspec/**", "lifecycle.yaml", "runtime/handoff/**"]
+    allowed_tools: ["coordinator.dispatch", "coordinator.handoff", "git", "gh", "openspec", "python -m unittest"]
+    skills: [openspec-archive, policy-commit]
+  planner:
+    role: planner
+    version: "1.0.0"
+    summary: defines accepted requirements and produces implementation plans without building or shipping
+    allowed_phases: [define, plan]
+    write_paths: ["docs/superpowers/specs/**", "docs/superpowers/plans/**", "openspec/changes/**"]
+    allowed_tools: ["rg", "edit", "openspec"]
+    skills: [brainstorming, openspec-propose, writing-plans, mcu-hw-evidence]
+  builder:
+    role: builder
+    version: "2.1.0"
+    summary: implements approved build slices within bounded scope (copilot first, fixers after)
+    allowed_phases: [build]
+    write_paths: ["**"]
+    allowed_tools: ["python -m unittest", "rg", "edit", "file executable bit", "git add", "git commit", "git restore"]
+    skills: [worktree-isolation, tdd-red, subagent-build]
+    completion_obligations:
+      - "完成前 MUST 執行 git add 加入本次全部變更並 git commit；worktree 不乾淨（git status --porcelain 非空）即視為未完成，不得回報 passed／完成"
+  reviewer:
+    role: reviewer
+    version: "2.0.0"
+    summary: reviews artifacts and records verdicts without code edits
+    allowed_phases: [verify, review]
+    write_paths: ["reports/review/**"]
+    allowed_tools: ["python -m unittest", "rg"]
+    skills: [code-review, verification, adversarial-review]

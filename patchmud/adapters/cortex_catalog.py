@@ -66,6 +66,16 @@ class CortexAdapterIdentity:
     efforts: tuple[str, ...]
     source_ref: str
     sha256: str
+    #: catalog ``effort.default``（可為 ``None``）。
+    default_effort: str | None = None
+    #: catalog ``effort.model_defaults``：model → 原生 effort 預設。
+    model_default_efforts: Mapping[str, str] = MappingProxyType({})
+
+    def default_effort_for(self, model_id: str | None) -> str | None:
+        """逐字對齊 Cortex ``ExecutionAdapter.default_effort_for()``：model 預設優先。"""
+        if model_id is not None and model_id in self.model_default_efforts:
+            return self.model_default_efforts[model_id]
+        return self.default_effort
 
 
 def load_catalog_provenance(data_dir: Path | None = None) -> dict[str, object]:
@@ -124,6 +134,8 @@ def cortex_adapter_identity(
     for key in _DESCRIPTOR_KEYS:
         fields[key] = _text(entry.get(key), f"adapters.{executor}.{key}")
     effort = entry.get("effort")
+    default_effort: str | None = None
+    model_defaults: dict[str, str] = {}
     if effort is None:
         efforts: tuple[str, ...] = ()
     else:
@@ -136,6 +148,29 @@ def cortex_adapter_identity(
         )
         if len(set(efforts)) != len(efforts):
             raise CortexCatalogError(f"Cortex adapter catalog adapters.{executor}.effort 重複")
+        raw_default = effort.get("default")
+        if raw_default is not None:
+            default_effort = _text(raw_default, f"adapters.{executor}.effort.default")
+            if default_effort not in efforts:
+                raise CortexCatalogError(
+                    f"Cortex adapter catalog adapters.{executor}.effort.default 不在值域內"
+                )
+        raw_model_defaults = effort.get("model_defaults") or {}
+        if not isinstance(raw_model_defaults, dict):
+            raise CortexCatalogError(
+                f"Cortex adapter catalog adapters.{executor}.effort.model_defaults 不合法"
+            )
+        for model, value in raw_model_defaults.items():
+            model_name = _text(model, f"adapters.{executor}.effort.model_defaults key")
+            model_effort = _text(
+                value, f"adapters.{executor}.effort.model_defaults[{model_name!r}]"
+            )
+            if model_effort not in efforts:
+                raise CortexCatalogError(
+                    f"Cortex adapter catalog adapters.{executor}.effort.model_defaults"
+                    f"[{model_name!r}] 不在值域內"
+                )
+            model_defaults[model_name] = model_effort
     source_ref = (
         f"paulsha-cortex:{provenance['source_path']}@{provenance['source_revision']}"
     )
@@ -145,4 +180,6 @@ def cortex_adapter_identity(
         efforts=efforts,
         source_ref=source_ref,
         sha256=str(provenance["sha256"]),
+        default_effort=default_effort,
+        model_default_efforts=MappingProxyType(model_defaults),
     )

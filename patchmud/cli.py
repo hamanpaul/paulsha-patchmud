@@ -419,7 +419,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"patchmud {_package_version()} — 子命令：validate-deck / author-encounter / "
             "score-diff / run / versus / play / watch / replay / report / pilot / "
-            "profile-binding / schema；其餘見 "
+            "profile-binding / dispatch-run / schema；其餘見 "
             "docs/superpowers/plans/2026-07-16-patchmud-mvp.md"
         )
         return 0
@@ -464,6 +464,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_calibrate(args[1:])
     if args[0] == "profile-binding":
         return _cmd_profile_binding(args[1:])
+    if args[0] == "dispatch-run":
+        return _cmd_dispatch_run(args[1:])
     print(f"patchmud: 子命令尚未實作：{args[0]}", file=sys.stderr)
     return 2
 
@@ -1502,6 +1504,160 @@ def _cmd_profile_binding(argv: list[str]) -> int:
         f"actual_condition_key={binding['actual_condition_key']}"
     )
     return 0
+
+
+# ---------------------------------------------------------------------------
+# dispatch-run 子命令（paulsha-cortex#842：Cortex builder 派工條件下量測）
+# ---------------------------------------------------------------------------
+
+
+def _cmd_dispatch_run(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="patchmud dispatch-run",
+        description=(
+            "Cortex dispatch builder lane：依 Cortex 目標派工（target 檔）的 builder 條件"
+            "執行 codex（Cortex argv、builder persona 契約、外層 workspace-write 沙箱、"
+            "egress allowlist），為 commit 出來的候選評分；execution profile 的 resolved "
+            "key 等於 Cortex Manager 為該派工算出的 binding.resolved_key。"
+        ),
+    )
+    parser.add_argument("encounter", help="關卡名字或 encounter 目錄路徑")
+    parser.add_argument(
+        "--target",
+        required=True,
+        type=Path,
+        help="Cortex 目標派工檔（patchmud.cortex-dispatch-target/v1；例：fixtures/cortex-dispatch/*.json）",
+    )
+    parser.add_argument("--runs-root", type=Path, default=Path("runs"), help="run 目錄根")
+    parser.add_argument("--run-id", default=None, help="run 識別字串（預設自動產生）")
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=1800.0,
+        metavar="SECONDS",
+        help="builder session 的 wall-clock 上限（預設 1800 秒）",
+    )
+    ns = parser.parse_args(argv)
+
+    from patchmud.cortex_dispatch.lane import DispatchRunError
+    from patchmud.cortex_dispatch.profile import DispatchProfileError
+    from patchmud.cortex_dispatch.sandbox import SandboxError
+    from patchmud.cortex_dispatch.target import DispatchTargetError, load_dispatch_target
+
+    try:
+        encounter_dir = resolve_encounter(ns.encounter)
+        target = load_dispatch_target(ns.target)
+        result = dispatch_run_cli(
+            encounter_dir,
+            target,
+            ns.runs_root,
+            run_id=ns.run_id,
+            timeout_s=ns.timeout,
+        )
+    except (
+        DispatchRunError,
+        DispatchProfileError,
+        DispatchTargetError,
+        SandboxError,
+        RunCliError,
+        ScoreDiffError,
+        DeckError,
+        EvaluatorError,
+        StoreError,
+        WorkspaceError,
+        LedgerError,
+        ValueError,
+    ) as exc:
+        print(f"dispatch-run 失敗：{exc}", file=sys.stderr)
+        return 2
+    print(f"run 目錄：{result.run_dir}")
+    print(f"profile_id={result.profile_id}")
+    print(f"actual_condition_key={result.actual_condition_key}")
+    print(
+        f"end_reason={result.end_reason} clear={result.clear} "
+        f"power_total={result.power_total} failure={result.failure} wall_ms={result.wall_ms}"
+    )
+    if result.usage is not None:
+        print("usage=" + json.dumps(dict(result.usage), sort_keys=True))
+    return 0
+
+
+def _codex_auth_file() -> Path:
+    """codex OAuth 登入態檔；只以唯讀 bind 掛進 builder 沙箱，內容不讀不印。"""
+    home = os.environ.get("CODEX_HOME") or str(Path.home() / ".codex")
+    auth = Path(home) / "auth.json"
+    if not auth.is_file() or auth.is_symlink():
+        raise RunCliError("找不到 codex 登入態（CODEX_HOME/auth.json）；請先 `codex login`")
+    return auth
+
+
+def _codex_install_facts(codex_invoke: str) -> dict[str, object]:
+    """codex 安裝身分（只進 observed metadata，不進 key；不輸出本機路徑）。"""
+    resolved = Path(codex_invoke).resolve()
+    digest = hashlib.sha256(resolved.read_bytes()).hexdigest()
+    facts: dict[str, object] = {"codex_entry_sha256": "sha256:" + digest}
+    package_json = resolved.parents[1] / "package.json"
+    if package_json.is_file():
+        try:
+            version = json.loads(package_json.read_text(encoding="utf-8")).get("version")
+        except (OSError, json.JSONDecodeError):
+            version = None
+        if isinstance(version, str):
+            facts["codex_package_version"] = version
+    return facts
+
+
+def dispatch_run_cli(
+    encounter_dir: Path,
+    target,
+    runs_root: Path,
+    *,
+    run_id: str | None = None,
+    timeout_s: float = 1800.0,
+    bwrap_path: str = DEFAULT_BWRAP_PATH,
+):
+    """`patchmud dispatch-run` 真佈線：bwrap 隔離、egress proxy、app-server 觀測。"""
+    from patchmud.adapters.codex_cli import build_app_server_thread_reader
+    from patchmud.cortex_dispatch.lane import DispatchLaneConfig, run_dispatch_lane
+    from patchmud.cortex_dispatch.sandbox import (
+        build_agent_bwrap_argv,
+        codex_runtime_layout,
+        run_agent_in_sandbox,
+    )
+
+    toolchain = _toolchain_paths()
+    _require_isolation(bwrap_path, toolchain)
+    if not has_codex_cli():
+        raise RunCliError("系統未安裝 `codex` CLI（找不到 `codex` 可執行檔）")
+    codex_invoke, runtime_ro, path_dirs = codex_runtime_layout("codex")
+    site_dir = _pytest_site_dir()
+    pythonpath = () if site_dir.is_relative_to(Path("/usr")) else (str(site_dir),)
+
+    def agent_runner(launch):
+        return run_agent_in_sandbox(
+            launch.spec, launch.codex_argv, timeout_s=launch.timeout_s, bwrap_path=bwrap_path
+        )
+
+    def thread_reader_factory(launch):
+        prefix = build_agent_bwrap_argv(launch.spec, [], bwrap_path=bwrap_path, egress_dir=None)
+        return build_app_server_thread_reader(codex_invoke, command_prefix=tuple(prefix))
+
+    config = DispatchLaneConfig(
+        toolchain=toolchain,
+        pytest_argv=_sandbox_pytest_argv(),
+        ruff_argv=_ruff_argv(toolchain),
+        agent_runner=agent_runner,
+        thread_reader_factory=thread_reader_factory,
+        codex_invoke=codex_invoke,
+        runtime_ro=runtime_ro,
+        path_dirs=path_dirs,
+        auth_file=_codex_auth_file(),
+        pythonpath=pythonpath,
+        bwrap_path=bwrap_path,
+        timeout_s=timeout_s,
+        facts=_codex_install_facts(codex_invoke),
+    )
+    return run_dispatch_lane(encounter_dir, target, runs_root, config, run_id=run_id)
 
 
 def _stdin_reply() -> str:

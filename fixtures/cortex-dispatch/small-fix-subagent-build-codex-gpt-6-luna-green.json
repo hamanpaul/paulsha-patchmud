@@ -1,0 +1,30 @@
+{
+  "schema": "patchmud.cortex-dispatch-target/v1",
+  "name": "small-fix-subagent-build-codex-gpt-6-luna-green",
+  "description": "Cortex Manager 為 small-fix combo 的 subagent-build 卡派 codex/gpt-6-luna builder（intake 以 --builder-executor codex --builder-model gpt-6-luna 釘選，同 deployment canary），sizing band green、前面沒有 build 卡；identity 取 canary overlay（qualification/contract.py CANARY_BUILDER）。",
+  "cortex_source_revision": "2811ea49b6e99bd548b4dd206a3ba3890d009cf6",
+  "cortex_resolved_key": "epk:v1:resolved:42055994b44ebd0353d25b242a23df1ca4b34d50f2c81bcd8162cb09455cddb7",
+  "cortex_request_key": "epk:v1:request:54678d20ce389c6468d5575acc8d8c5bc426ca674b97ceeba1dddb204c6ec365",
+  "identity": {
+    "executor": "codex",
+    "model_id": "gpt-6-luna",
+    "independence_domain": "openai",
+    "capabilities": ["build"]
+  },
+  "persona": "builder",
+  "combo": "small-fix",
+  "card": {
+    "id": "subagent-build",
+    "phase": "build",
+    "commit_policy": "required",
+    "test_policy": "focused",
+    "declared_outputs": [],
+    "action": "依 accepted plan 以最小 diff 實作，讓 RED test 轉綠並提交候選 HEAD"
+  },
+  "launcher": {"allow_unsafe": false, "effort": null},
+  "run": {
+    "sizing_band": "green",
+    "model_chain_override": {"builder": {"executor": "codex", "model_id": "gpt-6-luna"}},
+    "prior_steps": []
+  }
+}
